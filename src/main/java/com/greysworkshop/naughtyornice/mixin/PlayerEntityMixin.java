@@ -2,6 +2,7 @@ package com.greysworkshop.naughtyornice.mixin;
 
 import com.greysworkshop.naughtyornice.Marks;
 import com.greysworkshop.naughtyornice.NNConfig;
+import com.greysworkshop.naughtyornice.Safe;
 import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.text.Text;
 import org.spongepowered.asm.mixin.Mixin;
@@ -16,6 +17,7 @@ public abstract class PlayerEntityMixin {
 	private void naughtyornice$mark(CallbackInfoReturnable<Text> cir) {
 		PlayerEntity self = (PlayerEntity) (Object) this;
 		if (!NNConfig.INSTANCE.nametagMarks || !self.getEntityWorld().isClient()) return;
-		cir.setReturnValue(Marks.decorate(self.getUuid(), cir.getReturnValue()));
+		Text name = cir.getReturnValue();
+		cir.setReturnValue(Safe.get("marking a nametag", () -> Marks.decorate(self.getUuid(), name), name));
 	}
 }

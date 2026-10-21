@@ -43,7 +43,7 @@ public final class Sharing {
 
 	/** How much to send. */
 	public enum Scope {
-		LISTS("Your lists (Nice, Look Into, Naughty)"),
+		LISTS("Your Friends and lists"),
 		NOTED("Everyone with details or history"),
 		EVERYONE("Everyone you've seen");
 
@@ -70,7 +70,10 @@ public final class Sharing {
 	public static final class Player {
 		public UUID id;
 		public String name = "";
+		/** Friends go out as Nice (so older versions read them sensibly) with {@link #friend} set. */
 		public Profile.Verdict verdict = Profile.Verdict.NONE;
+		/** The sender's friend. Their friends aren't yours, so for you they go on the Nice list. */
+		public boolean friend;
 		public long listedAt;
 		/** The sender's trust score and stars for them. */
 		public int score;
@@ -83,6 +86,11 @@ public final class Sharing {
 		/** Names they went by before. */
 		public List<String> pastNames = new ArrayList<>();
 		public List<Profile.Conversation> conversations = new ArrayList<>();
+
+		/** How the sender has them: Friend, or their list. */
+		public Profile.Verdict view() {
+			return friend ? Profile.Verdict.FRIEND : verdict;
+		}
 	}
 
 	// ---- Sending ----
@@ -112,7 +120,8 @@ public final class Sharing {
 			Player sp = new Player();
 			sp.id = p.id;
 			sp.name = p.name;
-			sp.verdict = p.verdict;
+			sp.friend = p.verdict == Profile.Verdict.FRIEND;
+			sp.verdict = sp.friend ? Profile.Verdict.NICE : p.verdict;
 			sp.listedAt = p.listedAt;
 			sp.score = p.score();
 			sp.stars = p.stars();
@@ -144,6 +153,11 @@ public final class Sharing {
 			case KIND_WORDS, RUDE -> a.kind.label + (a.detail.isEmpty() ? "" : ": \"" + a.detail + "\"");
 			default -> a.describe().replaceAll("\\byour\\b", owner + "'s").replaceAll("\\byou\\b", owner);
 		};
+	}
+
+	/** The pack as JSON, for share links. */
+	static String json(Pack pack) {
+		return GSON.toJson(pack);
 	}
 
 	/** A share code: "NN1:" and the pack, compressed. One line, safe to paste anywhere. */
@@ -241,6 +255,10 @@ public final class Sharing {
 		pack.players.removeIf(p -> p == null || p.id == null || p.name == null || p.name.isBlank());
 		for (Player p : pack.players) {
 			if (p.verdict == null) p.verdict = Profile.Verdict.NONE;
+			if (p.verdict == Profile.Verdict.FRIEND) {
+				p.verdict = Profile.Verdict.NICE;
+				p.friend = true;
+			}
 			if (p.details == null) p.details = new ArrayList<>();
 			p.details.removeIf(d -> d == null || d.text == null || d.text.isBlank());
 			for (Profile.Detail d : p.details) {
@@ -327,7 +345,8 @@ public final class Sharing {
 				continue;
 			}
 			Profile.Verdict current = mine == null ? Profile.Verdict.NONE : mine.verdict;
-			boolean disagree = current != Profile.Verdict.NONE && in.verdict != Profile.Verdict.NONE && in.verdict != current;
+			// Your friends stay your friends whatever the sender thinks; a friend's view of them is still noted.
+			boolean disagree = current != Profile.Verdict.NONE && current != Profile.Verdict.FRIEND && in.verdict != Profile.Verdict.NONE && in.verdict != current;
 			if (current == Profile.Verdict.NONE) row.result = takeLists ? in.verdict : Profile.Verdict.NONE;
 			else if (disagree) row.result = takeLists && theirsWins ? in.verdict : current;
 			else row.result = current;
@@ -348,7 +367,7 @@ public final class Sharing {
 					if (!d.seen && d.from.equalsIgnoreCase(sender) && !sent.contains(d.text.strip().toLowerCase(Locale.ROOT))) row.goneDetails++;
 				}
 				Profile.FriendView view = mine.friendView(sender);
-				row.viewChanged = view == null ? in.verdict != Profile.Verdict.NONE : view.verdict != in.verdict;
+				row.viewChanged = view == null ? in.verdict != Profile.Verdict.NONE : view.verdict != in.view();
 			}
 			for (String s : in.seen) {
 				if (have.add(s.strip().toLowerCase(Locale.ROOT))) row.newDetails++;
@@ -433,7 +452,7 @@ public final class Sharing {
 				view.from = sender;
 				p.friendViews.add(view);
 			}
-			view.verdict = in.verdict;
+			view.verdict = in.view();
 			view.time = pack.created > 0 ? pack.created : now;
 			for (String past : in.pastNames) {
 				if (!past.equalsIgnoreCase(p.name) && p.pastNames.stream().noneMatch(past::equalsIgnoreCase)) p.pastNames.add(past);

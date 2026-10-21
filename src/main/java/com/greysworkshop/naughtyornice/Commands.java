@@ -36,6 +36,9 @@ public final class Commands {
 	private static final SuggestionProvider<FabricClientCommandSource> GROUPS = (context, builder) ->
 			CommandSource.suggestMatching(NaughtyOrNiceClient.INSTANCE.ledger.groups().keySet(), builder);
 
+	private static final SuggestionProvider<FabricClientCommandSource> CIRCLES = (context, builder) ->
+			CommandSource.suggestMatching(Friends.circles().stream().map(c -> c.name).toList(), builder);
+
 	public static void register(CommandDispatcher<FabricClientCommandSource> dispatcher) {
 		dispatcher.register(literal("nn")
 				.executes(c -> {
@@ -48,6 +51,26 @@ public final class Commands {
 						.executes(c -> mark(c, Profile.Verdict.NAUGHTY))))
 				.then(literal("look").then(argument("player", StringArgumentType.word()).suggests(NAMES)
 						.executes(c -> mark(c, Profile.Verdict.LOOK))))
+				.then(literal("friend").then(argument("player", StringArgumentType.word()).suggests(NAMES)
+						.executes(c -> mark(c, Profile.Verdict.FRIEND))
+						.then(argument("circle", StringArgumentType.greedyString()).suggests(CIRCLES).executes(Commands::friend))))
+				.then(literal("open").then(argument("link", StringArgumentType.greedyString()).executes(c -> {
+					String link = CloudShare.find(StringArgumentType.getString(c, "link"));
+					if (link == null) {
+						c.getSource().sendError(Text.literal("That isn't a Naughty or Nice share link (they start with " + CloudShare.PREFIX + ")."));
+						return 0;
+					}
+					NaughtyOrNiceClient.INSTANCE.openLater(new ShopScreen().withShareLink(link));
+					return 1;
+				})))
+				.then(literal("disconnects").executes(c -> {
+					NaughtyOrNiceClient.INSTANCE.openLater(new ShopScreen().withDisconnects());
+					return 1;
+				}))
+				.then(literal("friends").executes(c -> {
+					NaughtyOrNiceClient.INSTANCE.openLater(new ShopScreen(ShopScreen.Tab.FRIENDS, null));
+					return 1;
+				}))
 				.then(literal("group").then(argument("player", StringArgumentType.word()).suggests(NAMES)
 						.then(argument("group", StringArgumentType.greedyString()).suggests(GROUPS).executes(Commands::group))))
 				.then(literal("chat").executes(c -> {
@@ -123,9 +146,31 @@ public final class Commands {
 			case NICE -> Text.literal(profile.name + " is on your Nice list.").formatted(Formatting.GREEN);
 			case NAUGHTY -> Text.literal(profile.name + " is on your Naughty list.").formatted(Formatting.RED);
 			case LOOK -> Text.literal(profile.name + " is on your Look Into list.").formatted(Formatting.GOLD);
+			case FRIEND -> Text.literal(profile.name + " is your friend (" + Friends.circleName(profile) + ").").formatted(Formatting.AQUA);
 			case NONE -> Text.literal(profile.name + " is off your lists.").formatted(Formatting.GRAY);
 		};
 		c.getSource().sendFeedback(Alerts.prefix().append(message));
+		return 1;
+	}
+
+	/** /nn friend &lt;player&gt; &lt;circle&gt;: makes them a friend in that circle. */
+	private static int friend(CommandContext<FabricClientCommandSource> c) {
+		NaughtyOrNiceClient mod = NaughtyOrNiceClient.INSTANCE;
+		if (mod.ledger.key() == null) {
+			c.getSource().sendError(Text.literal("Join a world or server first."));
+			return 0;
+		}
+		String circleName = StringArgumentType.getString(c, "circle");
+		Friends.Circle circle = Friends.byName(circleName);
+		if (circle == null) {
+			c.getSource().sendError(Text.literal("No circle called \"" + circleName + "\". Your circles: "
+					+ String.join(", ", Friends.circles().stream().map(x -> x.name).toList())));
+			return 0;
+		}
+		Profile profile = mod.ledger.addByName(MinecraftClient.getInstance(), StringArgumentType.getString(c, "player"));
+		mod.ledger.setCircle(profile, circle);
+		mod.ledger.save(false);
+		c.getSource().sendFeedback(Alerts.prefix().append(Text.literal(profile.name + " is your friend (" + circle.name + ").").formatted(Formatting.AQUA)));
 		return 1;
 	}
 

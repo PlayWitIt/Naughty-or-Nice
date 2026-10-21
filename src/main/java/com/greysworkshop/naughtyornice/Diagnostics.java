@@ -153,6 +153,11 @@ public final class Diagnostics {
 			sb.append("-- ").append(kind.label).append(nl);
 			for (Sample sample : list) sb.append("  ").append(sample.raw()).append(nl).append("      read as: ").append(sample.reading()).append(nl);
 		}
+		sb.append(nl).append("== Disconnects (newest first) ==").append(nl).append(Disconnects.report());
+		sb.append(nl).append("== Errors the mod caught and skipped ==").append(nl);
+		List<Safe.Caught> caught = Safe.caught();
+		if (caught.isEmpty()) sb.append("(none)").append(nl);
+		for (Safe.Caught c : caught) sb.append(c.count).append("×  ").append(c.where).append(": ").append(c.what).append(nl);
 		return sb.toString();
 	}
 

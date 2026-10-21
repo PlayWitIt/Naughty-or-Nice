@@ -95,6 +95,20 @@ public final class NNConfig {
 	/** Take a screenshot when someone kills you or a Naughty player comes into one of your bases. */
 	public boolean evidenceShots = true;
 
+	// ---- Friends ----
+	/** Your friend circles, in the order they're shown. The first is where new friends go. */
+	public java.util.List<Friends.Circle> circles = Friends.defaultCircles();
+
+	// ---- Sharing ----
+	/** The command used to send a share link to someone in game ("msg" sends /msg name link). */
+	public String whisperCommand = "msg";
+	/** Offer to open share links friends send you in chat. */
+	public boolean openSharedLinks = true;
+
+	// ---- Disconnects ----
+	/** Note why you were disconnected and who was around, and say so when you're back. */
+	public boolean recordDisconnects = true;
+
 	// ---- Other mods ----
 	/** Nice-list players count as friends in Base Insurance (no alerts about them). */
 	public boolean shareWithBaseInsurance = true;
@@ -121,6 +135,9 @@ public final class NNConfig {
 				if (loaded.alertWords == null) loaded.alertWords = new java.util.ArrayList<>(java.util.List.of("{me}"));
 				loaded.alertWords.removeIf(w -> w == null || w.isBlank());
 				if (loaded.dismissedSuggestions == null) loaded.dismissedSuggestions = new java.util.ArrayList<>();
+				if (loaded.circles != null) loaded.circles.removeIf(c -> c == null || c.id == null || c.id.isBlank() || c.name == null || c.name.isBlank());
+				if (loaded.circles == null || loaded.circles.isEmpty()) loaded.circles = Friends.defaultCircles();
+				if (loaded.whisperCommand == null || loaded.whisperCommand.isBlank()) loaded.whisperCommand = "msg";
 				INSTANCE = loaded;
 			}
 		} catch (IOException | RuntimeException e) {

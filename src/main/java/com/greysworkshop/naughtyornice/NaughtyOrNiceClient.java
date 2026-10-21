@@ -56,13 +56,14 @@ public class NaughtyOrNiceClient implements ClientModInitializer {
 
 		ClientCommandRegistrationCallback.EVENT.register((dispatcher, registryAccess) -> Commands.register(dispatcher));
 
+		// These run while the game handles a packet: an error escaping them would disconnect you, so none can.
 		ClientReceiveMessageEvents.CHAT.register((message, signed, sender, params, timestamp) ->
-				watcher.onChat(MinecraftClient.getInstance(), sender, signed, params, message));
+				Safe.run("reading chat", () -> watcher.onChat(MinecraftClient.getInstance(), sender, signed, params, message)));
 		ClientReceiveMessageEvents.GAME.register((message, overlay) -> {
-			if (!overlay) watcher.onGameMessage(MinecraftClient.getInstance(), message);
+			if (!overlay) Safe.run("reading a server message", () -> watcher.onGameMessage(MinecraftClient.getInstance(), message));
 		});
 
-		ClientTickEvents.END_CLIENT_TICK.register(this::tick);
+		ClientTickEvents.END_CLIENT_TICK.register(client -> Safe.run("ticking", () -> tick(client)));
 
 		// Disconnect fires on the network thread; do the work on the game thread.
 		ClientPlayConnectionEvents.DISCONNECT.register((handler, client) -> client.execute(() -> {
@@ -112,13 +113,14 @@ public class NaughtyOrNiceClient implements ClientModInitializer {
 				case NAUGHTY -> 0xFFFF5A4A;
 				case LOOK -> 0xFFFFC14D;
 				case NICE -> 0xFF4CD39B;
+				case FRIEND -> 0xFF000000 | Marks.GROUP_TEXT[Friends.color(p) % Marks.GROUP_TEXT.length];
 				case NONE -> 0xFF000000 | Marks.GROUP_TEXT[ledger.groupColor(p.groups.get(0))];
 			};
 			Map<String, Object> pin = new HashMap<>();
 			pin.put("x", last.lastX);
 			pin.put("z", last.lastZ);
 			pin.put("color", color);
-			pin.put("label", p.name + (p.groups.isEmpty() ? "" : " [" + p.groups.get(0) + "]"));
+			pin.put("label", (p.verdict == Profile.Verdict.FRIEND ? "★ " : "") + p.name + (p.groups.isEmpty() ? "" : " [" + p.groups.get(0) + "]"));
 			pin.put("detail", "Seen " + ShopScreen.ago(last.until) + (last.gear.isEmpty() ? "" : " · " + last.gear));
 			list.add(pin);
 		}

@@ -6,8 +6,11 @@ import java.util.UUID;
 
 /** Everything known about one player: which list they're on, and what they've been seen doing. */
 public final class Profile {
-	/** Which list they're on. LOOK is "Look Into": not sure yet, keep an eye on them. */
-	public enum Verdict { NONE, NICE, NAUGHTY, LOOK }
+	/**
+	 * Which list they're on. LOOK is "Look Into": not sure yet, keep an eye on them. FRIEND is someone you actually
+	 * know (in one of your friend circles), which is more than just behaving well.
+	 */
+	public enum Verdict { NONE, NICE, NAUGHTY, LOOK, FRIEND }
 
 	/** Something a player did. Points push their rating up (nice) or down (naughty). */
 	public enum Kind {
@@ -76,6 +79,8 @@ public final class Profile {
 	public UUID id;
 	public String name = "";
 	public Verdict verdict = Verdict.NONE;
+	/** For friends: the id of their friend circle (see {@link Friends}); empty or unknown means the first circle. */
+	public String circle = "";
 	/** Old single-line note; moved into {@link #details} when the lists load. */
 	public String note = "";
 	/** Things written down about them, oldest first: yours and ones shared by friends. */
