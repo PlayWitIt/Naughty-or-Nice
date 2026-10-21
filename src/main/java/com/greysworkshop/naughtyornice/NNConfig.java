@@ -105,6 +105,12 @@ public final class NNConfig {
 	/** Offer to open share links friends send you in chat. */
 	public boolean openSharedLinks = true;
 
+	// ---- Updates ----
+	/** Say when a newer version is out on GitHub (once per game session). */
+	public boolean checkUpdates = true;
+	/** A version you said not to be told about again. */
+	public String skippedVersion = "";
+
 	// ---- Disconnects ----
 	/** Note why you were disconnected and who was around, and say so when you're back. */
 	public boolean recordDisconnects = true;
@@ -137,6 +143,7 @@ public final class NNConfig {
 				if (loaded.dismissedSuggestions == null) loaded.dismissedSuggestions = new java.util.ArrayList<>();
 				if (loaded.circles != null) loaded.circles.removeIf(c -> c == null || c.id == null || c.id.isBlank() || c.name == null || c.name.isBlank());
 				if (loaded.circles == null || loaded.circles.isEmpty()) loaded.circles = Friends.defaultCircles();
+				if (loaded.skippedVersion == null) loaded.skippedVersion = "";
 				if (loaded.whisperCommand == null || loaded.whisperCommand.isBlank()) loaded.whisperCommand = "msg";
 				INSTANCE = loaded;
 			}

@@ -110,6 +110,10 @@ public final class Profile {
 	public int[] hours;
 	/** Screenshots taken when they did something (killed you, came into your base), oldest first. */
 	public List<Evidence> evidence = new ArrayList<>();
+	/** Ping me whenever they say something in chat. */
+	public boolean notifyChat;
+	/** Tell me when they log in or out. */
+	public boolean notifyJoin;
 	/** Which list friends who shared their lists have them on. */
 	public List<FriendView> friendViews = new ArrayList<>();
 
@@ -408,7 +412,7 @@ public final class Profile {
 	/** Whether there's anything to them beyond having been seen: on a list, noted, did something, or said something. */
 	public boolean notable() {
 		if (verdict != Verdict.NONE || !details.isEmpty() || !groups.isEmpty() || !conversations.isEmpty() || !evidence.isEmpty()
-				|| !friendViews.isEmpty() || !pastNames.isEmpty()) return true;
+				|| !friendViews.isEmpty() || !pastNames.isEmpty() || notifyChat || notifyJoin) return true;
 		for (Action action : actions) {
 			if (action.kind != Kind.SEEN && action.kind != Kind.LISTED) return true;
 		}

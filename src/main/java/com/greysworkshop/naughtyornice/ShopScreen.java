@@ -39,7 +39,7 @@ import java.util.function.Consumer;
 public class ShopScreen extends Screen {
 	public enum Tab {
 		ALL("All"), NEARBY("Nearby"), ONLINE("Online"), OFFLINE("Offline"), FRIENDS("Friends"), NICE("Nice list"), LOOK("Look Into"), NAUGHTY("Naughty list"),
-		GROUPS("Groups"), CHAT("Chat"), SETTINGS("Settings");
+		GROUPS("Groups"), ACTIVITY("Activity"), CHAT("Chat"), SETTINGS("Settings");
 
 		final String label;
 
@@ -288,7 +288,7 @@ public class ShopScreen extends Screen {
 	private Profile circleMenu;
 	private int circleMenuX, circleMenuY;
 	private final List<Hit> menuHits = new ArrayList<>();
-	/** Settings opened from "Edit circles…" or /nn disconnects: scroll down to that card. */
+	/** Settings opened from "Edit friend types…" or /nn disconnects: scroll down to that card. */
 	private boolean scrollToCircles;
 	private boolean scrollToDisconnects;
 	/** Settings: the box for naming circles, and the circle being renamed (null to make a new one). */
@@ -465,9 +465,9 @@ public class ShopScreen extends Screen {
 			query = q.trim();
 			scroll = 0;
 			cachedResults = null;
-			if (selected != null || tab == Tab.SETTINGS) {
+			if (selected != null || tab == Tab.SETTINGS || tab == Tab.ACTIVITY) {
 				selected = null;
-				if (tab == Tab.SETTINGS) tab = Tab.ALL;
+				if (tab == Tab.SETTINGS || tab == Tab.ACTIVITY) tab = Tab.ALL;
 			}
 		});
 		addDrawableChild(search);
@@ -515,7 +515,7 @@ public class ShopScreen extends Screen {
 		circleField.setEditableColor(TEXT);
 		circleField.setTextShadow(false);
 		circleField.setMaxLength(Friends.NAME_MAX);
-		circleField.setPlaceholder(Text.literal("New circle, e.g. Old crew, Discord friends").withColor(MUTED));
+		circleField.setPlaceholder(Text.literal("New friend type, e.g. Old friend, Discord friend").withColor(MUTED));
 		circleField.setText(typedCircle);
 		addDrawableChild(circleField);
 
@@ -925,6 +925,7 @@ public class ShopScreen extends Screen {
 
 	private void renderPage(DrawContext context, int mouseX, int mouseY) {
 		hits.clear();
+		chartTip = null;
 		// Under the panels, nothing reacts to the mouse.
 		if (modal()) {
 			mouseX = -1000;
@@ -932,12 +933,22 @@ public class ShopScreen extends Screen {
 		}
 		context.fill(0, 0, width, height, PAGE);
 		if (tab == Tab.SETTINGS) renderSettings(context, mouseX, mouseY);
+		else if (tab == Tab.ACTIVITY && selected == null) renderActivity(context, mouseX, mouseY);
 		else if (selected != null) renderDetail(context, mouseX, mouseY);
 		else if (tab == Tab.CHAT) renderChat(context, mouseX, mouseY);
 		else if (tab == Tab.GROUPS && openGroup == null) renderGroups(context, mouseX, mouseY);
 		else renderList(context, mouseX, mouseY);
 		renderHeader(context, mouseX, mouseY);
 		renderBanner(context, mouseX, mouseY);
+		// Whatever's under the mouse explains itself, on top of everything.
+		if (chartTip != null) chartTooltip(context, chartTip, chartTipX, chartTipY);
+	}
+
+	/** Shows a tooltip by the mouse this frame. */
+	private void tooltip(int mouseX, int mouseY, String... lines) {
+		chartTip = List.of(lines);
+		chartTipX = mouseX;
+		chartTipY = mouseY;
 	}
 
 	@Override
@@ -1061,6 +1072,7 @@ public class ShopScreen extends Screen {
 				case NAUGHTY -> "Naughty";
 				case LOOK -> "Look";
 				case GROUPS -> "Groups";
+				case ACTIVITY -> "Activity";
 				case CHAT -> "Chat";
 				case SETTINGS -> "Settings";
 			};
@@ -1221,7 +1233,7 @@ public class ShopScreen extends Screen {
 					int countW = textRenderer.getWidth(count);
 					boolean cHover = over(mouseX, mouseY, x, y - 1, SIDEBAR, 11);
 					boolean cActive = tab == Tab.FRIENDS && c.id.equals(friendCircle);
-					context.fill(x + 6, y + 2, x + 11, y + 7, GROUP_COLORS[c.color % GROUP_COLORS.length]);
+					text(context, "★", x + 4, y, GROUP_COLORS[c.color % GROUP_COLORS.length]);
 					context.drawText(textRenderer, Text.literal(fit(c.name, SIDEBAR - 16 - countW)).styled(st -> st.withUnderline(cHover).withBold(cActive)),
 							x + 14, y, cHover ? HOVER_LINK : LINK, false);
 					text(context, count, x + SIDEBAR - countW, y, MUTED);
@@ -1284,7 +1296,7 @@ public class ShopScreen extends Screen {
 			y += 11;
 		}
 		if (groups.isEmpty()) {
-			for (var line : textRenderer.wrapLines(Text.literal("Group people who are teamed up or work together."), SIDEBAR)) {
+			for (var line : textRenderer.wrapLines(Text.literal("Who plays together: crews, teams, alts."), SIDEBAR)) {
 				context.drawText(textRenderer, line, x, y, MUTED, false);
 				y += 10;
 			}
@@ -1329,7 +1341,7 @@ public class ShopScreen extends Screen {
 			case NEARBY -> "Nobody's in sight right now.";
 			case OFFLINE -> "Nobody remembered yet. Everyone you see in game or on the tab list is remembered here once they log off.";
 			case FRIENDS -> friendCircle == null ? "No friends yet. Press the ☆ on anyone's card to make them a friend."
-					: "Nobody in this circle yet. Press the ★ on a friend's card to move them here.";
+					: "No friends of this type yet. Press the ★ on a friend's card to change their type.";
 			case NICE -> "Your Nice list is empty.";
 			case NAUGHTY -> "Your Naughty list is empty.";
 			case LOOK -> "Nobody to look into. Put anyone you're unsure about here with the Look Into button; players who do something good or bad show up here too.";
@@ -1371,7 +1383,7 @@ public class ShopScreen extends Screen {
 		roundedBorder(context, x, y, w, h, CARD, BORDER);
 		int cx = x + 6;
 		int cy = y + 5;
-		String edit = "Edit circles";
+		String edit = "Edit friend types";
 		int editW = textRenderer.getWidth(edit);
 		int right = x + w - 12 - editW;
 		List<Profile> friends = mod.ledger.onList(Profile.Verdict.FRIEND);
@@ -1388,7 +1400,7 @@ public class ShopScreen extends Screen {
 		});
 		String about;
 		if (open == null) {
-			about = "Friends are people you know, kept apart from Nice, Look Into and Naughty. Press ★ on a card to pick their circle.";
+			about = "Friends are people you know. Their type says how (close friend, base mate...). Who plays with whom is Groups, a separate tab.";
 		} else {
 			List<String> parts = new ArrayList<>();
 			parts.add(open.trusted ? "Trusted at your bases (no Base Insurance alerts)" : "Not trusted at your bases");
@@ -1406,7 +1418,7 @@ public class ShopScreen extends Screen {
 		if (x + cw > right) return x;
 		boolean hover = over(mouseX, mouseY, x, y, cw, 13) && mouseY > BODY + 17;
 		roundedBorder(context, x, y, cw, 13, on ? tint(color, CARD, 0.25f) : hover ? HOVER_BG : CARD, on ? color : hover ? HOVER_BORDER : BORDER);
-		context.fill(x + 5, y + 4, x + 10, y + 9, color);
+		text(context, "★", x + 4, y + 3, color);
 		context.drawText(textRenderer, shown, x + 13, y + 3, on ? color : TEXT, false);
 		hit(x, y, cw, 13, id, run);
 		return x + cw + 4;
@@ -1494,7 +1506,13 @@ public class ShopScreen extends Screen {
 		}
 		String headline = headline(p);
 		boolean bad = p.score() < 0 && !headline.startsWith("\"") && !headline.startsWith("Said:");
-		textTrim(context, headline.isEmpty() ? whereabouts(p) : headline, tx, y + 39, tw + 14, headline.isEmpty() ? MUTED : bad ? NAUGHTY : MUTED);
+		int hx = tx;
+		if (tab == Tab.LOOK) {
+			// Look Into: switch each person's chat and log in/out notes on and off right here.
+			hx = notifyChip(context, mouseX, mouseY, hx, y + 38, "Chat", p.notifyChat, "notify-chat:" + p.name, () -> toggleNotify(p, true)) + 3;
+			hx = notifyChip(context, mouseX, mouseY, hx, y + 38, "Log in/out", p.notifyJoin, "notify-join:" + p.name, () -> toggleNotify(p, false)) + 4;
+		}
+		textTrim(context, headline.isEmpty() ? whereabouts(p) : headline, hx, y + 39, tw + 14 - (hx - tx), headline.isEmpty() ? MUTED : bad ? NAUGHTY : MUTED);
 
 		// The three big buttons: Nice, Look Into, Naughty.
 		int by = y + CARD_H - 20;
@@ -1516,6 +1534,10 @@ public class ShopScreen extends Screen {
 		String glyph = friend || hover ? "★" : "☆";
 		text(context, glyph, x + (12 - textRenderer.getWidth(glyph)) / 2 + 1, y + 2, color);
 		hit(x, y, 12, 12, "star:" + p.name, () -> starClicked(p, x - 80, y + 13));
+		if (hover) {
+			if (friend) tooltip(mouseX, mouseY, "★ " + Friends.circleName(p), "Change their friend type, or stop being friends");
+			else tooltip(mouseX, mouseY, "☆ Make " + p.name + " a friend", "Someone you know, not just someone who behaves");
+		}
 	}
 
 	/** Not a friend yet: they become one (in the circle being looked at, or the first). A friend: pick their circle. */
@@ -1560,7 +1582,7 @@ public class ShopScreen extends Screen {
 		List<Friends.Circle> circles = Friends.circles();
 		int w = 0;
 		for (Friends.Circle c : circles) w = Math.max(w, textRenderer.getWidth(Text.literal(c.name).styled(st -> st.withBold(true))));
-		w = Math.max(w + 34, textRenderer.getWidth("Edit circles…") + 24);
+		w = Math.max(w + 34, textRenderer.getWidth("Edit friend types…") + 24);
 		int rowH = 13;
 		int h = 16 + (circles.size() + 2) * rowH + 6;
 		int x = Math.max(4, Math.min(circleMenuX, width - w - 4));
@@ -1574,8 +1596,8 @@ public class ShopScreen extends Screen {
 			boolean hover = over(mouseX, mouseY, x + 2, ry, w - 4, rowH);
 			if (hover) context.fill(x + 2, ry, x + w - 2, ry + rowH, HOVER_BG);
 			int color = GROUP_COLORS[c.color % GROUP_COLORS.length];
-			context.fill(x + 6, ry + 4, x + 11, ry + 9, color);
-			context.drawText(textRenderer, Text.literal(c.name).styled(s -> s.withBold(c == current)), x + 15, ry + 3, c == current ? color : TEXT, false);
+			text(context, "★", x + 5, ry + 3, color);
+			context.drawText(textRenderer, Text.literal(c.name).styled(s -> s.withBold(c == current)), x + 16, ry + 3, c == current ? color : TEXT, false);
 			if (c == current) text(context, "✔", x + w - 12, ry + 3, color);
 			menuHits.add(new Hit(x + 2, ry, x + w - 2, ry + rowH, "circle-pick:" + c.name, () -> {
 				circleMenu = null;
@@ -1594,12 +1616,41 @@ public class ShopScreen extends Screen {
 		ry += rowH + 2;
 		boolean editHover = over(mouseX, mouseY, x + 2, ry, w - 4, rowH);
 		if (editHover) context.fill(x + 2, ry, x + w - 2, ry + rowH, HOVER_BG);
-		text(context, "Edit circles…", x + 15, ry + 3, LINK);
+		text(context, "Edit friend types…", x + 15, ry + 3, LINK);
 		menuHits.add(new Hit(x + 2, ry, x + w - 2, ry + rowH, "circle-edit", () -> {
 			circleMenu = null;
 			showTab(Tab.SETTINGS);
 			scrollToCircles = true;
 		}));
+	}
+
+	/** A small on/off chip: "♪ Chat" when off, "✔ Chat" when on. Returns the x after it. */
+	private int notifyChip(DrawContext context, int mouseX, int mouseY, int x, int y, String label, boolean on, String id, Runnable run) {
+		// Ticked and amber when on, so it's not told by colour alone.
+		String shown = (on ? "✔ " : "♪ ") + label;
+		int w = textRenderer.getWidth(shown) + 8;
+		boolean hover = over(mouseX, mouseY, x, y, w, 11) && mouseY > BODY + 17;
+		roundedBorder(context, x, y, w, 11, on ? LOOK_BG : hover ? HOVER_BG : CARD, on ? LOOK : hover ? HOVER_BORDER : BORDER);
+		text(context, shown, x + 4, y + 2, on ? LOOK : MUTED);
+		hit(x, y, w, 11, id, run);
+		return x + w;
+	}
+
+	/** Turns a player's chat notes (or log in/out notes) on or off, with undo. */
+	private void toggleNotify(Profile p, boolean chat) {
+		boolean on = chat ? !p.notifyChat : !p.notifyJoin;
+		if (chat) p.notifyChat = on;
+		else p.notifyJoin = on;
+		mod.ledger.markDirty();
+		mod.ledger.save(false);
+		String what = chat ? "says something in chat" : "logs in or out";
+		flash(on ? "You'll be told when " + p.name + " " + what : "No more notes when " + p.name + " " + what, on ? LOOK : MUTED, () -> {
+			if (chat) p.notifyChat = !on;
+			else p.notifyJoin = !on;
+			mod.ledger.markDirty();
+			mod.ledger.save(false);
+			flash("Undone", MUTED, null);
+		});
 	}
 
 	/** Their groups as small coloured chips from {@code x}, as many as fit before {@code right} (then "+n"). */
@@ -1685,7 +1736,7 @@ public class ShopScreen extends Screen {
 
 	private double maxScroll() {
 		if (selected == null && tab == Tab.CHAT) return chatMaxScroll;
-		int top = selected != null || tab == Tab.SETTINGS ? BODY : BODY + 17;
+		int top = selected != null || tab == Tab.SETTINGS || tab == Tab.ACTIVITY ? BODY : BODY + 17;
 		return Math.max(0, contentHeight - (height - top));
 	}
 
@@ -1985,7 +2036,7 @@ public class ShopScreen extends Screen {
 			String name = verdictMark(other.verdict) + other.name;
 			context.drawText(textRenderer, Text.literal(name).styled(s -> s.withBold(true)), x + 26, y + 4, c, false);
 			int nx = x + 26 + textRenderer.getWidth(Text.literal(name).styled(s -> s.withBold(true))) + 6;
-			if (link.looksLikeAlt()) {
+			if (mod.ledger.links.looksLikeAlt(link)) {
 				String alt = "Maybe an alt";
 				int aw = textRenderer.getWidth(alt) + 6;
 				rounded(context, nx, y + 3, aw, 10, LOOK_BG);
@@ -1999,7 +2050,7 @@ public class ShopScreen extends Screen {
 				text(context, tag, nx, y + 4, gc);
 				nx += textRenderer.getWidth(tag) + 4;
 			}
-			textTrim(context, link.describe() + " · last " + ago(link.last), x + 26, y + 15, w - 32, MUTED);
+			textTrim(context, mod.ledger.links.describe(link, p.id) + " · last " + ago(link.last), x + 26, y + 15, w - 32, MUTED);
 			hit(x, y, w, h, "link:" + other.name, () -> open(other));
 			y += h + 4;
 		}
@@ -2268,7 +2319,7 @@ public class ShopScreen extends Screen {
 			List<String> with = new ArrayList<>();
 			for (Links.Link link : links) {
 				Profile other = mod.ledger.get(link.other(p.id));
-				if (other != null && with.size() < 3) with.add(other.name + (link.looksLikeAlt() ? " (maybe an alt)" : ""));
+				if (other != null && with.size() < 3) with.add(other.name + (mod.ledger.links.looksLikeAlt(link) ? " (maybe an alt)" : ""));
 			}
 			if (!with.isEmpty()) facts.add("Often seen with " + join(with) + (links.size() > 3 ? " and " + (links.size() - 3) + " more" : ""));
 		}
@@ -2443,7 +2494,7 @@ public class ShopScreen extends Screen {
 		int y = BODY + 6;
 		boolean friend = p.verdict == Profile.Verdict.FRIEND;
 		int circleRows = friend ? Friends.circles().size() : 0;
-		int h = 248 + circleRows * 14;
+		int h = 248 + circleRows * 14 + 40;
 		roundedBorder(context, x, y, w, h, CARD, BORDER);
 		int ix = x + 10;
 		int iw = w - 20;
@@ -2474,8 +2525,8 @@ public class ShopScreen extends Screen {
 				boolean on = c == current;
 				boolean hover = over(mouseX, mouseY, cx, cy, cw, 12);
 				roundedBorder(context, cx, cy, cw, 12, on ? tint(color, CARD, 0.25f) : hover ? HOVER_BG : CARD, on ? color : BORDER);
-				context.fill(cx + 4, cy + 4, cx + 8, cy + 8, color);
-				textTrim(context, c.name, cx + 11, cy + 2, cw - 24, on ? color : TEXT);
+				text(context, "★", cx + 2, cy + 2, color);
+				textTrim(context, c.name, cx + 13, cy + 2, cw - 26, on ? color : TEXT);
 				if (on) text(context, "✔", cx + cw - 11, cy + 2, color);
 				hit(cx, cy, cw, 12, "page-circle:" + c.name, () -> makeFriend(p, c));
 			}
@@ -2511,6 +2562,12 @@ public class ShopScreen extends Screen {
 		ty += 13;
 		link(context, mouseX, mouseY, ix, ty, "⇄ Share this player", "share-player", () -> sharePlayer(p));
 		ty += 17;
+
+		context.drawText(textRenderer, Text.literal("Notify me when they").styled(s -> s.withBold(true)), ix, ty, TEXT, false);
+		ty += 12;
+		checkboxSmall(context, mouseX, mouseY, ix, ty, "chat", p.notifyChat, "page-notify-chat", () -> toggleNotify(p, true));
+		checkboxSmall(context, mouseX, mouseY, ix + iw / 2 - 10, ty, "log in or out", p.notifyJoin, "page-notify-join", () -> toggleNotify(p, false));
+		ty += 16;
 
 		int g = p.groups.size();
 		context.drawText(textRenderer, Text.literal(g == 0 ? "In no groups" : g == 1 ? "In 1 group" : "In " + g + " groups").styled(s -> s.withBold(true)),
@@ -2611,6 +2668,9 @@ public class ShopScreen extends Screen {
 		if (!query.isEmpty()) text(context, "\"" + query + "\"", 8 + textRenderer.getWidth(summary), barY + 4, HOVER_LINK);
 		String newLabel = "+ New group";
 		int nw = textRenderer.getWidth(newLabel) + 12;
+		// What groups are, next to the count: they're not friend types.
+		int noteX = 8 + textRenderer.getWidth(summary + (query.isEmpty() ? "" : "\"" + query + "\"")) + 12;
+		textTrim(context, "Who plays together: crews, teams, alts. Anyone can be in one, friend or foe.", noteX, barY + 4, width - 8 - nw - 8 - noteX, MUTED);
 		pill(context, mouseX, mouseY, width - 8 - nw, barY + 2, nw, 12, newLabel, YELLOW, YELLOW_EDGE, BUTTON_TEXT, "new-group", () -> openGroupPanel(null, null));
 
 		int top = barY + 17;
@@ -2630,7 +2690,8 @@ public class ShopScreen extends Screen {
 			int ty = y + 10;
 			context.drawText(textRenderer, Text.literal("No groups yet").styled(s -> s.withBold(true)), left + 10, ty, TEXT, false);
 			ty += 13;
-			String help = "Group people you know are teamed up or associated: a base crew, a griefing group, someone's alts. "
+			String help = "A group is who plays together: a base crew, a griefing team, someone's alts. Anyone can be in one, friends and "
+					+ "Naughty players alike. (How you know your friends is their friend type, on the Friends tab.) "
 					+ "Their group shows on their card, page, nametag and in the Chat tab, so you can tell who's with who at a glance.";
 			for (var line : textRenderer.wrapLines(Text.literal(help), gridW - 20)) {
 				context.drawText(textRenderer, line, left + 10, ty, MUTED, false);
@@ -2666,7 +2727,7 @@ public class ShopScreen extends Screen {
 	private List<List<Profile>> suggestedGroups() {
 		if (suggestedGroups != null && suggestedVersion == mod.ledger.links.version() && suggestedChanges == mod.ledger.changes()) return suggestedGroups;
 		List<List<Profile>> found = new ArrayList<>();
-		for (List<UUID> cluster : mod.ledger.links.clusters(mod.ledger, 8)) {
+		for (List<UUID> cluster : mod.ledger.links.clusters(mod.ledger)) {
 			List<Profile> people = new ArrayList<>();
 			for (UUID id : cluster) {
 				Profile p = mod.ledger.get(id);
@@ -3374,6 +3435,17 @@ public class ShopScreen extends Screen {
 			int ox = qx + i * 14;
 			boolean on = v == target;
 			boolean bHover = over(mouseX, mouseY, ox, y, 12, 11);
+			if (bHover) {
+				String list = target == Profile.Verdict.FRIEND ? "Friends" : verdictWord(target) + " list";
+				tooltip(mouseX, mouseY, on ? "Take " + name + " off your " + list : verdictMark(target) + "Put " + name + " on your " + list,
+						switch (target) {
+							case FRIEND -> "Someone you know (pick their friend type on their page)";
+							case NICE -> "Behaves well";
+							case LOOK -> "Not sure yet: keep an eye on them";
+							case NAUGHTY -> "Trouble: you'll be warned when they're near or join";
+							default -> "";
+						});
+			}
 			int c = verdictColor(target);
 			roundedBorder(context, ox, y, 12, 11, on ? c : bHover ? tint(c, CARD, 0.3f) : tint(c, CARD, 0.12f), c);
 			String m = verdictMark(target).strip();
@@ -3567,11 +3639,13 @@ public class ShopScreen extends Screen {
 		}
 		if (BaseInsuranceBridge.present()) {
 			options.add(new Option("Nice list counts as Base Insurance friends", "Nice-list players get no Base Insurance alerts either, not just "
-					+ "friends in trusted circles.", () -> c.shareWithBaseInsurance, v -> {
+					+ "friend types trusted at your bases.", () -> c.shareWithBaseInsurance, v -> {
 						c.shareWithBaseInsurance = v;
 						Friends.resync(mod.ledger);
 					}));
 		}
+		options.add(new Option("Tell me about updates", "Once per game session, a note in chat when a newer version is out on GitHub, "
+				+ "with a download link. Nothing installs by itself.", () -> c.checkUpdates, v -> c.checkUpdates = v));
 		options.add(new Option("Record disconnects", "When you get disconnected: the reason, what did it (the server, a mod, an error) and who was near. "
 				+ "Told to you when you're back.", () -> c.recordDisconnects, v -> c.recordDisconnects = v));
 		options.add(new Option("Open share links from chat", "When someone sends you a Naughty or Nice share link in chat, offer a button to look at it.",
@@ -3735,7 +3809,7 @@ public class ShopScreen extends Screen {
 		y += 14;
 		for (var line : textRenderer.wrapLines(Text.literal("Your lists are saved per server in config/naughtyornice/lists, chat logs in config/naughtyornice/chatlogs. "
 				+ "Shared lists are saved in config/naughtyornice/shared. "
-				+ "Commands: /nn, /nn add, /nn friends, /nn chat, /nn groups, /nn share, /nn import, /nn check, /nn disconnects, /nn friend <name> [circle], "
+				+ "Commands: /nn, /nn add, /nn friends, /nn chat, /nn groups, /nn share, /nn import, /nn check, /nn disconnects, /nn friend <name> [type], "
 				+ "/nn nice <name>, /nn look <name>, /nn naughty <name>, /nn unsort <name>, /nn group <name> <group>, /nn chat <name>."), w)) {
 			context.drawText(textRenderer, line, x, y, MUTED, false);
 			y += 10;
@@ -3743,6 +3817,357 @@ public class ShopScreen extends Screen {
 		context.disableScissor();
 		contentHeight = y - y0 + 10;
 		scrollbar(context, BODY);
+	}
+
+	// ---- Activity: when the server is busy ----
+
+	/** The hover tooltip for the charts, drawn last so it's on top. */
+	private List<String> chartTip;
+	private int chartTipX, chartTipY;
+
+	private static final String[] DAYS = {"Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"};
+
+	/** "8pm", "midnight". */
+	private static String hourLabel(int h) {
+		return Profile.hourName(Math.floorMod(h, 24));
+	}
+
+	/** "12a", "3p": short, for the axis. */
+	private static String hourTick(int h) {
+		int twelve = h % 12 == 0 ? 12 : h % 12;
+		return twelve + (h < 12 ? "a" : "p");
+	}
+
+	/** The one-hue blue ramp for "how many": light to dark on the light theme, dark to light on the dark one. */
+	private static int ramp(double t) {
+		t = Math.max(0, Math.min(1, t));
+		boolean dark = NNConfig.INSTANCE.darkMode;
+		int low = dark ? 0xFF184F95 : 0xFFCDE2FB;
+		int high = dark ? 0xFFCDE2FB : 0xFF0D366B;
+		return tint(high, low, (float) t);
+	}
+
+	private static int barColor() {
+		return NNConfig.INSTANCE.darkMode ? 0xFF5598E7 : 0xFF3987E5;
+	}
+
+	private static String about(double players) {
+		return players < 0 ? "not enough yet" : "about " + Math.round(players) + " online";
+	}
+
+	private void renderActivity(DrawContext context, int mouseX, int mouseY) {
+		ServerActivity a = mod.ledger.activity;
+		int w = Math.min(720, width - 16);
+		int x = (width - w) / 2;
+		int y0 = BODY + 8 - (int) scroll;
+		int y = y0;
+		context.enableScissor(0, BODY, width, height);
+		big(context, "When " + Sharing.placeName(mod.ledger.key()) + " is busy", x, y, TEXT, 1.4f);
+		y += 18;
+
+		// Measured hours where there's enough, the estimate elsewhere.
+		double[] measured = a.byHour();
+		double[] estimate = ServerActivity.estimate(mod.ledger.all());
+		double[] shown = new double[24];
+		boolean[] estimated = new boolean[24];
+		int estimatedHours = 0;
+		for (int h = 0; h < 24; h++) {
+			shown[h] = measured[h] >= 0 ? measured[h] : estimate[h];
+			estimated[h] = measured[h] < 0 && estimate[h] >= 0;
+			if (estimated[h]) estimatedHours++;
+		}
+		int total = a.totalMinutes();
+		String from = total == 0 ? "Nothing measured yet: it counts who's on once a minute while you play."
+				: "Measured over " + duration(total * 60) + " of your time here since "
+				+ DAY.format(Instant.ofEpochMilli(a.since).atZone(ZoneId.systemDefault())) + ".";
+		if (estimatedHours > 0) from += " Hours marked Estimated come from when players were seen on, until there's enough measured.";
+		from += " Times are your local time.";
+		y = wrapped(context, from, x, y, w, MUTED, 3) + 6;
+
+		boolean any = false;
+		for (double v : shown) any |= v >= 0;
+		if (!any) {
+			roundedBorder(context, x, y, w, 40, CARD, BORDER);
+			wrapped(context, "Play a while on this server and this fills in: how many are on at each hour, the busiest and quietest times, "
+					+ "and when your Friends and Naughty list are usually on.", x + 10, y + 8, w - 20, MUTED, 3);
+			y += 50;
+			context.disableScissor();
+			contentHeight = y - y0 + 10;
+			return;
+		}
+
+		// Three tiles: busiest, quietest, now.
+		int len = 3;
+		int busy = ServerActivity.window(shown, len, true);
+		int quiet = ServerActivity.window(shown, len, false);
+		int tileW = (w - 12) / 3;
+		int hourNow = java.time.LocalTime.now().getHour();
+		int onNow = client.getNetworkHandler() == null ? 0 : Math.max(0, client.getNetworkHandler().getPlayerList().size() - 1);
+		double usual = shown[hourNow];
+		String nowNote = usual < 0 ? "no usual for " + hourLabel(hourNow) + " yet"
+				: onNow > usual * 1.25 + 1 ? "busier than usual (" + Math.round(usual) + ")"
+				: onNow < usual * 0.75 - 1 ? "quieter than usual (" + Math.round(usual) + ")" : "about usual for " + hourLabel(hourNow);
+		statTile(context, x, y, tileW, "Busiest", busy < 0 ? "-" : hourLabel(busy) + " to " + hourLabel(busy + len),
+				busy < 0 ? "" : about(ServerActivity.windowAverage(shown, busy, len)));
+		statTile(context, x + tileW + 6, y, tileW, "Quietest", quiet < 0 ? "-" : hourLabel(quiet) + " to " + hourLabel(quiet + len),
+				quiet < 0 ? "" : about(ServerActivity.windowAverage(shown, quiet, len)));
+		statTile(context, x + 2 * (tileW + 6), y, w - 2 * (tileW + 6), "Right now", onNow + " online", nowNote);
+		y += 50;
+
+		y = hourChart(context, mouseX, mouseY, a, shown, estimated, busy, len, x, y, w) + 10;
+		y = weekHeatmap(context, mouseX, mouseY, a, x, y, w) + 10;
+		y = listsByHour(context, mouseX, mouseY, x, y, w) + 6;
+		y = wrapped(context, "Counted once a minute while you're on (Settings: Track hours online). Saved per server with your lists.", x, y, w, MUTED, 2);
+
+		context.disableScissor();
+		contentHeight = y - y0 + 10;
+		scrollbar(context, BODY);
+	}
+
+	/** A hero number tile: a label, the value in bold, and a line under it. */
+	private void statTile(DrawContext context, int x, int y, int w, String label, String value, String note) {
+		roundedBorder(context, x, y, w, 44, CARD, BORDER);
+		textTrim(context, label, x + 8, y + 6, w - 16, MUTED);
+		context.drawText(textRenderer, Text.literal(fit(value, w - 20)).styled(s -> s.withBold(true)), x + 8, y + 18, TEXT, false);
+		textTrim(context, note, x + 8, y + 31, w - 16, MUTED);
+	}
+
+	/** Players online by hour of day: a bar per hour, the busiest stretch shaded, now marked. Returns the y after it. */
+	private int hourChart(DrawContext context, int mouseX, int mouseY, ServerActivity a, double[] shown, boolean[] estimated, int busy, int len,
+			int x, int y, int w) {
+		int h = 150;
+		roundedBorder(context, x, y, w, h, CARD, BORDER);
+		context.drawText(textRenderer, Text.literal("Players online by hour of day").styled(s -> s.withBold(true)), x + 10, y + 7, TEXT, false);
+		// Legend: measured and estimated.
+		int lx = x + w - 10;
+		String estLabel = "Estimated";
+		lx -= textRenderer.getWidth(estLabel);
+		text(context, estLabel, lx, y + 7, MUTED);
+		lx -= 12;
+		context.fill(lx, y + 7, lx + 8, y + 15, tint(barColor(), CARD, 0.4f));
+		context.drawStrokedRectangle(lx, y + 7, 8, 8, barColor());
+		lx -= 10;
+		String measLabel = "Measured";
+		lx -= textRenderer.getWidth(measLabel);
+		text(context, measLabel, lx, y + 7, MUTED);
+		lx -= 12;
+		context.fill(lx, y + 7, lx + 8, y + 15, barColor());
+
+		double max = 0;
+		for (double v : shown) max = Math.max(max, v);
+		double top = niceTop(max);
+		int axisW = textRenderer.getWidth(String.valueOf((int) top)) + 6;
+		int px = x + 10 + axisW;
+		int pw = w - 20 - axisW;
+		int py = y + 30;
+		int ph = h - 30 - 18;
+		int base = py + ph;
+		// Recessive grid: three lines with their values.
+		for (int i = 0; i <= 3; i++) {
+			int gy = base - (int) Math.round(ph * i / 3.0);
+			context.fill(px, gy, px + pw, gy + 1, i == 0 ? INPUT_BORDER : tint(BORDER, CARD, 0.6f));
+			String v = String.valueOf((int) Math.round(top * i / 3.0));
+			text(context, v, px - 4 - textRenderer.getWidth(v), gy - 4, MUTED);
+		}
+		double slot = pw / 24.0;
+		// The busiest stretch, shaded behind its bars.
+		if (busy >= 0) {
+			for (int i = 0; i < len; i++) {
+				int hh = (busy + i) % 24;
+				context.fill(px + (int) Math.round(hh * slot), py, px + (int) Math.round((hh + 1) * slot), base, tint(barColor(), CARD, 0.1f));
+			}
+		}
+		int hourNow = java.time.LocalTime.now().getHour();
+		int[] mine = a.minutesByHour();
+		for (int hh = 0; hh < 24; hh++) {
+			int bx0 = px + (int) Math.round(hh * slot) + 1;
+			int bx1 = px + (int) Math.round((hh + 1) * slot) - 1;
+			double v = shown[hh];
+			boolean hover = over(mouseX, mouseY, bx0 - 1, py, bx1 - bx0 + 2, ph + 12);
+			if (v >= 0) {
+				int bh = Math.max(v > 0 ? 2 : 0, (int) Math.round(ph * v / top));
+				int color = hover ? darken(barColor()) : barColor();
+				if (estimated[hh]) {
+					context.fill(bx0, base - bh, bx1, base, tint(color, CARD, 0.4f));
+					context.drawStrokedRectangle(bx0, base - bh, bx1 - bx0, bh, color);
+				} else {
+					context.fill(bx0, base - bh, bx1, base, color);
+				}
+			} else {
+				// No data: a dotted stub, so it reads as missing rather than zero.
+				for (int dx = bx0; dx < bx1; dx += 3) context.fill(dx, base - 2, dx + 1, base - 1, MUTED);
+			}
+			if (hh == hourNow) {
+				int cx = (bx0 + bx1) / 2;
+				context.fill(cx, py - 2, cx + 1, base, tint(HOVER_LINK, CARD, 0.6f));
+				text(context, "now", cx - textRenderer.getWidth("now") / 2, py - 11, HOVER_LINK);
+			}
+			if (hh % 3 == 0) {
+				String tick = hourTick(hh);
+				text(context, tick, bx0 + (bx1 - bx0 - textRenderer.getWidth(tick)) / 2, base + 4, MUTED);
+			}
+			if (hover) {
+				List<String> tip = new ArrayList<>();
+				tip.add(hourLabel(hh) + " to " + hourLabel(hh + 1));
+				if (v < 0) {
+					tip.add("Not enough seen yet");
+				} else {
+					tip.add(about(v) + (estimated[hh] ? " (estimated)" : ""));
+					int peak = a.peakByHour(hh);
+					if (peak > 0) tip.add("Most at once: " + peak);
+				}
+				if (mine[hh] > 0) tip.add("Your time here: " + duration(mine[hh] * 60));
+				chartTip = tip;
+				chartTipX = mouseX;
+				chartTipY = mouseY;
+			}
+		}
+		return y + h;
+	}
+
+	/** A round number at or above {@code max}, for the top of an axis (divides into three). */
+	private static double niceTop(double max) {
+		double[] steps = {3, 6, 9, 12, 15, 30, 45, 60, 90, 120, 150, 300, 600, 900, 1200, 1500, 3000};
+		for (double step : steps) {
+			if (max <= step) return step;
+		}
+		return Math.ceil(max / 300) * 300;
+	}
+
+	/** Day by hour: a cell per hour of the week, darker for busier. Returns the y after it. */
+	private int weekHeatmap(DrawContext context, int mouseX, int mouseY, ServerActivity a, int x, int y, int w) {
+		double max = 0;
+		boolean any = false;
+		for (int c = 0; c < ServerActivity.CELLS; c++) {
+			double v = a.average(c);
+			if (v >= 0) {
+				any = true;
+				max = Math.max(max, v);
+			}
+		}
+		int labelW = textRenderer.getWidth("Wed") + 6;
+		int cellH = 12;
+		int h = 22 + 7 * cellH + 30;
+		roundedBorder(context, x, y, w, h, CARD, BORDER);
+		context.drawText(textRenderer, Text.literal("By day and hour").styled(s -> s.withBold(true)), x + 10, y + 7, TEXT, false);
+		int px = x + 10 + labelW;
+		int pw = w - 20 - labelW;
+		int py = y + 20;
+		double slot = pw / 24.0;
+		java.time.LocalDateTime now = java.time.LocalDateTime.now();
+		int nowCell = ServerActivity.cell(now.getDayOfWeek(), now.getHour());
+		for (int d = 0; d < 7; d++) {
+			int ry = py + d * cellH;
+			text(context, DAYS[d], x + 10, ry + 2, MUTED);
+			for (int hh = 0; hh < 24; hh++) {
+				int c = d * 24 + hh;
+				int cx0 = px + (int) Math.round(hh * slot) + 1;
+				int cx1 = px + (int) Math.round((hh + 1) * slot) - 1;
+				double v = a.average(c);
+				boolean hover = over(mouseX, mouseY, cx0 - 1, ry, cx1 - cx0 + 2, cellH);
+				if (v >= 0) {
+					context.fill(cx0, ry + 1, cx1, ry + cellH - 1, ramp(max <= 0 ? 0 : v / max));
+				} else {
+					// Not enough of your time in this hour yet: an empty outline.
+					context.drawStrokedRectangle(cx0, ry + 1, cx1 - cx0, cellH - 2, tint(BORDER, CARD, 0.7f));
+				}
+				if (c == nowCell) context.drawStrokedRectangle(cx0 - 1, ry, cx1 - cx0 + 2, cellH, HOVER_LINK);
+				if (hover) {
+					context.drawStrokedRectangle(cx0 - 1, ry, cx1 - cx0 + 2, cellH, TEXT);
+					List<String> tip = new ArrayList<>();
+					tip.add(DAYS[d] + " " + hourLabel(hh) + " to " + hourLabel(hh + 1));
+					tip.add(v < 0 ? "Not enough seen yet" : about(v));
+					if (a.peak[c] > 0) tip.add("Most at once: " + a.peak[c]);
+					tip.add("Your time here: " + (a.minutes[c] == 0 ? "none" : duration(a.minutes[c] * 60)));
+					chartTip = tip;
+					chartTipX = mouseX;
+					chartTipY = mouseY;
+				}
+			}
+		}
+		int ty = py + 7 * cellH + 3;
+		for (int hh = 0; hh < 24; hh += 3) {
+			String tick = hourTick(hh);
+			int cx = px + (int) Math.round((hh + 0.5) * slot);
+			text(context, tick, cx - textRenderer.getWidth(tick) / 2, ty, MUTED);
+		}
+		ty += 13;
+		if (any) {
+			// Legend: the ramp from fewer to more, with the numbers at each end.
+			String low = "Fewer (0)";
+			String high = "More (" + Math.round(max) + ")";
+			int gx = px;
+			text(context, low, gx, ty, MUTED);
+			gx += textRenderer.getWidth(low) + 6;
+			int gw = 80;
+			for (int i = 0; i < gw; i++) context.fill(gx + i, ty + 1, gx + i + 1, ty + 8, ramp(i / (double) (gw - 1)));
+			gx += gw + 6;
+			text(context, high, gx, ty, MUTED);
+			gx += textRenderer.getWidth(high) + 12;
+			context.drawStrokedRectangle(gx, ty, 8, 9, tint(BORDER, CARD, 0.7f));
+			text(context, "Not seen yet", gx + 12, ty, MUTED);
+		} else {
+			textTrim(context, "Fills in hour by hour as you play (each hour needs " + ServerActivity.ENOUGH + " minutes of your time).", px, ty, pw, MUTED);
+		}
+		return y + h;
+	}
+
+	/** When each of your lists is usually on: a strip per list across the day, and its usual hours. Returns the y after it. */
+	private int listsByHour(DrawContext context, int mouseX, int mouseY, int x, int y, int w) {
+		Profile.Verdict[] lists = {Profile.Verdict.FRIEND, Profile.Verdict.NICE, Profile.Verdict.LOOK, Profile.Verdict.NAUGHTY};
+		int rowH = 14;
+		int h = 22 + lists.length * rowH + 4;
+		roundedBorder(context, x, y, w, h, CARD, BORDER);
+		context.drawText(textRenderer, Text.literal("When your lists are on").styled(s -> s.withBold(true)), x + 10, y + 7, TEXT, false);
+		int labelW = textRenderer.getWidth("? Look Into") + 8;
+		int usualW = Math.min(150, w / 4);
+		int px = x + 10 + labelW;
+		int pw = w - 20 - labelW - usualW - 8;
+		double slot = pw / 24.0;
+		int ry = y + 20;
+		for (Profile.Verdict v : lists) {
+			Profile sum = new Profile();
+			sum.hours = new int[24];
+			int people = 0;
+			for (Profile p : mod.ledger.onList(v)) {
+				if (p.hours == null) continue;
+				people++;
+				for (int hh = 0; hh < 24; hh++) sum.hours[hh] += p.hours[hh];
+			}
+			int max = 0;
+			for (int m : sum.hours) max = Math.max(max, m);
+			int color = verdictColor(v);
+			text(context, verdictMark(v) + verdictWord(v), x + 10, ry + 2, color);
+			for (int hh = 0; hh < 24; hh++) {
+				int cx0 = px + (int) Math.round(hh * slot) + 1;
+				int cx1 = px + (int) Math.round((hh + 1) * slot) - 1;
+				int m = sum.hours[hh];
+				if (max > 0 && m > 0) context.fill(cx0, ry + 1, cx1, ry + rowH - 3, tint(color, CARD, 0.12f + 0.88f * m / max));
+				else context.fill(cx0, ry + rowH - 5, cx1, ry + rowH - 4, tint(BORDER, CARD, 0.6f));
+				if (over(mouseX, mouseY, cx0 - 1, ry, cx1 - cx0 + 2, rowH)) {
+					chartTip = List.of(verdictWord(v) + " · " + hourLabel(hh) + " to " + hourLabel(hh + 1),
+							m == 0 ? "None of them seen on then" : duration(m * 60) + " of them online, all together");
+					chartTipX = mouseX;
+					chartTipY = mouseY;
+				}
+			}
+			String usual = people == 0 ? "no one seen yet" : sum.usuallyOn() == null ? "not enough yet" : "mostly " + sum.usuallyOn();
+			textTrim(context, usual, x + w - 10 - usualW, ry + 2, usualW, MUTED);
+			ry += rowH;
+		}
+		return y + h;
+	}
+
+	/** A small card by the mouse with a few lines, kept on screen. */
+	private void chartTooltip(DrawContext context, List<String> lines, int mx, int my) {
+		int tw = textRenderer.getWidth(Text.literal(lines.get(0)).styled(s -> s.withBold(true)));
+		for (String line : lines) tw = Math.max(tw, textRenderer.getWidth(line));
+		int th = lines.size() * 10 + 6;
+		int tx = Math.max(2, Math.min(mx + 10, width - tw - 14));
+		int ty = Math.max(BODY + 2, Math.min(my - th - 4, height - th - 4));
+		roundedBorder(context, tx, ty, tw + 10, th, CARD, HOVER_BORDER);
+		context.drawText(textRenderer, Text.literal(lines.get(0)).styled(s -> s.withBold(true)), tx + 5, ty + 4, TEXT, false);
+		for (int i = 1; i < lines.size(); i++) text(context, lines.get(i), tx + 5, ty + 4 + i * 10, MUTED);
 	}
 
 	// ---- Disconnects ----
@@ -3840,11 +4265,11 @@ public class ShopScreen extends Screen {
 	private int circlesCard(DrawContext context, int mouseX, int mouseY, int x, int y, int w) {
 		List<Friends.Circle> circles = Friends.circles();
 		int rowH = 28;
-		String about = "Kinds of friends. New friends go in the top one. Click a colour to change it, a name to rename it.";
+		String about = "How you know your friends. New friends get the top one. Click a colour to change it, a name to rename it. (Groups are different: who plays together.)";
 		int aboutLines = Math.min(3, textRenderer.wrapLines(Text.literal(about), w - 20).size());
 		int h = 26 + aboutLines * 10 + circles.size() * rowH + 24;
 		roundedBorder(context, x, y, w, h, CARD, BORDER);
-		context.drawText(textRenderer, Text.literal("Friend circles").styled(s -> s.withBold(true)), x + 10, y + 7, TEXT, false);
+		context.drawText(textRenderer, Text.literal("Friend types").styled(s -> s.withBold(true)), x + 10, y + 7, TEXT, false);
 		wrapped(context, about, x + 10, y + 19, w - 20, MUTED, 3);
 		int ry = y + 22 + aboutLines * 10;
 		for (int i = 0; i < circles.size(); i++) {
@@ -3854,7 +4279,8 @@ public class ShopScreen extends Screen {
 			if (rowHover) context.fill(x + 4, ry - 2, x + w - 4, ry + rowH - 4, HOVER_BG);
 			// Colour: click for the next one.
 			boolean swatchHover = over(mouseX, mouseY, x + 10, ry, 10, 10);
-			roundedBorder(context, x + 10, ry, 10, 10, color, swatchHover ? TEXT : tint(color, CARD, 0.5f));
+			if (swatchHover) roundedBorder(context, x + 9, ry - 1, 12, 12, CARD, TEXT);
+			text(context, "★", x + 11, ry + 1, color);
 			hit(x + 10, ry, 10, 10, "circle-color:" + c.name, () -> {
 				c.color = (c.color + 1) % Ledger.GROUP_COLORS;
 				NNConfig.save();
@@ -3889,7 +4315,7 @@ public class ShopScreen extends Screen {
 		}
 		// The box: rename the circle being edited, or make a new one.
 		int fy = ry + 2;
-		String button = circleEditing != null ? "Rename" : "+ Add circle";
+		String button = circleEditing != null ? "Rename" : "+ Add type";
 		int bw = textRenderer.getWidth(button) + 14;
 		int cancelW = circleEditing != null ? textRenderer.getWidth("Cancel") + 12 : 0;
 		int fw = w - 20 - bw - 6 - (cancelW > 0 ? cancelW + 4 : 0);
@@ -3947,17 +4373,17 @@ public class ShopScreen extends Screen {
 		if (circleEditing != null) {
 			String was = circleEditing.name;
 			if (!Friends.rename(circleEditing, name)) {
-				flash("There's already a circle called " + name, NAUGHTY, null);
+				flash("There's already a friend type called " + name, NAUGHTY, null);
 				return;
 			}
 			flash("Renamed " + was + " to " + circleEditing.name, FRIEND, null);
 		} else {
 			Friends.Circle made = Friends.add(name);
 			if (made == null) {
-				flash(Friends.circles().size() >= Friends.MAX ? "That's the most circles there can be (" + Friends.MAX + ")" : "There's already a circle called " + name, NAUGHTY, null);
+				flash(Friends.circles().size() >= Friends.MAX ? "That's the most friend types there can be (" + Friends.MAX + ")" : "There's already a friend type called " + name, NAUGHTY, null);
 				return;
 			}
-			flash("Made the circle " + made.name + ". Press ★ on a friend's card to put them in it.", FRIEND, null);
+			flash("Made the friend type " + made.name + ". Press ★ on a friend's card to give it to them.", FRIEND, null);
 		}
 		cancelCircleEdit();
 	}
@@ -4499,18 +4925,18 @@ public class ShopScreen extends Screen {
 		ty += 20;
 
 		// Which circle "★ Friends" puts them in.
-		String circleLabel = "Friend circle: ";
+		String circleLabel = "Friend type: ";
 		text(context, circleLabel, ix, ty + 2, MUTED);
 		int ccx = ix + textRenderer.getWidth(circleLabel);
 		for (Friends.Circle c : Friends.circles()) {
-			int cw = textRenderer.getWidth(c.name) + 14;
+			int cw = textRenderer.getWidth(c.name) + 16;
 			if (ccx + cw > ix + iw) break;
 			boolean on = c.id.equals(addCircle);
 			boolean hover = over(mouseX, mouseY, ccx, ty, cw, 12);
 			int color = GROUP_COLORS[c.color % GROUP_COLORS.length];
 			roundedBorder(context, ccx, ty, cw, 12, on ? tint(color, CARD, 0.25f) : hover ? HOVER_BG : CARD, on ? color : BORDER);
-			context.fill(ccx + 4, ty + 4, ccx + 8, ty + 8, color);
-			text(context, c.name, ccx + 10, ty + 2, on ? color : TEXT);
+			text(context, "★", ccx + 2, ty + 2, color);
+			text(context, c.name, ccx + 12, ty + 2, on ? color : TEXT);
 			panelHits.add(new Hit(ccx, ty, ccx + cw, ty + 12, "add-circle:" + c.name, () -> {
 				addCircle = c.id;
 				addTarget = Profile.Verdict.FRIEND;

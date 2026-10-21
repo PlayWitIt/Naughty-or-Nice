@@ -63,6 +63,13 @@ public final class Commands {
 					NaughtyOrNiceClient.INSTANCE.openLater(new ShopScreen().withShareLink(link));
 					return 1;
 				})))
+				.then(literal("update").then(literal("skip").then(argument("version", StringArgumentType.word()).executes(c -> {
+					NNConfig.INSTANCE.skippedVersion = StringArgumentType.getString(c, "version");
+					NNConfig.save();
+					c.getSource().sendFeedback(Alerts.prefix().append(Text.literal("You won't be told about " + NNConfig.INSTANCE.skippedVersion
+							+ " again. Newer versions still get a note.").formatted(Formatting.GRAY)));
+					return 1;
+				}))))
 				.then(literal("disconnects").executes(c -> {
 					NaughtyOrNiceClient.INSTANCE.openLater(new ShopScreen().withDisconnects());
 					return 1;
@@ -163,7 +170,7 @@ public final class Commands {
 		String circleName = StringArgumentType.getString(c, "circle");
 		Friends.Circle circle = Friends.byName(circleName);
 		if (circle == null) {
-			c.getSource().sendError(Text.literal("No circle called \"" + circleName + "\". Your circles: "
+			c.getSource().sendError(Text.literal("No friend type called \"" + circleName + "\". Your friend types: "
 					+ String.join(", ", Friends.circles().stream().map(x -> x.name).toList())));
 			return 0;
 		}
