@@ -1,0 +1,13 @@
+{
+	"required": true,
+	"package": "com.greysworkshop.naughtyornice.mixin",
+	"compatibilityLevel": "JAVA_21",
+	"client": [
+		"ClientPlayNetworkHandlerMixin",
+		"PlayerEntityMixin",
+		"PlayerListHudMixin"
+	],
+	"injectors": {
+		"defaultRequire": 1
+	}
+}

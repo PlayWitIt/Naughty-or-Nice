@@ -1,0 +1,34 @@
+{
+	"schemaVersion": 1,
+	"id": "naughtyornice",
+	"version": "${version}",
+	"name": "Naughty or Nice",
+	"description": "Keep a Nice list, a Look Into list and a Naughty list of players, with one click, and group people who are teamed up. Watches what players do around you (hitting you, killing, griefing your base, being friendly) and rates them, marks them on nametags and the tab list, warns you when someone naughty shows up, and has a chat tab that marks who is who. Client-side only.",
+	"authors": [
+		"PlayWit Creation"
+	],
+	"license": "MIT",
+	"environment": "client",
+	"entrypoints": {
+		"client": [
+			"com.greysworkshop.naughtyornice.NaughtyOrNiceClient"
+		],
+		"modmenu": [
+			"com.greysworkshop.naughtyornice.ModMenuIntegration"
+		]
+	},
+	"mixins": [
+		"naughtyornice.mixins.json"
+	],
+	"depends": {
+		"fabricloader": ">=0.18.0",
+		"minecraft": "~1.21.11",
+		"java": ">=21",
+		"fabric-api": "*"
+	},
+	"suggests": {
+		"modmenu": "*",
+		"baseinsurance": "*"
+	},
+	"icon": "assets/naughtyornice/icon.png"
+}
