@@ -3,6 +3,8 @@
 	"package": "com.greysworkshop.naughtyornice.mixin",
 	"compatibilityLevel": "JAVA_21",
 	"client": [
+		"ClientCommonNetworkHandlerMixin",
+		"ClientConnectionMixin",
 		"ClientPlayNetworkHandlerMixin",
 		"PlayerEntityMixin",
 		"PlayerListHudMixin"

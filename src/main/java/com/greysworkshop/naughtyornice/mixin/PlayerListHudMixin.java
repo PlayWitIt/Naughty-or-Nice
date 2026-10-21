@@ -2,6 +2,7 @@ package com.greysworkshop.naughtyornice.mixin;
 
 import com.greysworkshop.naughtyornice.Marks;
 import com.greysworkshop.naughtyornice.NNConfig;
+import com.greysworkshop.naughtyornice.Safe;
 import net.minecraft.client.gui.hud.PlayerListHud;
 import net.minecraft.client.network.PlayerListEntry;
 import net.minecraft.text.Text;
@@ -16,6 +17,7 @@ public abstract class PlayerListHudMixin {
 	@Inject(method = "getPlayerName", at = @At("RETURN"), cancellable = true)
 	private void naughtyornice$mark(PlayerListEntry entry, CallbackInfoReturnable<Text> cir) {
 		if (!NNConfig.INSTANCE.tabListMarks) return;
-		cir.setReturnValue(Marks.decorate(entry.getProfile().id(), cir.getReturnValue()));
+		Text name = cir.getReturnValue();
+		cir.setReturnValue(Safe.get("marking the tab list", () -> Marks.decorate(entry.getProfile().id(), name), name));
 	}
 }

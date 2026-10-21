@@ -372,6 +372,7 @@ public final class ChatLogger {
 			case NICE -> "Nice list";
 			case NAUGHTY -> "Naughty list";
 			case LOOK -> "Look Into list";
+			case FRIEND -> "Friend: " + Friends.circleName(profile);
 			case NONE -> "not listed";
 		};
 		StringBuilder sb = new StringBuilder();

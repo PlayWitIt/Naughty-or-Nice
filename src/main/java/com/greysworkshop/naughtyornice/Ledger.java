@@ -294,6 +294,7 @@ public final class Ledger {
 			case NICE -> "Added to your Nice list";
 			case NAUGHTY -> "Added to your Naughty list";
 			case LOOK -> "Added to your Look Into list";
+			case FRIEND -> "Added to your Friends (" + Friends.circleName(withCircle(profile)) + ")";
 			case NONE -> "Taken off your lists";
 		};
 		if (reason != null) text += " (" + reason + ")";
@@ -301,6 +302,25 @@ public final class Ledger {
 		BaseInsuranceBridge.syncFriend(profile);
 		if (NaughtyOrNiceClient.INSTANCE != null) NaughtyOrNiceClient.INSTANCE.chatLogger.verdictChanged(profile);
 		touch();
+	}
+
+	/** A new friend goes in the first circle unless they already have one. */
+	private static Profile withCircle(Profile profile) {
+		if (Friends.byId(profile.circle) == null) profile.circle = Friends.circles().get(0).id;
+		return profile;
+	}
+
+	/** Makes them a friend in this circle (or moves them to it). */
+	public void setCircle(Profile profile, Friends.Circle circle) {
+		if (profile.verdict == Profile.Verdict.FRIEND && profile.circle.equals(circle.id)) return;
+		profile.circle = circle.id;
+		if (profile.verdict != Profile.Verdict.FRIEND) {
+			setVerdict(profile, Profile.Verdict.FRIEND, false, null);
+		} else {
+			profile.record(Profile.Kind.LISTED, "Moved to " + circle.name, NNConfig.INSTANCE.maxActions);
+			BaseInsuranceBridge.syncFriend(profile);
+			touch();
+		}
 	}
 
 	public void forget(Profile profile) {
@@ -510,6 +530,8 @@ public final class Ledger {
 
 	/** Fills in anything missing from a profile read from a file (older versions, or a hand-edited file). */
 	private void fixUp(Profile profile) {
+		if (profile.circle == null) profile.circle = "";
+		if (profile.verdict == null) profile.verdict = Profile.Verdict.NONE;
 		if (profile.actions == null) profile.actions = new ArrayList<>();
 		profile.actions.removeIf(a -> a == null || a.kind == null);
 		if (profile.recentChat == null) profile.recentChat = new ArrayList<>();

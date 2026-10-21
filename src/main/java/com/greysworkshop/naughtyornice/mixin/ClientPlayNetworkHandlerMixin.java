@@ -1,6 +1,7 @@
 package com.greysworkshop.naughtyornice.mixin;
 
 import com.greysworkshop.naughtyornice.NaughtyOrNiceClient;
+import com.greysworkshop.naughtyornice.Safe;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.network.ClientPlayNetworkHandler;
 import net.minecraft.entity.Entity;
@@ -28,7 +29,7 @@ public abstract class ClientPlayNetworkHandlerMixin {
 		if (client.world == null || mod == null) return;
 		Entity target = client.world.getEntityById(packet.entityId());
 		Entity attacker = client.world.getEntityById(packet.sourceCauseId());
-		mod.watcher.onDamage(client, target, attacker);
+		Safe.run("watching damage", () -> mod.watcher.onDamage(client, target, attacker));
 	}
 
 	@Inject(method = "onEntityStatus", at = @At("TAIL"))
@@ -38,8 +39,10 @@ public abstract class ClientPlayNetworkHandlerMixin {
 		if (client.world == null || mod == null) return;
 		byte status = packet.getStatus();
 		if (status != EntityStatuses.PLAY_DEATH_SOUND_OR_ADD_PROJECTILE_HIT_PARTICLES && status != EntityStatuses.ADD_DEATH_PARTICLES) return;
-		Entity entity = packet.getEntity(client.world);
-		if (entity instanceof LivingEntity) mod.watcher.onDeath(client, entity);
+		Safe.run("watching deaths", () -> {
+			Entity entity = packet.getEntity(client.world);
+			if (entity instanceof LivingEntity) mod.watcher.onDeath(client, entity);
+		});
 	}
 
 	@Inject(method = "onDeathMessage", at = @At("TAIL"))
@@ -47,7 +50,7 @@ public abstract class ClientPlayNetworkHandlerMixin {
 		MinecraftClient client = MinecraftClient.getInstance();
 		NaughtyOrNiceClient mod = NaughtyOrNiceClient.INSTANCE;
 		if (client.world == null || mod == null) return;
-		mod.watcher.onDeath(client, client.world.getEntityById(packet.playerId()));
+		Safe.run("watching your death", () -> mod.watcher.onDeath(client, client.world.getEntityById(packet.playerId())));
 	}
 
 	@Inject(method = "onBlockBreakingProgress", at = @At("TAIL"))
@@ -55,6 +58,6 @@ public abstract class ClientPlayNetworkHandlerMixin {
 		MinecraftClient client = MinecraftClient.getInstance();
 		NaughtyOrNiceClient mod = NaughtyOrNiceClient.INSTANCE;
 		if (client.world == null || mod == null) return;
-		mod.watcher.onBlockBreaking(client, client.world.getEntityById(packet.getEntityId()), packet.getPos());
+		Safe.run("watching block breaking", () -> mod.watcher.onBlockBreaking(client, client.world.getEntityById(packet.getEntityId()), packet.getPos()));
 	}
 }

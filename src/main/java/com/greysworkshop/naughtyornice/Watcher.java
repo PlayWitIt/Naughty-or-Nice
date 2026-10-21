@@ -332,7 +332,31 @@ public final class Watcher {
 			chatLogger.system(ledger.byName(m.group(1)), joined ? "joined the game" : "left the game", System.currentTimeMillis());
 			return;
 		}
+		offerShareLink(null, raw);
 		diagnostics.notUnderstood(raw, onlineNames(client));
+	}
+
+	/** Share links already offered, so a repeated message doesn't offer one twice. */
+	private final Set<String> offeredLinks = new HashSet<>();
+
+	boolean offered(String link) {
+		return offeredLinks.contains(link);
+	}
+
+	/** A link you made: never offered back to you when your own message shows up. */
+	public void ownLink(String link) {
+		offeredLinks.add(link);
+	}
+
+	/** Someone sent a share link: a button to look at it (nothing is imported until you say so). */
+	void offerShareLink(String from, String text) {
+		String link = CloudShare.find(text);
+		if (link == null || !NNConfig.INSTANCE.openSharedLinks || !offeredLinks.add(link)) return;
+		Profile sender = from == null ? null : ledger.byName(from);
+		if (sender != null && sender.verdict == Profile.Verdict.NAUGHTY) return;
+		Alerts.chat(Text.literal((from == null ? "Someone" : from) + " shared Naughty or Nice lists. ").formatted(Formatting.GRAY)
+				.append(Text.literal("[Look at them]").styled(st -> st.withColor(Formatting.AQUA).withUnderline(true)
+						.withClickEvent(new ClickEvent.RunCommand("/nn open " + link)))));
 	}
 
 	/** "Steve left the game", "Steve joined", "Steve has quit", as some servers word them in plain text. */
@@ -405,6 +429,7 @@ public final class Watcher {
 		}
 		UUID id = senderId != null ? senderId : playerId(client, sender);
 		Profile profile = id == null ? null : ledger.getOrCreate(id, sender);
+		offerShareLink(profile != null ? profile.name : sender, text);
 		if (profile != null) said(profile, text);
 		String alert = whisper ? null : alertFor(client, text);
 		String name = profile != null ? profile.name : sender;
@@ -513,6 +538,8 @@ public final class Watcher {
 		NNConfig config = NNConfig.INSTANCE;
 		String dimension = world.getRegistryKey().getValue().toString();
 		if (secondsOn++ == 0) chatLogger.feedMarker("You joined " + Sharing.placeName(ledger.key()), now);
+		Disconnects.snapshot(client, ledger);
+		if (secondsOn == 4) Disconnects.tellIfNew();
 
 		List<PlayerEntity> visible = new ArrayList<>();
 		for (PlayerEntity player : world.getPlayers()) {
@@ -542,6 +569,10 @@ public final class Watcher {
 				Alerts.chat(Text.literal("Look Into: ").formatted(Formatting.GOLD)
 						.append(Text.literal(profile.name).formatted(Formatting.GOLD, Formatting.BOLD))
 						.append(Text.literal(" is nearby (" + (int) distance + " blocks " + direction(client, player) + ")").formatted(Formatting.GOLD)));
+			} else if (arrived && friendAlert(profile) != null) {
+				Friends.Circle circle = friendAlert(profile);
+				Alerts.groupAlert(circleTag(circle).append(Text.literal(profile.name).formatted(Formatting.BOLD))
+						.append(Text.literal(" is nearby (" + (int) distance + " blocks " + direction(client, player) + ")")), circle.color);
 			}
 
 			if (distance <= config.nearRadius) {
@@ -608,6 +639,10 @@ public final class Watcher {
 				Alerts.chat(Text.literal("Look Into: ").formatted(Formatting.GOLD)
 						.append(Text.literal(profile.name).formatted(Formatting.GOLD, Formatting.BOLD))
 						.append(Text.literal(" joined the server").formatted(Formatting.GOLD)));
+			} else if (friendAlert(profile) != null) {
+				Friends.Circle circle = friendAlert(profile);
+				Alerts.groupAlert(circleTag(circle).append(Text.literal(profile.name).formatted(Formatting.BOLD))
+						.append(Text.literal(" joined the server")), circle.color);
 			}
 		}
 		if (onlineKnown) {
@@ -622,6 +657,18 @@ public final class Watcher {
 		onlineKnown = true;
 		// Wait a few seconds after joining for the tab list to fill in.
 		if (secondsOn == 5 && config.joinSummary) joinSummary(client);
+	}
+
+	/** The friend's circle, if it pings when they join or come near; null otherwise. */
+	private static Friends.Circle friendAlert(Profile profile) {
+		Friends.Circle circle = Friends.of(profile);
+		return circle != null && circle.joinAlert ? circle : null;
+	}
+
+	/** "★ Close friends: " in the circle's colour; what's appended after it takes the same colour. */
+	private static net.minecraft.text.MutableText circleTag(Friends.Circle circle) {
+		int color = Marks.GROUP_TEXT[circle.color % Marks.GROUP_TEXT.length];
+		return Text.empty().styled(st -> st.withColor(color)).append(Text.literal("★ " + circle.name + ": "));
 	}
 
 	/** " [SCG]" in the group's colour, or nothing, for warnings. */
@@ -735,15 +782,30 @@ public final class Watcher {
 		} else {
 			text.append(Text.literal("Online now: ").formatted(Formatting.GRAY));
 			boolean first = true;
-			for (Profile.Verdict v : new Profile.Verdict[] {Profile.Verdict.NAUGHTY, Profile.Verdict.LOOK, Profile.Verdict.NICE}) {
+			for (Profile.Verdict v : new Profile.Verdict[] {Profile.Verdict.NAUGHTY, Profile.Verdict.LOOK, Profile.Verdict.FRIEND, Profile.Verdict.NICE}) {
 				List<String> names = on.get(v);
 				if (names == null) continue;
 				names.sort(String.CASE_INSENSITIVE_ORDER);
 				if (!first) text.append(Text.literal(" · ").formatted(Formatting.DARK_GRAY));
 				first = false;
-				Formatting color = v == Profile.Verdict.NAUGHTY ? Formatting.RED : v == Profile.Verdict.LOOK ? Formatting.GOLD : Formatting.GREEN;
-				String word = v == Profile.Verdict.NAUGHTY ? "Naughty" : v == Profile.Verdict.LOOK ? "Look Into" : "Nice";
-				String mark = v == Profile.Verdict.NAUGHTY ? "✖ " : v == Profile.Verdict.LOOK ? "? " : "✔ ";
+				Formatting color = switch (v) {
+					case NAUGHTY -> Formatting.RED;
+					case LOOK -> Formatting.GOLD;
+					case FRIEND -> Formatting.AQUA;
+					default -> Formatting.GREEN;
+				};
+				String word = switch (v) {
+					case NAUGHTY -> "Naughty";
+					case LOOK -> "Look Into";
+					case FRIEND -> names.size() == 1 ? "Friend" : "Friends";
+					default -> "Nice";
+				};
+				String mark = switch (v) {
+					case NAUGHTY -> "✖ ";
+					case LOOK -> "? ";
+					case FRIEND -> "★ ";
+					default -> "✔ ";
+				};
 				String shown = names.size() > 4 ? String.join(", ", names.subList(0, 4)) + " +" + (names.size() - 4) : String.join(", ", names);
 				text.append(Text.literal(mark + names.size() + " " + word).formatted(color, Formatting.BOLD))
 						.append(Text.literal(v == Profile.Verdict.NICE && names.size() > 4 ? "" : " (" + shown + ")").formatted(color));

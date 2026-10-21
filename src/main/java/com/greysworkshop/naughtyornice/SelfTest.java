@@ -76,6 +76,7 @@ public final class SelfTest {
 	}
 
 	private static void tick(MinecraftClient client) {
+		afterDisconnect(client);
 		if (client.player == null || client.world == null || client.getServer() == null) return;
 		if (frames == framesAtLastStep) return;
 		framesAtLastStep = frames;
@@ -817,13 +818,186 @@ public final class SelfTest {
 				mod.watcher.joinSummary(client);
 			}
 			case 962 -> screenshot(client, "44_join_summary");
-			case 990 -> {
+			// ---- Friends and their circles ----
+			case 964 -> {
+				NNConfig.INSTANCE.circles = Friends.defaultCircles();
+				ledger.getOrCreate(id("Friend_Fred"), "Friend_Fred");
+				client.setScreen(new ShopScreen(ShopScreen.Tab.ALL, null));
+			}
+			case 965 -> screen(client).testSearch("Helpful_Hana");
+			case 966 -> {
+				Profile hana = ledger.byName("Helpful_Hana");
+				check("the star on a card makes them a friend", screen(client).testClick("star:Helpful_Hana")
+						&& hana.verdict == Profile.Verdict.FRIEND && Friends.of(hana) == Friends.circles().get(0));
+				check("friends get a star on their nametag", Marks.decorate(hana.id, Text.literal("Helpful_Hana")).getString().startsWith("★ "));
+			}
+			case 968 -> check("the star on a friend opens the circle picker", screen(client).testClick("star:Helpful_Hana") && screen(client).testCircleMenu());
+			case 970 -> screenshot(client, "45_circle_picker");
+			case 972 -> {
+				screen(client).testSearch("");
+				check("picking a circle moves them to it", screen(client).testMenuClick("circle-pick:Base mates")
+						&& Friends.circleName(ledger.byName("Helpful_Hana")).equals("Base mates") && !screen(client).testCircleMenu());
+				client.setScreen(new ShopScreen(ShopScreen.Tab.FRIENDS, null));
+			}
+			case 974 -> {
+				check("the Friends tab lists friends (" + screen(client).testResultCount() + ")", screen(client).testResultCount() == 1);
+				screen(client).testClick("circle:Close friends");
+			}
+			case 976 -> {
+				check("a circle shows just its friends", screen(client).testResultCount() == 0);
+				screen(client).testClick("circle-all");
+			}
+			case 978 -> {
+				screenshot(client, "46_friends_tab");
+				client.setScreen(new ShopScreen(null, ledger.byName("Helpful_Hana")));
+			}
+			case 980 -> check("the player page picks their circle", screen(client).testClick("page-circle:Allies")
+					&& Friends.circleName(ledger.byName("Helpful_Hana")).equals("Allies"));
+			case 982 -> {
+				screenshot(client, "47_friend_page");
+				client.setScreen(new ShopScreen().withAddPanel(Profile.Verdict.FRIEND));
+			}
+			case 984 -> {
+				screen(client).testAddText("Friend_Fred", "");
+				check("the Add panel has a circle picker", screen(client).testPanelClick("add-circle:Base mates"));
+			}
+			case 986 -> {
+				screenshot(client, "48_add_friend");
+				check("...and adds friends to that circle", screen(client).testPanelClick("add-to-friends")
+						&& ledger.byName("Friend_Fred").verdict == Profile.Verdict.FRIEND && Friends.circleName(ledger.byName("Friend_Fred")).equals("Base mates"));
 				client.setScreen(null);
-				log("DONE: " + passed + " passed, " + failed + " failed");
-				client.scheduleStop();
+				// Sharing friends: they go out as Nice (older versions understand that), marked as the sender's friend.
+				Sharing.Pack pack = Sharing.pack(List.of(ledger.byName("Helpful_Hana")), false, "Me", client.player.getUuid(), ledger.key());
+				Sharing.Pack back = Sharing.read(Sharing.code(pack));
+				check("a friend is shared as Nice, marked as a friend", back.players.get(0).verdict == Profile.Verdict.NICE && back.players.get(0).friend);
+				Sharing.Pack old = Sharing.read("{\"format\":\"naughtyornice-share\",\"version\":1,\"from\":\"Friend_Fran\",\"players\":[{\"id\":\""
+						+ id("Friend_Fred") + "\",\"name\":\"Friend_Fred\",\"verdict\":\"NAUGHTY\"}]}");
+				Sharing.Row row = Sharing.plan(old, ledger, client.player.getUuid(), "Me", true, true).get(0);
+				check("a friend's say never takes your friends off your Friends", row.result == Profile.Verdict.FRIEND && row.outcome != Sharing.Outcome.CONFLICT);
+				client.setScreen(new ShopScreen(ShopScreen.Tab.SETTINGS, null));
+			}
+			case 988 -> {
+				screen(client).testCircleText("Old crew");
+				check("Settings makes new circles", screen(client).testClick("circle-save") && Friends.byName("Old crew") != null);
+			}
+			case 990 -> {
+				check("circles can be renamed", screen(client).testClick("circle-rename:Old crew"));
+				screen(client).testCircleText("Discord crew");
+				check("...to a new name", screen(client).testClick("circle-save") && Friends.byName("Discord crew") != null && Friends.byName("Old crew") == null);
+			}
+			case 992 -> check("a circle can be set to ping on joins", screen(client).testClick("circle-alert:Discord crew") && Friends.byName("Discord crew").joinAlert);
+			case 993 -> {
+				screen(client).testClick("edit-circles");
+				screenshot(client, "49_settings_circles");
+				Friends.Circle crew = Friends.byName("Discord crew");
+				check("circles can be removed", screen(client).testClick("circle-remove:Discord crew") && Friends.byName("Discord crew") == null);
+				check("...and the last one can't", crew != null && Friends.circles().size() == 3);
+			}
+			// ---- Disconnects: who did it ----
+			case 996 -> {
+				Disconnects.Entry e = new Disconnects.Entry();
+				Disconnects.classify(e, new StackTraceElement[] {
+						new StackTraceElement("net.minecraft.network.ClientConnection", "disconnect", null, 1),
+						new StackTraceElement("net.minecraft.client.network.ClientCommonNetworkHandler", "onDisconnect", null, 1),
+						new StackTraceElement("meteordevelopment.meteorclient.systems.modules.misc.AutoLog", "onTick", null, 1),
+						new StackTraceElement("net.minecraft.client.MinecraftClient", "tick", null, 1)});
+				check("a mod pretending the server kicked you is caught (" + e.kind + ", " + e.culprit + ")", e.kind == Disconnects.Kind.MOD
+						&& e.culprit.startsWith("meteordevelopment"));
+				Disconnects.Entry server = new Disconnects.Entry();
+				Disconnects.classify(server, new StackTraceElement[] {
+						new StackTraceElement("net.minecraft.network.ClientConnection", "disconnect", null, 1),
+						new StackTraceElement("net.minecraft.client.network.ClientCommonNetworkHandler", "onDisconnect", null, 1),
+						new StackTraceElement("net.minecraft.network.NetworkThreadUtils", "method_11072", null, 1),
+						new StackTraceElement("net.minecraft.client.MinecraftClient", "tick", null, 1)});
+				check("a real kick is the server's (" + server.kind + ")", server.kind == Disconnects.Kind.SERVER);
+				Disconnects.Entry mixin = new Disconnects.Entry();
+				Disconnects.classify(mixin, new StackTraceElement[] {
+						new StackTraceElement("net.minecraft.network.ClientConnection", "disconnect", null, 1),
+						new StackTraceElement("net.minecraft.client.MinecraftClient", "handler$zza000$autolog$onTick", null, 1),
+						new StackTraceElement("net.minecraft.client.MinecraftClient", "tick", null, 1)});
+				check("a mod's code inside the game is caught too (" + mixin.culprit + ")", mixin.kind == Disconnects.Kind.MOD && mixin.culprit.equals("autolog"));
+				e.reason = "[AutoLog] Test_Tom came within 20 blocks";
+				Disconnects.Nearby tom = new Disconnects.Nearby();
+				tom.name = "Test_Tom";
+				tom.distance = 18;
+				tom.list = "Nice";
+				e.nearby.add(tom);
+				check("the player named in the reason is picked out", Disconnects.namedInReason(e) == tom && Disconnects.cause(e).contains("Test_Tom"));
+				Safe.run("a self-test error", () -> {
+					throw new IllegalStateException("on purpose");
+				});
+				check("errors in hooks are caught, not passed on", Safe.caught().stream().anyMatch(c -> c.where.equals("a self-test error")));
+			}
+			// ---- Share links ----
+			case 998 -> client.setScreen(new ShopScreen().withSharePanel(false));
+			case 1000 -> check("Get share link starts an upload", screen(client).testPanelClick("share-link"));
+			case 1001, 1003, 1005, 1007, 1009, 1011, 1013, 1015, 1017, 1019, 1021, 1023 -> {
+				// Waiting for the upload (it's on the internet).
+				if (screen(client).testShareLink() != null && shareLink == null) {
+					shareLink = screen(client).testShareLink();
+					log("Share link: " + shareLink + " (" + screen(client).testShareStatus() + ")");
+				}
+			}
+			case 1025 -> {
+				check("a share link was made (" + shareLink + " / " + screen(client).testShareStatus() + ")", shareLink != null && shareLink.startsWith("NN2:"));
+				check("...and copied", shareLink != null && shareLink.equals(client.keyboard.getClipboard()));
+				screenshot(client, "50_share_link");
+				if (shareLink != null) {
+					try {
+						Sharing.Pack pack = CloudShare.download(shareLink).get(40, java.util.concurrent.TimeUnit.SECONDS);
+						check("the link downloads and unlocks (" + pack.players.size() + " players)", !pack.players.isEmpty()
+								&& pack.players.stream().anyMatch(pl -> pl.name.equals("Friend_Fred") && pl.friend));
+					} catch (Exception ex) {
+						check("the link downloads and unlocks (" + ex + ")", false);
+					}
+					String broken = shareLink.substring(0, shareLink.length() - 3) + (shareLink.endsWith("AAA") ? "BBB" : "AAA");
+					try {
+						CloudShare.download(broken).get(40, java.util.concurrent.TimeUnit.SECONDS);
+						check("a link with the wrong key can't be read", false);
+					} catch (Exception ex) {
+						check("a link with the wrong key can't be read", true);
+					}
+					check("your own link isn't offered back to you", mod.watcher.offered(shareLink));
+					String other = "NN2:bTestKey1.abcdefghijklmnopqrstuv";
+					mod.watcher.onGameMessage(client, Text.literal("<Friend_Fran> here's my lists " + other));
+					check("a friend's link in chat gets a button", mod.watcher.offered(other));
+					client.setScreen(new ShopScreen().withShareLink(shareLink));
+				}
+			}
+			case 1027, 1029, 1031, 1033, 1035, 1037, 1039, 1041 -> {
+				// Waiting for the download.
+			}
+			case 1043 -> {
+				check("opening a link shows the import preview", screen(client).testPreview());
+				screenshot(client, "51_open_link");
+				client.setScreen(null);
+			}
+			// ---- A real disconnect, by "another mod" (this test): recorded with who did it and who was near ----
+			case 1046 -> {
+				log("Disconnecting on purpose");
+				disconnectedAt = System.currentTimeMillis();
+				client.getNetworkHandler().getConnection().disconnect(Text.literal("[AutoLog] " + GRIEFER + " came near"));
 			}
 			default -> {}
 		}
+	}
+
+	private static String shareLink;
+	private static long disconnectedAt;
+
+	/** After the test's own disconnect: check it was recorded, then finish. */
+	private static void afterDisconnect(MinecraftClient client) {
+		if (disconnectedAt == 0 || client.player != null || System.currentTimeMillis() - disconnectedAt < 3000) return;
+		disconnectedAt = 0;
+		List<Disconnects.Entry> all = Disconnects.all();
+		Disconnects.Entry e = all.isEmpty() ? null : all.get(all.size() - 1);
+		check("the disconnect was recorded (" + (e == null ? "nothing" : Disconnects.line(e)) + ")", e != null && e.reason.contains("[AutoLog]"));
+		check("...as done by a mod (" + (e == null ? "" : e.kind + ": " + e.culprit + " · " + e.detail) + ")", e != null && e.kind == Disconnects.Kind.MOD
+				&& e.detail.contains("SelfTest"));
+		check("...with who was near", e != null && e.nearby.stream().anyMatch(n -> n.name.equals(GRIEFER)));
+		check("...and the player in the reason picked out", e != null && Disconnects.namedInReason(e) != null);
+		log("DONE: " + passed + " passed, " + failed + " failed");
+		client.scheduleStop();
 	}
 
 	private static int mediumWidth;

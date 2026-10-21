@@ -8,7 +8,7 @@ import java.util.UUID;
 
 /**
  * What's shown in front of listed players' names on nametags and the tab list: a green tick (Nice), a red cross
- * (Naughty) or a gold question mark (Look Into), then their groups as tags.
+ * (Naughty), a gold question mark (Look Into) or a star in their circle's colour (Friends), then their groups as tags.
  */
 public final class Marks {
 	private Marks() {}
@@ -27,6 +27,10 @@ public final class Marks {
 			case NICE -> Text.literal("✔ ").formatted(Formatting.GREEN);
 			case NAUGHTY -> Text.literal("✖ ").formatted(Formatting.RED);
 			case LOOK -> Text.literal("? ").formatted(Formatting.GOLD, Formatting.BOLD);
+			case FRIEND -> {
+				int color = GROUP_TEXT[Friends.color(profile) % GROUP_TEXT.length];
+				yield Text.literal("★ ").styled(s -> s.withColor(color));
+			}
 			case NONE -> Text.empty();
 		};
 		if (tags) {

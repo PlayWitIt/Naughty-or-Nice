@@ -21,6 +21,8 @@ public final class BaseInsuranceBridge {
 	private static Field configInstance;
 	private static Field friendsField;
 	private static Method saveConfig;
+	/** Notes where a friend came from; null on Base Insurance versions before it. */
+	private static Method noteFriend;
 	private static Method allBases;
 	private static Field dimensionField;
 	private static Field minXField, maxXField, minZField, maxZField;
@@ -47,6 +49,11 @@ public final class BaseInsuranceBridge {
 			configInstance = configClass.getField("INSTANCE");
 			friendsField = configClass.getField("friends");
 			saveConfig = configClass.getMethod("save");
+			try {
+				noteFriend = configClass.getMethod("noteFriend", String.class, String.class);
+			} catch (NoSuchMethodException e) {
+				noteFriend = null;
+			}
 			allBases = managerClass.getMethod("all");
 			dimensionField = baseClass.getField("dimension");
 			minXField = baseClass.getField("minX");
@@ -113,21 +120,33 @@ public final class BaseInsuranceBridge {
 		}
 	}
 
-	/** Nice-list players become Base Insurance friends; anyone we added stops being one when they leave the list. */
+	/**
+	 * Keeps Base Insurance's friends in step: friends in trusted circles (and Nice-list players, if that's on)
+	 * become friends there; anyone we added stops being one when that's no longer true.
+	 */
 	@SuppressWarnings("unchecked")
 	public static void syncFriend(Profile profile) {
-		if (!NNConfig.INSTANCE.shareWithBaseInsurance || !resolve()) return;
+		if (!resolve()) return;
 		try {
 			List<String> friends = (List<String>) friendsField.get(configInstance.get(null));
 			boolean listed = friends.stream().anyMatch(f -> f.equalsIgnoreCase(profile.name));
+			boolean want = Friends.trusted(profile) || (profile.verdict == Profile.Verdict.NICE && NNConfig.INSTANCE.shareWithBaseInsurance);
 			boolean changed = false;
-			if (profile.verdict == Profile.Verdict.NICE && !listed) {
+			String note = !want ? null : "from Naughty or Nice · " + (profile.verdict == Profile.Verdict.FRIEND ? Friends.circleName(profile) : "Nice list");
+			if (want && !listed) {
 				friends.add(profile.name);
 				profile.sharedFriend = true;
 				changed = true;
-			} else if (profile.verdict == Profile.Verdict.NAUGHTY || (profile.verdict != Profile.Verdict.NICE && profile.sharedFriend)) {
+			} else if (want) {
+				profile.sharedFriend = true;
+			} else if (profile.verdict == Profile.Verdict.NAUGHTY || profile.sharedFriend) {
 				changed = friends.removeIf(f -> f.equalsIgnoreCase(profile.name));
 				profile.sharedFriend = false;
+			}
+			// Only note friends we put there (or that were already there and we agree on).
+			if (noteFriend != null && (want || changed)) {
+				noteFriend.invoke(null, profile.name, note);
+				changed = true;
 			}
 			if (changed) saveConfig.invoke(null);
 		} catch (ReflectiveOperationException | ClassCastException | UnsupportedOperationException e) {

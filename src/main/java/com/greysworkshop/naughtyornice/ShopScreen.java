@@ -38,7 +38,7 @@ import java.util.function.Consumer;
  */
 public class ShopScreen extends Screen {
 	public enum Tab {
-		ALL("All"), NEARBY("Nearby"), ONLINE("Online"), OFFLINE("Offline"), NICE("Nice list"), LOOK("Look Into"), NAUGHTY("Naughty list"),
+		ALL("All"), NEARBY("Nearby"), ONLINE("Online"), OFFLINE("Offline"), FRIENDS("Friends"), NICE("Nice list"), LOOK("Look Into"), NAUGHTY("Naughty list"),
 		GROUPS("Groups"), CHAT("Chat"), SETTINGS("Settings");
 
 		final String label;
@@ -99,6 +99,9 @@ public class ShopScreen extends Screen {
 	/** The Look Into list: amber, between Nice green and Naughty red. */
 	private static int LOOK;
 	private static int LOOK_BG;
+	/** Friends: blue, set apart from the three lists. */
+	private static int FRIEND;
+	private static int FRIEND_BG;
 	private static int[] GROUP_COLORS;
 
 	static {
@@ -132,6 +135,8 @@ public class ShopScreen extends Screen {
 		WHISPER = dark ? 0xFFCF8BEF : WHISPER_LIGHT;
 		LOOK = dark ? 0xFFFFC14D : 0xFFB06A00;
 		LOOK_BG = dark ? 0xFF3D3015 : 0xFFFFEFC7;
+		FRIEND = dark ? 0xFF8AB4FF : 0xFF2457C5;
+		FRIEND_BG = dark ? 0xFF1C2A44 : 0xFFE3ECFF;
 		GROUP_COLORS = dark
 				? new int[] {0xFF5BC0FF, 0xFFFF9F43, 0xFFB388FF, 0xFF4DD0A1, 0xFFFF6FA8, 0xFFFFD54F, 0xFF80DEEA, 0xFFC5E1A5, 0xFFFF8A65, 0xFFB0BEC5}
 				: new int[] {0xFF1565C0, 0xFFE65100, 0xFF6A1B9A, 0xFF00796B, 0xFFC2185B, 0xFF8D6E00, 0xFF00838F, 0xFF558B2F, 0xFFD84315, 0xFF546E7A};
@@ -242,6 +247,8 @@ public class ShopScreen extends Screen {
 	private boolean adding;
 	private boolean addOnOpen;
 	private Profile.Verdict addTarget = Profile.Verdict.NICE;
+	/** The circle "★ Friends" adds to. */
+	private String addCircle;
 	private TextFieldWidget addField;
 	private TextFieldWidget addNote;
 	private String addStatus;
@@ -265,9 +272,29 @@ public class ShopScreen extends Screen {
 	private String shareCode;
 	private String shareCodeKey;
 	private Sharing.Pack incoming;
+	/** The share link made for the current choice, and which choice that was. */
+	private String shareLink;
+	private String shareLinkKey = "";
+	private boolean uploading;
+	/** A link to open when the screen opens (from a chat button). */
+	private String openLink;
 	private List<Sharing.Row> incomingRows;
 	private double previewScroll;
 	private int previewMaxScroll;
+
+	// Friends: the circle shown on the Friends tab (null for all), and the circle picker.
+	private static String friendCircle;
+	/** The player the circle picker is open for, and where it hangs from. */
+	private Profile circleMenu;
+	private int circleMenuX, circleMenuY;
+	private final List<Hit> menuHits = new ArrayList<>();
+	/** Settings opened from "Edit circles…" or /nn disconnects: scroll down to that card. */
+	private boolean scrollToCircles;
+	private boolean scrollToDisconnects;
+	/** Settings: the box for naming circles, and the circle being renamed (null to make a new one). */
+	private TextFieldWidget circleField;
+	private int circleFieldTop = -1000;
+	private Friends.Circle circleEditing;
 
 	// Groups: the group being looked at on the Groups tab (null for all of them), and the group panel.
 	private String openGroup;
@@ -289,7 +316,7 @@ public class ShopScreen extends Screen {
 
 	// The Chat tab.
 	private enum ChatFilter {
-		ALL("All"), LISTED("On a list"), NICE("Nice"), LOOK("Look Into"), NAUGHTY("Naughty"), UNLISTED("Not listed"), WHISPERS("Whispers");
+		ALL("All"), LISTED("On a list"), FRIENDS("Friends"), NICE("Nice"), LOOK("Look Into"), NAUGHTY("Naughty"), UNLISTED("Not listed"), WHISPERS("Whispers");
 
 		final String label;
 
@@ -332,6 +359,13 @@ public class ShopScreen extends Screen {
 		return this;
 	}
 
+	/** Opens on Settings, scrolled to the disconnects. */
+	public ShopScreen withDisconnects() {
+		tab = Tab.SETTINGS;
+		scrollToDisconnects = true;
+		return this;
+	}
+
 	/** Opens on Settings with the Chat check showing. */
 	public ShopScreen withChatCheck() {
 		tab = Tab.SETTINGS;
@@ -352,7 +386,7 @@ public class ShopScreen extends Screen {
 	}
 
 	private int countersLeft() {
-		return width - 8 - 3 * counterWidth() - 12;
+		return width - 8 - 4 * counterWidth() - 18;
 	}
 
 	/** The light/dark switch sits between the search box and the counters. */
@@ -475,6 +509,16 @@ public class ShopScreen extends Screen {
 		});
 		addDrawableChild(alertField);
 
+		String typedCircle = circleField == null ? "" : circleField.getText();
+		circleField = new Box(textRenderer, 0, -100, 100, 10, Text.literal("Circle"));
+		circleField.setDrawsBackground(false);
+		circleField.setEditableColor(TEXT);
+		circleField.setTextShadow(false);
+		circleField.setMaxLength(Friends.NAME_MAX);
+		circleField.setPlaceholder(Text.literal("New circle, e.g. Old crew, Discord friends").withColor(MUTED));
+		circleField.setText(typedCircle);
+		addDrawableChild(circleField);
+
 		// Group panel boxes, drawn and fed by the panel like the Add players ones.
 		String typedGroup = groupField == null ? "" : groupField.getText();
 		String typedMembers = membersField == null ? "" : membersField.getText();
@@ -531,7 +575,14 @@ public class ShopScreen extends Screen {
 			shareOnOpen = null;
 			openShare(view);
 			// Opened with /nn import and a code already copied: go straight to the preview.
-			if (view == ShareView.RECEIVE && client.keyboard.getClipboard().contains(Sharing.CODE_PREFIX)) pasteShare();
+			String clip = client.keyboard.getClipboard();
+			if (view == ShareView.RECEIVE && (clip.contains(Sharing.CODE_PREFIX) || CloudShare.find(clip) != null)) pasteShare();
+		}
+		if (openLink != null) {
+			String link = openLink;
+			openLink = null;
+			openShare(ShareView.RECEIVE);
+			openShareLink(link);
 		}
 		cachedResults = null;
 	}
@@ -579,6 +630,7 @@ public class ShopScreen extends Screen {
 			case ONLINE -> online().size();
 			case OFFLINE -> (int) mod.ledger.all().stream().filter(p -> !isOnline(p) && !p.id.equals(me())).count();
 			case NICE -> mod.ledger.onList(Profile.Verdict.NICE).size();
+			case FRIENDS -> mod.ledger.onList(Profile.Verdict.FRIEND).size();
 			case NAUGHTY -> mod.ledger.onList(Profile.Verdict.NAUGHTY).size();
 			case LOOK -> (int) mod.ledger.all().stream().filter(this::onLookTab).count();
 			case GROUPS -> mod.ledger.groups().size();
@@ -604,6 +656,8 @@ public class ShopScreen extends Screen {
 			case ONLINE -> online().forEach(e -> found.put(e.getProfile().id(), mod.ledger.getOrCreate(e.getProfile().id(), e.getProfile().name())));
 			case OFFLINE -> List.copyOf(mod.ledger.all()).stream().filter(p -> !isOnline(p)).forEach(p -> found.put(p.id, p));
 			case NICE -> mod.ledger.onList(Profile.Verdict.NICE).forEach(p -> found.put(p.id, p));
+			case FRIENDS -> mod.ledger.onList(Profile.Verdict.FRIEND).stream()
+					.filter(p -> friendCircle == null || Friends.of(p) == Friends.byId(friendCircle)).forEach(p -> found.put(p.id, p));
 			case NAUGHTY -> mod.ledger.onList(Profile.Verdict.NAUGHTY).forEach(p -> found.put(p.id, p));
 			case LOOK -> List.copyOf(mod.ledger.all()).stream().filter(this::onLookTab).forEach(p -> found.put(p.id, p));
 			case GROUPS -> {
@@ -619,7 +673,7 @@ public class ShopScreen extends Screen {
 		List<Profile> list = new ArrayList<>();
 		for (Profile p : found.values()) {
 			if (!q.isEmpty() && !p.name.toLowerCase(Locale.ROOT).contains(q) && !p.pastNamesContain(q) && !p.detailsContain(q)
-					&& !p.groupsContain(q) && chatMatch(p, q) == null) continue;
+					&& !p.groupsContain(q) && !Friends.circleContains(p, q) && chatMatch(p, q) == null) continue;
 			if (onlineOnly && !isOnline(p)) continue;
 			if (rating == Rating.GOOD && p.stars() < 4) continue;
 			if (rating == Rating.BAD && p.stars() > 2) continue;
@@ -699,6 +753,12 @@ public class ShopScreen extends Screen {
 		scroll = 0;
 		cachedResults = null;
 		setFocused(null);
+	}
+
+	/** The Friends tab, showing one circle. */
+	private void showCircle(Friends.Circle c) {
+		showTab(Tab.FRIENDS);
+		friendCircle = c == null ? null : c.id;
 	}
 
 	private void showTab(Tab t) {
@@ -891,6 +951,7 @@ public class ShopScreen extends Screen {
 				&& detailFieldTop >= BODY && detailFieldTop + 16 <= height);
 		chatField.setVisible(selected == null && tab == Tab.CHAT);
 		alertField.setVisible(tab == Tab.SETTINGS && alertFieldTop >= BODY && alertFieldTop + 16 <= height);
+		circleField.setVisible(tab == Tab.SETTINGS && circleFieldTop >= BODY && circleFieldTop + 16 <= height);
 		boolean modal = modal();
 		super.render(context, modal ? -1000 : mouseX, modal ? -1000 : mouseY, delta);
 		if (adding) {
@@ -915,12 +976,16 @@ public class ShopScreen extends Screen {
 			context.createNewRootLayer();
 			renderCheckPanel(context, mouseX, mouseY);
 		}
+		if (circleMenu != null) {
+			context.createNewRootLayer();
+			renderCircleMenu(context, mouseX, mouseY);
+		}
 		matrices.popMatrix();
 	}
 
 	/** A panel is open over the page. */
 	private boolean modal() {
-		return adding || sharing || grouping || checking;
+		return adding || sharing || grouping || checking || circleMenu != null;
 	}
 
 	private void renderHeader(DrawContext context, int mouseX, int mouseY) {
@@ -956,12 +1021,13 @@ public class ShopScreen extends Screen {
 		text(context, glyph, themeX + (16 - textRenderer.getWidth(glyph)) / 2 + 1, 9, NNConfig.INSTANCE.darkMode ? 0xFFFFD866 : 0xFFDDE3EA);
 		hits.add(new Hit(themeX, 5, themeX + 16, 21, "theme", this::toggleTheme));
 
-		// "Nice list / 3 people" and "Naughty list / 1 person", like the account and cart links.
+		// "Friends / 4 people", "Nice list / 3 people"..., like the account and cart links.
 		int cw = counterWidth();
 		int cx = countersLeft();
-		counter(context, mouseX, mouseY, cx, "Nice list", Tab.NICE, 0xFF7CE0A0);
-		counter(context, mouseX, mouseY, cx + cw + 6, "Look Into", Tab.LOOK, 0xFFFFC14D);
-		counter(context, mouseX, mouseY, cx + 2 * (cw + 6), "Naughty list", Tab.NAUGHTY, 0xFFFF8A80);
+		counter(context, mouseX, mouseY, cx, "Friends", Tab.FRIENDS, 0xFF8AB4FF);
+		counter(context, mouseX, mouseY, cx + cw + 6, "Nice list", Tab.NICE, 0xFF7CE0A0);
+		counter(context, mouseX, mouseY, cx + 2 * (cw + 6), "Look Into", Tab.LOOK, 0xFFFFC14D);
+		counter(context, mouseX, mouseY, cx + 3 * (cw + 6), "Naughty list", Tab.NAUGHTY, 0xFFFF8A80);
 
 		// Tabs.
 		context.fill(0, HEADER, width, BODY, SUBNAV);
@@ -990,6 +1056,7 @@ public class ShopScreen extends Screen {
 				case NEARBY -> "Near";
 				case ONLINE -> "Online";
 				case OFFLINE -> "Offline";
+				case FRIENDS -> "Friends";
 				case NICE -> "Nice";
 				case NAUGHTY -> "Naughty";
 				case LOOK -> "Look";
@@ -1001,7 +1068,7 @@ public class ShopScreen extends Screen {
 		}
 		int n = count(t);
 		String label = t == Tab.ALL ? "☰ All" : t.label;
-		return n > 0 && (t == Tab.LOOK || t == Tab.NEARBY || t == Tab.GROUPS) ? label + " (" + n + ")" : label;
+		return n > 0 && (t == Tab.LOOK || t == Tab.NEARBY || t == Tab.GROUPS || t == Tab.FRIENDS) ? label + " (" + n + ")" : label;
 	}
 
 	private void counter(DrawContext context, int mouseX, int mouseY, int x, String label, Tab target, int color) {
@@ -1073,7 +1140,7 @@ public class ShopScreen extends Screen {
 		String addLabel = "+ Add players";
 		int aw = textRenderer.getWidth(addLabel) + 12;
 		pill(context, mouseX, mouseY, right - sw - aw - 6, barY + 2, aw, 12, addLabel, YELLOW, YELLOW_EDGE, BUTTON_TEXT, "open-add",
-				() -> openAdd(tab == Tab.NAUGHTY ? Profile.Verdict.NAUGHTY : tab == Tab.LOOK ? Profile.Verdict.LOOK : Profile.Verdict.NICE));
+				() -> openAdd(listOf(tab)));
 		String shareLabel = "⇄ Share";
 		int shw = textRenderer.getWidth(shareLabel) + 12;
 		pill(context, mouseX, mouseY, right - sw - aw - shw - 12, barY + 2, shw, 12, shareLabel, SOFT, BORDER, TEXT, "open-share",
@@ -1095,11 +1162,12 @@ public class ShopScreen extends Screen {
 		if (tab == Tab.GROUPS && openGroup != null) {
 			y = groupHeader(context, mouseX, mouseY, openGroup, left, y, gridW) + GAP;
 		}
+		if (tab == Tab.FRIENDS) y = circleBar(context, mouseX, mouseY, left, y, gridW) + GAP;
 		if (q.matches(NAME_PATTERN) && !exact) {
 			addCard(context, mouseX, mouseY, left, y, gridW, q);
 			y += 30 + GAP;
-		} else if (q.isEmpty() && (tab == Tab.NICE || tab == Tab.NAUGHTY || tab == Tab.LOOK)) {
-			listAddCard(context, mouseX, mouseY, left, y, gridW, tab == Tab.NICE ? Profile.Verdict.NICE : tab == Tab.LOOK ? Profile.Verdict.LOOK : Profile.Verdict.NAUGHTY);
+		} else if (q.isEmpty() && (tab == Tab.NICE || tab == Tab.NAUGHTY || tab == Tab.LOOK || tab == Tab.FRIENDS)) {
+			listAddCard(context, mouseX, mouseY, left, y, gridW, listOf(tab));
 			y += 24 + GAP;
 		}
 
@@ -1133,14 +1201,35 @@ public class ShopScreen extends Screen {
 		y += 8;
 		context.drawText(textRenderer, Text.literal("Your lists").styled(s -> s.withBold(true)), x, y, TEXT, false);
 		y += 12;
-		for (Tab t : new Tab[] {Tab.NICE, Tab.LOOK, Tab.NAUGHTY}) {
+		for (Tab t : new Tab[] {Tab.FRIENDS, Tab.NICE, Tab.LOOK, Tab.NAUGHTY}) {
 			int n = t == Tab.LOOK ? mod.ledger.onList(Profile.Verdict.LOOK).size() : count(t);
 			String label = t.label + " (" + n + ")";
 			boolean hover = over(mouseX, mouseY, x, y - 1, SIDEBAR, 11);
-			context.drawText(textRenderer, Text.literal(label).styled(s -> s.withUnderline(hover)), x, y, hover ? HOVER_LINK : LINK, false);
+			boolean active = tab == t && (t != Tab.FRIENDS || friendCircle == null);
+			context.drawText(textRenderer, Text.literal(label).styled(s -> s.withUnderline(hover).withBold(active)), x, y, hover ? HOVER_LINK : LINK, false);
 			int fy = y;
-			hits.add(new Hit(x, Math.max(fy - 1, BODY + 17), x + SIDEBAR, fy + 10, "side:" + t.name(), () -> showTab(t)));
+			hits.add(new Hit(x, Math.max(fy - 1, BODY + 17), x + SIDEBAR, fy + 10, "side:" + t.name(), () -> {
+				showTab(t);
+				friendCircle = null;
+			}));
 			y += 11;
+			if (t == Tab.FRIENDS) {
+				// The circles, indented, with their colour.
+				for (Friends.Circle c : Friends.circles()) {
+					int members = Friends.members(mod.ledger, c).size();
+					String count = " " + members;
+					int countW = textRenderer.getWidth(count);
+					boolean cHover = over(mouseX, mouseY, x, y - 1, SIDEBAR, 11);
+					boolean cActive = tab == Tab.FRIENDS && c.id.equals(friendCircle);
+					context.fill(x + 6, y + 2, x + 11, y + 7, GROUP_COLORS[c.color % GROUP_COLORS.length]);
+					context.drawText(textRenderer, Text.literal(fit(c.name, SIDEBAR - 16 - countW)).styled(st -> st.withUnderline(cHover).withBold(cActive)),
+							x + 14, y, cHover ? HOVER_LINK : LINK, false);
+					text(context, count, x + SIDEBAR - countW, y, MUTED);
+					int cy = y;
+					hits.add(new Hit(x, Math.max(cy - 1, BODY + 17), x + SIDEBAR, cy + 10, "side-circle:" + c.name, () -> showCircle(c)));
+					y += 11;
+				}
+			}
 		}
 		boolean addHover = over(mouseX, mouseY, x, y - 1, SIDEBAR, 11);
 		context.drawText(textRenderer, Text.literal("+ Add players").styled(s -> s.withBold(true).withUnderline(addHover)), x, y,
@@ -1239,6 +1328,8 @@ public class ShopScreen extends Screen {
 		String title = switch (tab) {
 			case NEARBY -> "Nobody's in sight right now.";
 			case OFFLINE -> "Nobody remembered yet. Everyone you see in game or on the tab list is remembered here once they log off.";
+			case FRIENDS -> friendCircle == null ? "No friends yet. Press the ☆ on anyone's card to make them a friend."
+					: "Nobody in this circle yet. Press the ★ on a friend's card to move them here.";
 			case NICE -> "Your Nice list is empty.";
 			case NAUGHTY -> "Your Naughty list is empty.";
 			case LOOK -> "Nobody to look into. Put anyone you're unsure about here with the Look Into button; players who do something good or bad show up here too.";
@@ -1259,6 +1350,68 @@ public class ShopScreen extends Screen {
 		}
 	}
 
+	/** The list a tab adds to: its own, or Nice. */
+	private static Profile.Verdict listOf(Tab t) {
+		return switch (t) {
+			case FRIENDS -> Profile.Verdict.FRIEND;
+			case NAUGHTY -> Profile.Verdict.NAUGHTY;
+			case LOOK -> Profile.Verdict.LOOK;
+			default -> Profile.Verdict.NICE;
+		};
+	}
+
+	/**
+	 * The top of the Friends tab: a chip per circle to show just that circle (and how many are online), what the
+	 * circle does, and a link to edit circles.
+	 */
+	private int circleBar(DrawContext context, int mouseX, int mouseY, int x, int y, int w) {
+		Friends.Circle open = friendCircle == null ? null : Friends.byId(friendCircle);
+		if (open == null) friendCircle = null;
+		int h = 36;
+		roundedBorder(context, x, y, w, h, CARD, BORDER);
+		int cx = x + 6;
+		int cy = y + 5;
+		String edit = "Edit circles";
+		int editW = textRenderer.getWidth(edit);
+		int right = x + w - 12 - editW;
+		List<Profile> friends = mod.ledger.onList(Profile.Verdict.FRIEND);
+		cx = circleChip(context, mouseX, mouseY, cx, cy, right, "All friends " + friends.size(), FRIEND, open == null, "circle-all", () -> showCircle(null));
+		for (Friends.Circle c : Friends.circles()) {
+			List<Profile> members = Friends.members(mod.ledger, c);
+			int on = online(members);
+			String label = c.name + " " + members.size() + (on > 0 ? " · " + on + " on" : "");
+			cx = circleChip(context, mouseX, mouseY, cx, cy, right, label, GROUP_COLORS[c.color % GROUP_COLORS.length], c == open, "circle:" + c.name, () -> showCircle(c));
+		}
+		link(context, mouseX, mouseY, x + w - 8 - editW, y + 7, edit, "edit-circles", () -> {
+			showTab(Tab.SETTINGS);
+			scrollToCircles = true;
+		});
+		String about;
+		if (open == null) {
+			about = "Friends are people you know, kept apart from Nice, Look Into and Naughty. Press ★ on a card to pick their circle.";
+		} else {
+			List<String> parts = new ArrayList<>();
+			parts.add(open.trusted ? "Trusted at your bases (no Base Insurance alerts)" : "Not trusted at your bases");
+			if (open.joinAlert) parts.add("pings you when they join");
+			about = String.join(" · ", parts);
+		}
+		textTrim(context, about, x + 8, y + 23, w - 16, MUTED);
+		return y + h;
+	}
+
+	/** A rounded chip for the circle bar; returns the x after it. */
+	private int circleChip(DrawContext context, int mouseX, int mouseY, int x, int y, int right, String label, int color, boolean on, String id, Runnable run) {
+		Text shown = Text.literal(label).styled(s -> s.withBold(on));
+		int cw = textRenderer.getWidth(shown) + 18;
+		if (x + cw > right) return x;
+		boolean hover = over(mouseX, mouseY, x, y, cw, 13) && mouseY > BODY + 17;
+		roundedBorder(context, x, y, cw, 13, on ? tint(color, CARD, 0.25f) : hover ? HOVER_BG : CARD, on ? color : hover ? HOVER_BORDER : BORDER);
+		context.fill(x + 5, y + 4, x + 10, y + 9, color);
+		context.drawText(textRenderer, shown, x + 13, y + 3, on ? color : TEXT, false);
+		hit(x, y, cw, 13, id, run);
+		return x + cw + 4;
+	}
+
 	/** "+ Add someone to your Nice list", at the top of a list tab. */
 	private void listAddCard(DrawContext context, int mouseX, int mouseY, int x, int y, int w, Profile.Verdict list) {
 		boolean hover = over(mouseX, mouseY, x, y, w, 24) && mouseY > BODY + 17;
@@ -1267,7 +1420,9 @@ public class ShopScreen extends Screen {
 			context.fill(dx, y + 3, dx + 3, y + 4, BORDER);
 			context.fill(dx, y + 20, dx + 3, y + 21, BORDER);
 		}
-		String label = "+ Add someone to your " + verdictWord(list) + " list";
+		String label = list == Profile.Verdict.FRIEND
+				? "+ Add friends" + (friendCircle != null && Friends.byId(friendCircle) != null ? " to " + Friends.byId(friendCircle).name : "")
+				: "+ Add someone to your " + verdictWord(list) + " list";
 		context.drawText(textRenderer, Text.literal(label).styled(s -> s.withBold(true).withUnderline(hover)),
 				x + (w - textRenderer.getWidth(Text.literal(label).styled(s -> s.withBold(true)))) / 2, y + 8, LINK, false);
 		hit(x, y, w, 24, "list-add", () -> openAdd(list));
@@ -1301,7 +1456,8 @@ public class ShopScreen extends Screen {
 		}
 
 		int tx = x + 48;
-		int tw = w - 52;
+		int tw = w - 52 - 14;
+		friendStar(context, mouseX, mouseY, p, x + w - 16, y + 4);
 		boolean nameHover = over(mouseX, mouseY, tx, y + 5, textRenderer.getWidth(p.name), 9);
 		String name = textRenderer.getWidth(p.name) > tw ? textRenderer.trimToWidth(p.name, tw - 6) + "..." : p.name;
 		context.drawText(textRenderer, Text.literal(name).styled(s -> s.withUnderline(nameHover)), tx, y + 6, nameHover ? HOVER_LINK : LINK, false);
@@ -1311,7 +1467,12 @@ public class ShopScreen extends Screen {
 
 		// List status, or our suggestion, then their groups.
 		int statusEnd;
-		if (p.verdict != Profile.Verdict.NONE) {
+		if (p.verdict == Profile.Verdict.FRIEND) {
+			int color = GROUP_COLORS[Friends.color(p) % GROUP_COLORS.length];
+			Text status = Text.literal("★ " + fit(Friends.circleName(p), Math.max(30, tw / 2))).styled(s -> s.withBold(true));
+			context.drawText(textRenderer, status, tx, y + 28, color, false);
+			statusEnd = tx + textRenderer.getWidth(status);
+		} else if (p.verdict != Profile.Verdict.NONE) {
 			Text status = Text.literal(verdictMark(p.verdict) + verdictWord(p.verdict) + " list").styled(s -> s.withBold(true));
 			context.drawText(textRenderer, status, tx, y + 28, verdictColor(p.verdict), false);
 			statusEnd = tx + textRenderer.getWidth(status);
@@ -1333,7 +1494,7 @@ public class ShopScreen extends Screen {
 		}
 		String headline = headline(p);
 		boolean bad = p.score() < 0 && !headline.startsWith("\"") && !headline.startsWith("Said:");
-		textTrim(context, headline.isEmpty() ? whereabouts(p) : headline, tx, y + 39, tw, headline.isEmpty() ? MUTED : bad ? NAUGHTY : MUTED);
+		textTrim(context, headline.isEmpty() ? whereabouts(p) : headline, tx, y + 39, tw + 14, headline.isEmpty() ? MUTED : bad ? NAUGHTY : MUTED);
 
 		// The three big buttons: Nice, Look Into, Naughty.
 		int by = y + CARD_H - 20;
@@ -1341,6 +1502,104 @@ public class ShopScreen extends Screen {
 		verdictButton(context, mouseX, mouseY, p, Profile.Verdict.NICE, x + 6, by, bw);
 		verdictButton(context, mouseX, mouseY, p, Profile.Verdict.LOOK, x + 10 + bw, by, bw);
 		verdictButton(context, mouseX, mouseY, p, Profile.Verdict.NAUGHTY, x + 14 + 2 * bw, by, w - 20 - 2 * bw);
+	}
+
+	/**
+	 * The star in a card's corner, like a store's wish-list heart: makes them a friend, or (for a friend) opens the
+	 * circle picker.
+	 */
+	private void friendStar(DrawContext context, int mouseX, int mouseY, Profile p, int x, int y) {
+		boolean friend = p.verdict == Profile.Verdict.FRIEND;
+		boolean hover = over(mouseX, mouseY, x, y, 12, 12) && mouseY > BODY + 17;
+		int color = friend ? GROUP_COLORS[Friends.color(p) % GROUP_COLORS.length] : hover ? FRIEND : STAR_EMPTY;
+		if (hover || friend) rounded(context, x, y, 12, 12, friend ? tint(color, CARD, 0.18f) : FRIEND_BG);
+		String glyph = friend || hover ? "★" : "☆";
+		text(context, glyph, x + (12 - textRenderer.getWidth(glyph)) / 2 + 1, y + 2, color);
+		hit(x, y, 12, 12, "star:" + p.name, () -> starClicked(p, x - 80, y + 13));
+	}
+
+	/** Not a friend yet: they become one (in the circle being looked at, or the first). A friend: pick their circle. */
+	private void starClicked(Profile p, int menuX, int menuY) {
+		if (p.verdict == Profile.Verdict.FRIEND) {
+			openCircleMenu(p, menuX, menuY);
+			return;
+		}
+		Friends.Circle circle = tab == Tab.FRIENDS && friendCircle != null && Friends.byId(friendCircle) != null ? Friends.byId(friendCircle) : Friends.circles().get(0);
+		makeFriend(p, circle);
+	}
+
+	/** Puts them in a circle, with undo; the banner offers to pick another circle. */
+	private void makeFriend(Profile p, Friends.Circle circle) {
+		Profile.Verdict before = p.verdict;
+		String beforeCircle = p.circle;
+		boolean wasAuto = p.autoListed;
+		mod.ledger.setCircle(p, circle);
+		mod.ledger.save(false);
+		cachedResults = null;
+		flash((before == Profile.Verdict.FRIEND ? "Moved " + p.name + " to " : "Added " + p.name + " to Friends · ") + circle.name, FRIEND, () -> {
+			p.circle = beforeCircle;
+			if (before == Profile.Verdict.FRIEND) mod.ledger.setCircle(p, Friends.of(p));
+			else mod.ledger.setVerdict(p, before, wasAuto, "undo");
+			BaseInsuranceBridge.syncFriend(p);
+			mod.ledger.save(false);
+			cachedResults = null;
+			flash("Undone", MUTED, null);
+		});
+	}
+
+	private void openCircleMenu(Profile p, int x, int y) {
+		circleMenu = p;
+		circleMenuX = x;
+		circleMenuY = y;
+	}
+
+	/** The circle picker: each circle (tick on theirs), "Not a friend", and a way to edit circles. */
+	private void renderCircleMenu(DrawContext context, int mouseX, int mouseY) {
+		menuHits.clear();
+		Profile p = circleMenu;
+		List<Friends.Circle> circles = Friends.circles();
+		int w = 0;
+		for (Friends.Circle c : circles) w = Math.max(w, textRenderer.getWidth(Text.literal(c.name).styled(st -> st.withBold(true))));
+		w = Math.max(w + 34, textRenderer.getWidth("Edit circles…") + 24);
+		int rowH = 13;
+		int h = 16 + (circles.size() + 2) * rowH + 6;
+		int x = Math.max(4, Math.min(circleMenuX, width - w - 4));
+		int y = Math.max(BODY, Math.min(circleMenuY, height - h - 4));
+		context.fill(x + 2, y + 2, x + w + 2, y + h + 2, 0x40000000);
+		roundedBorder(context, x, y, w, h, CARD, HOVER_BORDER);
+		context.drawText(textRenderer, Text.literal(fit(p.name, w - 12)).styled(s -> s.withBold(true)), x + 6, y + 5, TEXT, false);
+		int ry = y + 16;
+		Friends.Circle current = Friends.of(p);
+		for (Friends.Circle c : circles) {
+			boolean hover = over(mouseX, mouseY, x + 2, ry, w - 4, rowH);
+			if (hover) context.fill(x + 2, ry, x + w - 2, ry + rowH, HOVER_BG);
+			int color = GROUP_COLORS[c.color % GROUP_COLORS.length];
+			context.fill(x + 6, ry + 4, x + 11, ry + 9, color);
+			context.drawText(textRenderer, Text.literal(c.name).styled(s -> s.withBold(c == current)), x + 15, ry + 3, c == current ? color : TEXT, false);
+			if (c == current) text(context, "✔", x + w - 12, ry + 3, color);
+			menuHits.add(new Hit(x + 2, ry, x + w - 2, ry + rowH, "circle-pick:" + c.name, () -> {
+				circleMenu = null;
+				makeFriend(p, c);
+			}));
+			ry += rowH;
+		}
+		context.fill(x + 4, ry + 1, x + w - 4, ry + 2, BORDER);
+		boolean offHover = over(mouseX, mouseY, x + 2, ry + 2, w - 4, rowH);
+		if (offHover) context.fill(x + 2, ry + 2, x + w - 2, ry + 2 + rowH, HOVER_BG);
+		text(context, current != null ? "Not a friend" : "Close", x + 15, ry + 5, current != null ? NAUGHTY : MUTED);
+		menuHits.add(new Hit(x + 2, ry + 2, x + w - 2, ry + 2 + rowH, "circle-off", () -> {
+			circleMenu = null;
+			if (p.verdict == Profile.Verdict.FRIEND) setVerdict(p, Profile.Verdict.FRIEND);
+		}));
+		ry += rowH + 2;
+		boolean editHover = over(mouseX, mouseY, x + 2, ry, w - 4, rowH);
+		if (editHover) context.fill(x + 2, ry, x + w - 2, ry + rowH, HOVER_BG);
+		text(context, "Edit circles…", x + 15, ry + 3, LINK);
+		menuHits.add(new Hit(x + 2, ry, x + w - 2, ry + rowH, "circle-edit", () -> {
+			circleMenu = null;
+			showTab(Tab.SETTINGS);
+			scrollToCircles = true;
+		}));
 	}
 
 	/** Their groups as small coloured chips from {@code x}, as many as fit before {@code right} (then "+n"). */
@@ -1951,6 +2210,15 @@ public class ShopScreen extends Screen {
 		return x + w;
 	}
 
+	/** A link in a panel: its click goes in {@code into} (the panel's hits) rather than the page's. */
+	private int link(DrawContext context, int mouseX, int mouseY, int x, int y, String label, String hitLabel, Runnable run, List<Hit> into) {
+		int w = textRenderer.getWidth(label);
+		boolean hover = over(mouseX, mouseY, x, y - 1, w, 11);
+		context.drawText(textRenderer, Text.literal(label).styled(s -> s.withUnderline(hover)), x, y, hover ? HOVER_LINK : LINK, false);
+		into.add(new Hit(x, y - 1, x + w, y + 10, hitLabel, run));
+		return x + w;
+	}
+
 	private List<String> facts(Profile p) {
 		List<String> facts = new ArrayList<>();
 		if (p.secondsNear > 0) facts.add("Time near you: " + duration(p.secondsNear));
@@ -1963,7 +2231,8 @@ public class ShopScreen extends Screen {
 			if (counts[i] > 0) facts.add(labels[i] + ": " + counts[i] + (counts[i] == 1 ? " time" : " times"));
 		}
 		if (p.verdict != Profile.Verdict.NONE) {
-			facts.add("On your " + verdictWord(p.verdict) + " list since " + ago(p.listedAt) + (p.autoListed ? " (added automatically)" : ""));
+			facts.add(p.verdict == Profile.Verdict.FRIEND ? "Your friend (" + Friends.circleName(p) + ") since " + ago(p.listedAt)
+					: "On your " + verdictWord(p.verdict) + " list since " + ago(p.listedAt) + (p.autoListed ? " (added automatically)" : ""));
 		}
 		// Who they're grouped with, and how those people are listed.
 		for (String g : p.groups) {
@@ -1991,7 +2260,8 @@ public class ShopScreen extends Screen {
 		}
 		for (Profile.FriendView view : p.friendViews) {
 			if (view.verdict == Profile.Verdict.NONE) continue;
-			facts.add(view.from + " has them on their " + verdictWord(view.verdict) + " list (shared " + ago(view.time) + ")");
+			facts.add(view.from + (view.verdict == Profile.Verdict.FRIEND ? " is friends with them" : " has them on their " + verdictWord(view.verdict) + " list")
+					+ " (shared " + ago(view.time) + ")");
 		}
 		List<Links.Link> links = mod.ledger.links.of(p.id);
 		if (!links.isEmpty()) {
@@ -2171,18 +2441,47 @@ public class ShopScreen extends Screen {
 
 	private void buyBox(DrawContext context, int mouseX, int mouseY, Profile p, int x, int w) {
 		int y = BODY + 6;
-		int h = 226;
+		boolean friend = p.verdict == Profile.Verdict.FRIEND;
+		int circleRows = friend ? Friends.circles().size() : 0;
+		int h = 248 + circleRows * 14;
 		roundedBorder(context, x, y, w, h, CARD, BORDER);
 		int ix = x + 10;
 		int iw = w - 20;
 		int ty = y + 10;
-		String status = p.verdict == Profile.Verdict.NONE ? "Not on a list" : "On your " + verdictWord(p.verdict) + " list";
-		int statusColor = p.verdict == Profile.Verdict.NONE ? TEXT : verdictColor(p.verdict);
+		String status = friend ? "★ " + Friends.circleName(p) : p.verdict == Profile.Verdict.NONE ? "Not on a list" : "On your " + verdictWord(p.verdict) + " list";
+		int statusColor = friend ? GROUP_COLORS[Friends.color(p) % GROUP_COLORS.length] : p.verdict == Profile.Verdict.NONE ? TEXT : verdictColor(p.verdict);
 		context.drawText(textRenderer, Text.literal(status).styled(s -> s.withBold(true)), ix, ty, statusColor, false);
 		ty += 12;
 		text(context, p.verdict == Profile.Verdict.NONE ? "Pick one with a click." : "Since " + ago(p.listedAt), ix, ty, MUTED);
 		ty += 14;
 
+		pill(context, mouseX, mouseY, ix, ty, iw, 16, friend ? "★ Friend" : "★ Add to Friends",
+				friend ? FRIEND_BG : FRIEND_BG, FRIEND, FRIEND, "page-friend", () -> {
+					if (!friend) makeFriend(p, Friends.circles().get(0));
+					else setVerdict(p, Profile.Verdict.FRIEND);
+				});
+		ty += 18;
+		if (friend) {
+			// Their circle: a row each, theirs ticked.
+			int cw = iw;
+			Friends.Circle current = Friends.of(p);
+			List<Friends.Circle> circles = Friends.circles();
+			for (int i = 0; i < circles.size(); i++) {
+				Friends.Circle c = circles.get(i);
+				int cx = ix;
+				int cy = ty + i * 14;
+				int color = GROUP_COLORS[c.color % GROUP_COLORS.length];
+				boolean on = c == current;
+				boolean hover = over(mouseX, mouseY, cx, cy, cw, 12);
+				roundedBorder(context, cx, cy, cw, 12, on ? tint(color, CARD, 0.25f) : hover ? HOVER_BG : CARD, on ? color : BORDER);
+				context.fill(cx + 4, cy + 4, cx + 8, cy + 8, color);
+				textTrim(context, c.name, cx + 11, cy + 2, cw - 24, on ? color : TEXT);
+				if (on) text(context, "✔", cx + cw - 11, cy + 2, color);
+				hit(cx, cy, cw, 12, "page-circle:" + c.name, () -> makeFriend(p, c));
+			}
+			ty += circleRows * 14;
+		}
+		ty += 4;
 		boolean nice = p.verdict == Profile.Verdict.NICE;
 		boolean look = p.verdict == Profile.Verdict.LOOK;
 		boolean naughty = p.verdict == Profile.Verdict.NAUGHTY;
@@ -2196,7 +2495,7 @@ public class ShopScreen extends Screen {
 				naughty ? CARD : ORANGE, naughty ? NAUGHTY : ORANGE_EDGE, naughty ? NAUGHTY : BUTTON_TEXT, "page-naughty", () -> setVerdict(p, Profile.Verdict.NAUGHTY));
 		ty += 20;
 		if (p.verdict != Profile.Verdict.NONE) {
-			pill(context, mouseX, mouseY, ix, ty, iw, 14, "Take off lists", CARD, BORDER, TEXT, "page-unsort", () -> setVerdict(p, p.verdict));
+			pill(context, mouseX, mouseY, ix, ty, iw, 14, friend ? "No longer a friend" : "Take off lists", CARD, BORDER, TEXT, "page-unsort", () -> setVerdict(p, p.verdict));
 		}
 		ty += 22;
 
@@ -2452,7 +2751,8 @@ public class ShopScreen extends Screen {
 			case NAUGHTY -> 0;
 			case LOOK -> 1;
 			case NICE -> 2;
-			case NONE -> 3;
+			case FRIEND -> 3;
+			case NONE -> 4;
 		}).thenComparing(m -> !isOnline(m)).thenComparing(m -> m.name.toLowerCase(Locale.ROOT)));
 		int my = y + 35;
 		int rows = 6;
@@ -2830,6 +3130,7 @@ public class ShopScreen extends Screen {
 		boolean shown = switch (chatFilter) {
 			case ALL -> NNConfig.INSTANCE.chatShowEveryone || me || v != Profile.Verdict.NONE || (who != null && !who.groups.isEmpty());
 			case LISTED -> v != Profile.Verdict.NONE;
+			case FRIENDS -> v == Profile.Verdict.FRIEND;
 			case NICE -> v == Profile.Verdict.NICE;
 			case LOOK -> v == Profile.Verdict.LOOK;
 			case NAUGHTY -> v == Profile.Verdict.NAUGHTY;
@@ -3039,12 +3340,12 @@ public class ShopScreen extends Screen {
 		if (line.whisper) context.fill(x, y, x + 2, y + row.h, WHISPER);
 		text(context, clock(line.time), x + 3, y + 2, MUTED);
 		if (line.alert != null) context.fill(x, y, x + 2, y + row.h, LOOK);
-		// The badge: ✔ Nice, ? Look Into, ✖ Naughty, • not listed, ★ you; arrows for joins and leaves.
+		// The badge: ★ Friend, ✔ Nice, ? Look Into, ✖ Naughty, • not listed, ◆ you; arrows for joins and leaves.
 		int bx = x + 3 + timeW;
 		String mark;
 		int color;
 		if (me) {
-			mark = "★";
+			mark = "◆";
 			color = LINK;
 		} else if (v == Profile.Verdict.NONE) {
 			mark = line.system ? (line.text.startsWith("left") ? "←" : "→") : "•";
@@ -3063,11 +3364,11 @@ public class ShopScreen extends Screen {
 			ty += 10;
 		}
 		if (!hover || me) return;
-		// Quick buttons on the right: Nice, Look Into, Naughty, for whoever said it.
+		// Quick buttons on the right: Friend, Nice, Look Into, Naughty, for whoever said it.
 		String name = who != null ? who.name : line.sender;
-		int qx = x + w - 3 * 14 - 4;
-		rounded(context, qx - 3, y, 3 * 14 + 6, Math.min(row.h, 12), CARD);
-		Profile.Verdict[] order = {Profile.Verdict.NICE, Profile.Verdict.LOOK, Profile.Verdict.NAUGHTY};
+		Profile.Verdict[] order = {Profile.Verdict.FRIEND, Profile.Verdict.NICE, Profile.Verdict.LOOK, Profile.Verdict.NAUGHTY};
+		int qx = x + w - order.length * 14 - 4;
+		rounded(context, qx - 3, y, order.length * 14 + 6, Math.min(row.h, 12), CARD);
 		for (int i = 0; i < order.length; i++) {
 			Profile.Verdict target = order[i];
 			int ox = qx + i * 14;
@@ -3097,6 +3398,7 @@ public class ShopScreen extends Screen {
 			boolean on = chatFilter == f;
 			boolean hover = over(mouseX, mouseY, x, y - 1, SIDEBAR, 11);
 			int color = switch (f) {
+				case FRIENDS -> FRIEND;
 				case NICE -> NICE;
 				case LOOK -> LOOK;
 				case NAUGHTY -> NAUGHTY;
@@ -3104,6 +3406,7 @@ public class ShopScreen extends Screen {
 				default -> LINK;
 			};
 			String mark = switch (f) {
+				case FRIENDS -> "★ ";
 				case NICE -> "✔ ";
 				case LOOK -> "? ";
 				case NAUGHTY -> "✖ ";
@@ -3146,7 +3449,7 @@ public class ShopScreen extends Screen {
 		y += 6;
 		context.drawText(textRenderer, Text.literal("Key").styled(s -> s.withBold(true)), x, y, TEXT, false);
 		y += 12;
-		text(context, "★", x, y, LINK);
+		text(context, "◆", x, y, LINK);
 		text(context, "You  ", x + 10, y, MUTED);
 		int gx = x + 10 + textRenderer.getWidth("You  ");
 		text(context, "•", gx, y, MUTED);
@@ -3263,12 +3566,16 @@ public class ShopScreen extends Screen {
 					+ "(nether or overworld).", () -> c.alertBaseCoords, v -> c.alertBaseCoords = v));
 		}
 		if (BaseInsuranceBridge.present()) {
-			options.add(new Option("Share Nice list with Base Insurance", "Nice-list players count as Base Insurance friends (no alerts about them).",
-					() -> c.shareWithBaseInsurance, v -> {
+			options.add(new Option("Nice list counts as Base Insurance friends", "Nice-list players get no Base Insurance alerts either, not just "
+					+ "friends in trusted circles.", () -> c.shareWithBaseInsurance, v -> {
 						c.shareWithBaseInsurance = v;
-						if (v) mod.ledger.onList(Profile.Verdict.NICE).forEach(BaseInsuranceBridge::syncFriend);
+						Friends.resync(mod.ledger);
 					}));
 		}
+		options.add(new Option("Record disconnects", "When you get disconnected: the reason, what did it (the server, a mod, an error) and who was near. "
+				+ "Told to you when you're back.", () -> c.recordDisconnects, v -> c.recordDisconnects = v));
+		options.add(new Option("Open share links from chat", "When someone sends you a Naughty or Nice share link in chat, offer a button to look at it.",
+				() -> c.openSharedLinks, v -> c.openSharedLinks = v));
 		return options;
 	}
 
@@ -3357,6 +3664,18 @@ public class ShopScreen extends Screen {
 		int cw2 = textRenderer.getWidth(copy) + 14;
 		pill(context, mouseX, mouseY, bx, y + 43, cw2, 14, copy, SOFT, BORDER, TEXT, "check-copy-settings", this::copyCheckReport);
 		y += ch + 10;
+		int disconnectsAt = y;
+		y = disconnectsCard(context, mouseX, mouseY, x, y, w) + 10;
+		if (scrollToDisconnects) {
+			scrollToDisconnects = false;
+			scroll = Math.max(0, disconnectsAt - y0 - 4);
+		}
+		int circlesAt = y;
+		y = circlesCard(context, mouseX, mouseY, x, y, w) + 10;
+		if (scrollToCircles) {
+			scrollToCircles = false;
+			scroll = Math.max(0, circlesAt - y0 - 4);
+		}
 		List<Option> options = options();
 		int boxH = 14 + 20;
 		for (Option o : options) boxH += 12 + textRenderer.wrapLines(Text.literal(o.help), w - 34).size() * 10 + 6;
@@ -3416,14 +3735,249 @@ public class ShopScreen extends Screen {
 		y += 14;
 		for (var line : textRenderer.wrapLines(Text.literal("Your lists are saved per server in config/naughtyornice/lists, chat logs in config/naughtyornice/chatlogs. "
 				+ "Shared lists are saved in config/naughtyornice/shared. "
-				+ "Commands: /nn, /nn add, /nn chat, /nn groups, /nn share, /nn import, /nn check, /nn nice <name>, /nn look <name>, /nn naughty <name>, "
-				+ "/nn unsort <name>, /nn group <name> <group>, /nn chat <name>."), w)) {
+				+ "Commands: /nn, /nn add, /nn friends, /nn chat, /nn groups, /nn share, /nn import, /nn check, /nn disconnects, /nn friend <name> [circle], "
+				+ "/nn nice <name>, /nn look <name>, /nn naughty <name>, /nn unsort <name>, /nn group <name> <group>, /nn chat <name>."), w)) {
 			context.drawText(textRenderer, line, x, y, MUTED, false);
 			y += 10;
 		}
 		context.disableScissor();
 		contentHeight = y - y0 + 10;
 		scrollbar(context, BODY);
+	}
+
+	// ---- Disconnects ----
+
+	/** The latest disconnects: the reason, what did it, and who was near. Returns the y after it. */
+	private int disconnectsCard(DrawContext context, int mouseX, int mouseY, int x, int y, int w) {
+		List<Disconnects.Entry> all = Disconnects.all();
+		List<Disconnects.Entry> shown = new ArrayList<>();
+		for (int i = all.size() - 1; i >= 0 && shown.size() < 3; i--) shown.add(all.get(i));
+		int iw = w - 20;
+		// Measure first, so the card fits what's in it.
+		int h = 24;
+		if (shown.isEmpty()) h += textRenderer.wrapLines(Text.literal(DISCONNECTS_NONE), iw).size() * 10 + 4;
+		for (Disconnects.Entry e : shown) h += disconnectHeight(e, iw) + 6;
+		boolean warn = !shown.isEmpty() && (shown.get(0).kind == Disconnects.Kind.MOD || shown.get(0).kind == Disconnects.Kind.ERROR)
+				&& System.currentTimeMillis() - shown.get(0).time < 86_400_000L;
+		roundedBorder(context, x, y, w, h, CARD, warn ? LOOK : BORDER);
+		context.drawText(textRenderer, Text.literal("Disconnects").styled(s -> s.withBold(true)), x + 10, y + 7, TEXT, false);
+		if (!shown.isEmpty()) {
+			String clear = "Clear";
+			int clw = textRenderer.getWidth(clear) + 12;
+			pill(context, mouseX, mouseY, x + w - 10 - clw, y + 4, clw, 13, clear, SOFT, BORDER, TEXT, "disconnects-clear", () -> {
+				Disconnects.clear();
+				flash("Cleared the disconnect history", MUTED, null);
+			});
+			String copy = "Copy details";
+			int cpw = textRenderer.getWidth(copy) + 12;
+			pill(context, mouseX, mouseY, x + w - 16 - clw - cpw, y + 4, cpw, 13, copy, SOFT, BORDER, TEXT, "disconnects-copy", () -> {
+				client.keyboard.setClipboard(Disconnects.report());
+				flash("Copied the disconnect details", NICE, null);
+			});
+		}
+		int ty = y + 22;
+		if (shown.isEmpty()) {
+			for (var line : textRenderer.wrapLines(Text.literal(DISCONNECTS_NONE), iw)) {
+				context.drawText(textRenderer, line, x + 10, ty, MUTED, false);
+				ty += 10;
+			}
+		}
+		for (Disconnects.Entry e : shown) {
+			ty = disconnectRow(context, e, x + 10, ty, iw) + 6;
+		}
+		return y + h;
+	}
+
+	private static final String DISCONNECTS_NONE = "None recorded yet. When you get disconnected, the reason, what did it (the server, another mod, "
+			+ "an error or the connection) and who was near show here.";
+
+	private int disconnectHeight(Disconnects.Entry e, int w) {
+		int h = 11;
+		h += Math.min(2, textRenderer.wrapLines(Text.literal("\"" + e.reason + "\""), w).size()) * 10;
+		h += Math.min(4, textRenderer.wrapLines(Text.literal(Disconnects.cause(e)), w).size()) * 10;
+		if (!e.nearby.isEmpty()) h += Math.min(2, textRenderer.wrapLines(Text.literal("Nearby: " + Disconnects.nearbyText(e, 8)), w).size()) * 10;
+		return h;
+	}
+
+	private int disconnectRow(DrawContext context, Disconnects.Entry e, int x, int y, int w) {
+		String kind = switch (e.kind) {
+			case SERVER -> "Server";
+			case YOU -> "You left";
+			case MOD -> "A mod";
+			case ERROR -> "Error";
+			case CONNECTION -> "Connection";
+			case UNKNOWN -> "Unknown";
+		};
+		int kindColor = e.kind == Disconnects.Kind.MOD || e.kind == Disconnects.Kind.ERROR ? LOOK : e.kind == Disconnects.Kind.SERVER ? NAUGHTY : MUTED;
+		int kw = textRenderer.getWidth(kind) + 6;
+		roundedBorder(context, x, y - 1, kw, 10, tint(kindColor, CARD, 0.15f), kindColor);
+		text(context, kind, x + 3, y, kindColor);
+		textTrim(context, ago(e.time) + " · " + Sharing.placeName(e.server), x + kw + 5, y, w - kw - 5, MUTED);
+		y += 11;
+		y = wrapped(context, "\"" + e.reason + "\"", x, y, w, TEXT, 2);
+		y = wrapped(context, Disconnects.cause(e), x, y, w, e.kind == Disconnects.Kind.MOD || e.kind == Disconnects.Kind.ERROR ? LOOK : MUTED, 4);
+		if (!e.nearby.isEmpty()) y = wrapped(context, "Nearby: " + Disconnects.nearbyText(e, 8), x, y, w, MUTED, 2);
+		return y;
+	}
+
+	/** Wrapped text, at most {@code maxLines} lines; returns the y after it. */
+	private int wrapped(DrawContext context, String s, int x, int y, int w, int color, int maxLines) {
+		int n = 0;
+		for (var line : textRenderer.wrapLines(Text.literal(s), w)) {
+			if (n++ >= maxLines) break;
+			context.drawText(textRenderer, line, x, y, color, false);
+			y += 10;
+		}
+		return y;
+	}
+
+	// ---- Friend circles ----
+
+	/**
+	 * Settings card for friend circles: colour, name, how many, trusted at bases, ping on join, move up/down,
+	 * remove; and a box to make a new one or rename one. Returns the y after it.
+	 */
+	private int circlesCard(DrawContext context, int mouseX, int mouseY, int x, int y, int w) {
+		List<Friends.Circle> circles = Friends.circles();
+		int rowH = 28;
+		String about = "Kinds of friends. New friends go in the top one. Click a colour to change it, a name to rename it.";
+		int aboutLines = Math.min(3, textRenderer.wrapLines(Text.literal(about), w - 20).size());
+		int h = 26 + aboutLines * 10 + circles.size() * rowH + 24;
+		roundedBorder(context, x, y, w, h, CARD, BORDER);
+		context.drawText(textRenderer, Text.literal("Friend circles").styled(s -> s.withBold(true)), x + 10, y + 7, TEXT, false);
+		wrapped(context, about, x + 10, y + 19, w - 20, MUTED, 3);
+		int ry = y + 22 + aboutLines * 10;
+		for (int i = 0; i < circles.size(); i++) {
+			Friends.Circle c = circles.get(i);
+			int color = GROUP_COLORS[c.color % GROUP_COLORS.length];
+			boolean rowHover = over(mouseX, mouseY, x + 4, ry - 2, w - 8, rowH);
+			if (rowHover) context.fill(x + 4, ry - 2, x + w - 4, ry + rowH - 4, HOVER_BG);
+			// Colour: click for the next one.
+			boolean swatchHover = over(mouseX, mouseY, x + 10, ry, 10, 10);
+			roundedBorder(context, x + 10, ry, 10, 10, color, swatchHover ? TEXT : tint(color, CARD, 0.5f));
+			hit(x + 10, ry, 10, 10, "circle-color:" + c.name, () -> {
+				c.color = (c.color + 1) % Ledger.GROUP_COLORS;
+				NNConfig.save();
+			});
+			int members = Friends.members(mod.ledger, c).size();
+			boolean nameHover = over(mouseX, mouseY, x + 26, ry, textRenderer.getWidth(c.name) + 6, 10);
+			Text name = Text.literal(c.name).styled(s -> s.withBold(true).withUnderline(nameHover));
+			context.drawText(textRenderer, name, x + 26, ry + 1, color, false);
+			int nameW = textRenderer.getWidth(name);
+			hit(x + 26, ry, nameW, 10, "circle-rename:" + c.name, () -> startCircleEdit(c));
+			text(context, (members == 1 ? " 1 friend" : " " + members + " friends") + (i == 0 ? " · new friends go here" : ""), x + 26 + nameW, ry + 1, MUTED);
+			// Up, down, remove on the right.
+			int bx = x + w - 10 - 12;
+			if (circles.size() > 1) {
+				iconButton(context, mouseX, mouseY, bx, ry - 1, "✖", NAUGHTY, "circle-remove:" + c.name, () -> removeCircle(c));
+			}
+			bx -= 14;
+			if (i < circles.size() - 1) iconButton(context, mouseX, mouseY, bx, ry - 1, "↓", LINK, "circle-down:" + c.name, () -> Friends.move(c, 1));
+			bx -= 14;
+			if (i > 0) iconButton(context, mouseX, mouseY, bx, ry - 1, "↑", LINK, "circle-up:" + c.name, () -> Friends.move(c, -1));
+			int cy = ry + 12;
+			int cx = checkboxSmall(context, mouseX, mouseY, x + 26, cy, "Trusted at my bases", c.trusted, "circle-trusted:" + c.name, () -> {
+				c.trusted = !c.trusted;
+				NNConfig.save();
+				Friends.resync(mod.ledger);
+			});
+			checkboxSmall(context, mouseX, mouseY, cx + 10, cy, "Ping when they join or come near", c.joinAlert, "circle-alert:" + c.name, () -> {
+				c.joinAlert = !c.joinAlert;
+				NNConfig.save();
+			});
+			ry += rowH;
+		}
+		// The box: rename the circle being edited, or make a new one.
+		int fy = ry + 2;
+		String button = circleEditing != null ? "Rename" : "+ Add circle";
+		int bw = textRenderer.getWidth(button) + 14;
+		int cancelW = circleEditing != null ? textRenderer.getWidth("Cancel") + 12 : 0;
+		int fw = w - 20 - bw - 6 - (cancelW > 0 ? cancelW + 4 : 0);
+		roundedBorder(context, x + 10, fy, fw, 16, FIELD, circleField.isFocused() ? 0xFFE77600 : INPUT_BORDER);
+		circleField.setX(x + 14);
+		circleField.setY(fy + 4);
+		circleField.setWidth(fw - 8);
+		circleFieldTop = fy;
+		hit(x + 10, fy, fw, 16, "circle-field", () -> setFocused(circleField));
+		pill(context, mouseX, mouseY, x + 10 + fw + 6, fy + 1, bw, 14, button, YELLOW, YELLOW_EDGE, BUTTON_TEXT, "circle-save", this::commitCircle);
+		if (circleEditing != null) {
+			pill(context, mouseX, mouseY, x + 10 + fw + 6 + bw + 4, fy + 1, cancelW, 14, "Cancel", SOFT, BORDER, TEXT, "circle-cancel", this::cancelCircleEdit);
+		}
+		return y + h;
+	}
+
+	/** A small square button with one symbol. */
+	private void iconButton(DrawContext context, int mouseX, int mouseY, int x, int y, String symbol, int color, String id, Runnable run) {
+		boolean hover = over(mouseX, mouseY, x, y, 12, 12);
+		roundedBorder(context, x, y, 12, 12, hover ? tint(color, CARD, 0.2f) : CARD, hover ? color : BORDER);
+		text(context, symbol, x + (12 - textRenderer.getWidth(symbol)) / 2 + 1, y + 2, color);
+		hit(x, y, 12, 12, id, run);
+	}
+
+	/** A checkbox with its label; returns the x after it. */
+	private int checkboxSmall(DrawContext context, int mouseX, int mouseY, int x, int y, String label, boolean checked, String id, Runnable run) {
+		int w = 12 + textRenderer.getWidth(label);
+		boolean hover = over(mouseX, mouseY, x, y - 1, w, 11);
+		roundedBorder(context, x, y, 9, 9, checked ? LINK : FIELD, checked ? LINK : INPUT_BORDER);
+		if (checked) text(context, "✔", x + 1, y + 1, CARD);
+		context.drawText(textRenderer, Text.literal(label).styled(s -> s.withUnderline(hover)), x + 12, y + 1, TEXT, false);
+		hit(x, y - 1, w, 11, id, run);
+		return x + w;
+	}
+
+	private void startCircleEdit(Friends.Circle c) {
+		circleEditing = c;
+		circleField.setText(c.name);
+		circleField.setCursorToEnd(false);
+		setFocused(circleField);
+	}
+
+	private void cancelCircleEdit() {
+		circleEditing = null;
+		circleField.setText("");
+		setFocused(null);
+	}
+
+	private void commitCircle() {
+		String name = circleField.getText().strip();
+		if (name.isEmpty()) {
+			setFocused(circleField);
+			return;
+		}
+		if (circleEditing != null) {
+			String was = circleEditing.name;
+			if (!Friends.rename(circleEditing, name)) {
+				flash("There's already a circle called " + name, NAUGHTY, null);
+				return;
+			}
+			flash("Renamed " + was + " to " + circleEditing.name, FRIEND, null);
+		} else {
+			Friends.Circle made = Friends.add(name);
+			if (made == null) {
+				flash(Friends.circles().size() >= Friends.MAX ? "That's the most circles there can be (" + Friends.MAX + ")" : "There's already a circle called " + name, NAUGHTY, null);
+				return;
+			}
+			flash("Made the circle " + made.name + ". Press ★ on a friend's card to put them in it.", FRIEND, null);
+		}
+		cancelCircleEdit();
+	}
+
+	private void removeCircle(Friends.Circle c) {
+		List<Profile> members = Friends.members(mod.ledger, c);
+		int at = Friends.circles().indexOf(c);
+		if (!Friends.remove(c, mod.ledger)) return;
+		mod.ledger.save(false);
+		cachedResults = null;
+		flash("Removed " + c.name + (members.isEmpty() ? "" : "; its " + members.size() + " moved to " + Friends.circles().get(0).name), MUTED, () -> {
+			Friends.circles().add(Math.min(at, Friends.circles().size()), c);
+			for (Profile p : members) p.circle = c.id;
+			NNConfig.save();
+			Friends.resync(mod.ledger);
+			mod.ledger.markDirty();
+			mod.ledger.save(false);
+			cachedResults = null;
+			flash("Undone", MUTED, null);
+		});
 	}
 
 	// ---- The Chat check panel ----
@@ -3549,6 +4103,17 @@ public class ShopScreen extends Screen {
 	@Override
 	public boolean mouseClicked(Click realClick, boolean doubled) {
 		Click click = scaled(realClick);
+		if (circleMenu != null) {
+			// A click on a row picks it; anywhere else just closes the picker.
+			for (Hit hit : List.copyOf(menuHits)) {
+				if (click.x() >= hit.x0 && click.x() < hit.x1 && click.y() >= hit.y0 && click.y() < hit.y1) {
+					hit.run.run();
+					return true;
+				}
+			}
+			circleMenu = null;
+			return true;
+		}
 		if (adding) return panelClicked(click, doubled);
 		if (sharing) return shareClicked(click);
 		if (grouping) return groupClicked(click, doubled);
@@ -3585,7 +4150,7 @@ public class ShopScreen extends Screen {
 
 	@Override
 	public boolean mouseScrolled(double mouseX, double mouseY, double horizontalAmount, double verticalAmount) {
-		if (adding || grouping) return true;
+		if (adding || grouping || circleMenu != null) return true;
 		if (checking) {
 			checkScroll = Math.max(0, Math.min(checkMaxScroll, checkScroll - verticalAmount * 22));
 			return true;
@@ -3604,6 +4169,10 @@ public class ShopScreen extends Screen {
 
 	@Override
 	public boolean keyPressed(KeyInput input) {
+		if (circleMenu != null) {
+			if (input.key() == GLFW.GLFW_KEY_ESCAPE) circleMenu = null;
+			return true;
+		}
 		if (adding) return panelKey(input);
 		if (sharing) return shareKey(input);
 		if (grouping) return groupKey(input);
@@ -3625,6 +4194,14 @@ public class ShopScreen extends Screen {
 				chatScroll = Math.max(0, Math.min(chatMaxScroll, chatScroll + (input.key() == GLFW.GLFW_KEY_PAGE_UP ? 1 : -1) * (height - BODY - 60)));
 				return true;
 			}
+		}
+		if (enter && circleField.isFocused()) {
+			commitCircle();
+			return true;
+		}
+		if (input.key() == GLFW.GLFW_KEY_ESCAPE && circleField.isFocused()) {
+			cancelCircleEdit();
+			return true;
 		}
 		if (enter && detailField.isFocused() && selected != null) {
 			commitDetail(selected);
@@ -3700,6 +4277,7 @@ public class ShopScreen extends Screen {
 		addField.setText("");
 		addNote.setText("");
 		addGroup.setText(tab == Tab.GROUPS && openGroup != null ? openGroup : "");
+		addCircle = tab == Tab.FRIENDS && friendCircle != null ? friendCircle : Friends.circles().get(0).id;
 		setFocused(addField);
 	}
 
@@ -3802,20 +4380,28 @@ public class ShopScreen extends Screen {
 				}
 			}
 			if (!group.isEmpty() && mod.ledger.addToGroup(p, group)) undo.add(() -> mod.ledger.removeFromGroup(p, group));
-			if (p.verdict == list) {
+			Friends.Circle circle = Friends.byId(addCircle) != null ? Friends.byId(addCircle) : Friends.circles().get(0);
+			if (p.verdict == list && (list != Profile.Verdict.FRIEND || Friends.of(p) == circle)) {
 				already.add(p.name);
 				continue;
 			}
 			Profile.Verdict before = p.verdict;
+			String beforeCircle = p.circle;
 			boolean wasAuto = p.autoListed;
-			mod.ledger.setVerdict(p, list, false, "added by hand");
+			if (list == Profile.Verdict.FRIEND) {
+				mod.ledger.setCircle(p, circle);
+				Profile who = p;
+				undo.add(() -> who.circle = beforeCircle);
+			} else {
+				mod.ledger.setVerdict(p, list, false, "added by hand");
+			}
 			added.add(p.name);
 			undo.add(known ? () -> mod.ledger.setVerdict(p, before, wasAuto, "undo") : () -> mod.ledger.forget(p));
 		}
 		mod.ledger.save(false);
 		cachedResults = null;
 
-		String listName = verdictWord(list);
+		String listName = list == Profile.Verdict.FRIEND ? "Friends (" + Friends.circleName(mod.ledger.byName(added.isEmpty() ? "" : added.get(0))) + ")" : verdictWord(list);
 		StringBuilder status = new StringBuilder();
 		if (!added.isEmpty()) status.append("Added ").append(join(added)).append(" to your ").append(listName).append(" list. ");
 		if (!already.isEmpty()) status.append(join(already)).append(already.size() == 1 ? " was" : " were").append(" already on it. ");
@@ -3844,13 +4430,13 @@ public class ShopScreen extends Screen {
 		panelHits.clear();
 		context.fill(0, 0, width, height, 0x99000000);
 		int w = Math.min(320, width - 16);
-		int h = 222;
+		int h = 248;
 		int x = (width - w) / 2;
 		int y = Math.max(4, (height - h) / 2);
 		roundedBorder(context, x, y, w, h, CARD, BORDER);
 		context.fill(x + 1, y + 2, x + w - 1, y + 22, SOFT);
 		context.fill(x + 1, y + 22, x + w - 1, y + 23, BORDER);
-		context.drawText(textRenderer, Text.literal("Add players to your lists").styled(s -> s.withBold(true)), x + 10, y + 8, TEXT, false);
+		context.drawText(textRenderer, Text.literal("Add players to your Friends or lists").styled(s -> s.withBold(true)), x + 10, y + 8, TEXT, false);
 		int closeX = x + w - 16;
 		boolean closeHover = over(mouseX, mouseY, closeX - 3, y + 3, 14, 16);
 		text(context, "✖", closeX, y + 8, closeHover ? TEXT : MUTED);
@@ -3877,7 +4463,7 @@ public class ShopScreen extends Screen {
 		}
 		for (String name : suggestions) {
 			Profile known = mod.ledger.byName(name);
-			String mark = known == null || known.verdict == Profile.Verdict.NONE ? "" : known.verdict == Profile.Verdict.NICE ? "✔ " : "✖ ";
+			String mark = known == null ? "" : verdictMark(known.verdict);
 			String label = mark + name;
 			int cw = textRenderer.getWidth(label) + 8;
 			if (sx + cw > ix + iw) {
@@ -3887,7 +4473,7 @@ public class ShopScreen extends Screen {
 			int cy = ty + row * 14;
 			boolean hover = over(mouseX, mouseY, sx, cy, cw, 12);
 			roundedBorder(context, sx, cy, cw, 12, hover ? HOVER_BG : HOVER_BG, hover ? LINK : BORDER);
-			int color = known == null || known.verdict == Profile.Verdict.NONE ? LINK : known.verdict == Profile.Verdict.NICE ? NICE : NAUGHTY;
+			int color = known == null || known.verdict == Profile.Verdict.NONE ? LINK : verdictColor(known.verdict);
 			text(context, label, sx + 4, cy + 2, color);
 			panelHits.add(new Hit(sx, cy, sx + cw, cy + 12, "suggest:" + name, () -> pickSuggestion(name)));
 			sx += cw + 4;
@@ -3910,12 +4496,34 @@ public class ShopScreen extends Screen {
 		addGroup.setY(ty + 4);
 		addGroup.setWidth(iw - 8);
 		addGroupTop = ty;
-		ty += 22;
+		ty += 20;
 
-		int bw = (iw - 8) / 3;
-		panelButton(context, mouseX, mouseY, ix, ty, bw, "✔ Nice list", YELLOW, YELLOW_EDGE, BUTTON_TEXT, Profile.Verdict.NICE);
-		panelButton(context, mouseX, mouseY, ix + bw + 4, ty, bw, "? Look Into", SOFT, LOOK, TEXT, Profile.Verdict.LOOK);
-		panelButton(context, mouseX, mouseY, ix + 2 * (bw + 4), ty, iw - 2 * (bw + 4), "✖ Naughty list", ORANGE, ORANGE_EDGE, BUTTON_TEXT, Profile.Verdict.NAUGHTY);
+		// Which circle "★ Friends" puts them in.
+		String circleLabel = "Friend circle: ";
+		text(context, circleLabel, ix, ty + 2, MUTED);
+		int ccx = ix + textRenderer.getWidth(circleLabel);
+		for (Friends.Circle c : Friends.circles()) {
+			int cw = textRenderer.getWidth(c.name) + 14;
+			if (ccx + cw > ix + iw) break;
+			boolean on = c.id.equals(addCircle);
+			boolean hover = over(mouseX, mouseY, ccx, ty, cw, 12);
+			int color = GROUP_COLORS[c.color % GROUP_COLORS.length];
+			roundedBorder(context, ccx, ty, cw, 12, on ? tint(color, CARD, 0.25f) : hover ? HOVER_BG : CARD, on ? color : BORDER);
+			context.fill(ccx + 4, ty + 4, ccx + 8, ty + 8, color);
+			text(context, c.name, ccx + 10, ty + 2, on ? color : TEXT);
+			panelHits.add(new Hit(ccx, ty, ccx + cw, ty + 12, "add-circle:" + c.name, () -> {
+				addCircle = c.id;
+				addTarget = Profile.Verdict.FRIEND;
+			}));
+			ccx += cw + 3;
+		}
+		ty += 18;
+
+		int bw = (iw - 12) / 4;
+		panelButton(context, mouseX, mouseY, ix, ty, bw, "★ Friends", FRIEND_BG, FRIEND, FRIEND, Profile.Verdict.FRIEND);
+		panelButton(context, mouseX, mouseY, ix + bw + 4, ty, bw, "✔ Nice", YELLOW, YELLOW_EDGE, BUTTON_TEXT, Profile.Verdict.NICE);
+		panelButton(context, mouseX, mouseY, ix + 2 * (bw + 4), ty, bw, "? Look Into", SOFT, LOOK, TEXT, Profile.Verdict.LOOK);
+		panelButton(context, mouseX, mouseY, ix + 3 * (bw + 4), ty, iw - 3 * (bw + 4), "✖ Naughty", ORANGE, ORANGE_EDGE, BUTTON_TEXT, Profile.Verdict.NAUGHTY);
 		ty += 24;
 
 		if (addStatus != null) {
@@ -3926,7 +4534,8 @@ public class ShopScreen extends Screen {
 				ty += 10;
 			}
 		}
-		textTrim(context, "Enter adds to your " + verdictWord(addTarget) + " list · Tab next box · Esc closes", ix, y + h - 14, iw, MUTED);
+		String target = addTarget == Profile.Verdict.FRIEND ? "Friends (" + (Friends.byId(addCircle) != null ? Friends.byId(addCircle).name : "") + ")" : verdictWord(addTarget) + " list";
+		textTrim(context, "Enter adds to your " + target + " · Tab next box · Esc closes", ix, y + h - 14, iw, MUTED);
 	}
 
 	private void panelButton(DrawContext context, int mouseX, int mouseY, int x, int y, int w, String label, int fill, int edge, int textColor, Profile.Verdict list) {
@@ -3939,6 +4548,7 @@ public class ShopScreen extends Screen {
 		String id = switch (list) {
 			case NICE -> "add-to-nice";
 			case LOOK -> "add-to-look";
+			case FRIEND -> "add-to-friends";
 			default -> "add-to-naughty";
 		};
 		panelHits.add(new Hit(x, y, x + w, y + 18, id, () -> addNames(list)));
@@ -4067,12 +4677,50 @@ public class ShopScreen extends Screen {
 
 	/** Copies a share code for just this player. */
 	private void sharePlayer(Profile p) {
-		client.keyboard.setClipboard(Sharing.code(Sharing.pack(List.of(p), false, myName(), myId(), mod.ledger.key())));
-		flash("Copied a share code for " + p.name + ". Paste it to a friend who has the mod.", NICE, null);
+		Sharing.Pack pack = Sharing.pack(List.of(p), false, myName(), myId(), mod.ledger.key());
+		flash("Making a share link for " + p.name + "…", MUTED, null);
+		CloudShare.upload(pack).whenComplete((link, error) -> client.execute(() -> {
+			if (error != null) {
+				// No internet: the long code works too.
+				client.keyboard.setClipboard(Sharing.code(pack));
+				flash("Copied a share code for " + p.name + " (couldn't make a link). Paste it to a friend who has the mod.", NICE, null);
+				return;
+			}
+			mod.watcher.ownLink(link);
+			client.keyboard.setClipboard(link);
+			flash("Copied a share link for " + p.name + ". Paste it to a friend who has the mod.", NICE, null);
+		}));
 	}
 
 	private void pasteShare() {
-		loadShare(() -> Sharing.read(client.keyboard.getClipboard()));
+		String clip = client.keyboard.getClipboard();
+		String link = CloudShare.find(clip);
+		if (link != null) openShareLink(link);
+		else loadShare(() -> Sharing.read(clip));
+	}
+
+	/** Downloads a share link, then shows what importing it would do. */
+	private void openShareLink(String link) {
+		sharing = true;
+		shareView = ShareView.RECEIVE;
+		shareStatus = "Downloading and unlocking…";
+		shareStatusColor = MUTED;
+		CloudShare.download(link).whenComplete((pack, error) -> client.execute(() -> {
+			if (error != null) {
+				Throwable cause = error.getCause() != null ? error.getCause() : error;
+				shareView = ShareView.RECEIVE;
+				shareStatus = cause.getMessage() == null ? "Couldn't open that link." : cause.getMessage();
+				shareStatusColor = NAUGHTY;
+				return;
+			}
+			loadShare(() -> pack);
+		}));
+	}
+
+	/** Opens with the share panel downloading this link. */
+	public ShopScreen withShareLink(String link) {
+		openLink = link;
+		return this;
 	}
 
 	/** Reads a friend's share and shows what importing it would do. */
@@ -4150,7 +4798,7 @@ public class ShopScreen extends Screen {
 		panelHits.clear();
 		context.fill(0, 0, width, height, 0x99000000);
 		int w = Math.min(360, width - 16);
-		int h = Math.min(shareView == ShareView.PREVIEW ? 300 : 236, height - 12);
+		int h = Math.min(shareView == ShareView.PREVIEW ? 300 : shareView == ShareView.SEND ? 262 : 236, height - 12);
 		int x = (width - w) / 2;
 		int y = Math.max(6, (height - h) / 2);
 		roundedBorder(context, x, y, w, h, CARD, BORDER);
@@ -4256,26 +4904,140 @@ public class ShopScreen extends Screen {
 		List<Profile> chosen = shareChoice();
 		int details = 0;
 		for (Profile p : chosen) details += p.details.size();
-		int length = chosen.isEmpty() ? 0 : currentCode().length();
-		String size = length <= Sharing.DISCORD_LIMIT ? "fits in one Discord message" : "too long for one Discord message, send it as a file";
-		y = panelText(context, chosen.size() + (chosen.size() == 1 ? " player" : " players") + " · " + details + (details == 1 ? " detail" : " details")
-				+ (chosen.isEmpty() ? "" : " · the code " + size), x, y, w, MUTED, 2);
-		y += 6;
+		y = panelText(context, chosen.size() + (chosen.size() == 1 ? " player" : " players") + " · " + details + (details == 1 ? " detail" : " details"),
+				x, y, w, MUTED, 1);
+		y += 4;
 
-		int bw = (w - 6) / 2;
-		shareButton(context, mouseX, mouseY, x, y, bw, "Copy share code", YELLOW, YELLOW_EDGE, BUTTON_TEXT, "share-copy", this::copyShareCode);
-		shareButton(context, mouseX, mouseY, x + bw + 6, y, w - bw - 6, "Save as file", ORANGE, ORANGE_EDGE, BUTTON_TEXT, "share-save", this::saveShareFile);
-		y += 24;
+		// The easy way: a short link, made once per choice.
+		String link = currentLink();
+		if (link == null) {
+			String label = uploading ? "Making your link…" : "🔗 Get share link";
+			shareButton(context, mouseX, mouseY, x, y, w, label, YELLOW, YELLOW_EDGE, BUTTON_TEXT, "share-link", () -> makeLink(null));
+		} else {
+			int copyW = textRenderer.getWidth("Copy") + 16;
+			roundedBorder(context, x, y, w - copyW - 4, 18, FIELD, NICE);
+			textTrim(context, link, x + 5, y + 5, w - copyW - 14, TEXT);
+			shareButton(context, mouseX, mouseY, x + w - copyW, y, copyW, "Copy", YELLOW, YELLOW_EDGE, BUTTON_TEXT, "share-link-copy", () -> {
+				client.keyboard.setClipboard(link);
+				shareStatus = "Copied! Paste it to your friend anywhere (Discord, a whisper...). Their mod opens it.";
+				shareStatusColor = NICE;
+			});
+		}
+		y += 22;
+
+		// Or straight to someone online, as a whisper: friends first.
+		List<PlayerListEntry> people = new ArrayList<>(online());
+		people.sort(Comparator.comparingInt((PlayerListEntry e) -> {
+			Profile p = mod.ledger.get(e.getProfile().id());
+			return p == null ? 4 : switch (p.verdict) {
+				case FRIEND -> 0;
+				case NICE -> 1;
+				case NONE -> 2;
+				default -> 3;
+			};
+		}).thenComparing(e -> e.getProfile().name().toLowerCase(Locale.ROOT)));
+		people.removeIf(e -> {
+			Profile p = mod.ledger.get(e.getProfile().id());
+			return p != null && p.verdict == Profile.Verdict.NAUGHTY;
+		});
+		if (!people.isEmpty()) {
+			String lead = "Send in game: ";
+			text(context, lead, x, y + 2, MUTED);
+			int cx = x + textRenderer.getWidth(lead);
+			int row = 0;
+			for (PlayerListEntry e : people) {
+				String name = e.getProfile().name();
+				Profile p = mod.ledger.get(e.getProfile().id());
+				String label = (p == null ? "" : verdictMark(p.verdict)) + name;
+				int cw = textRenderer.getWidth(label) + 8;
+				if (cx + cw > x + w) {
+					if (++row >= 2) break;
+					cx = x + textRenderer.getWidth(lead);
+				}
+				int cy = y + row * 14;
+				boolean hover = over(mouseX, mouseY, cx, cy, cw, 12);
+				int color = p == null || p.verdict == Profile.Verdict.NONE ? LINK : verdictColor(p.verdict);
+				roundedBorder(context, cx, cy, cw, 12, hover ? HOVER_BG : CARD, hover ? color : BORDER);
+				text(context, label, cx + 4, cy + 2, color);
+				panelHits.add(new Hit(cx, cy, cx + cw, cy + 12, "share-whisper:" + name, () -> makeLink(name)));
+				cx += cw + 3;
+			}
+			y += (row + 1) * 14 + 4;
+		}
 		if (shareStatus != null) y = panelText(context, shareStatus, x, y, w, shareStatusColor, 3);
+
+		// The old ways, for no internet or very big shares.
+		int ly = bottom - 38;
+		text(context, "Other ways:", x, ly, MUTED);
+		int lx = x + textRenderer.getWidth("Other ways: ");
+		lx = link(context, mouseX, mouseY, lx, ly, "Copy long code", "share-copy", this::copyShareCode, panelHits) + 10;
+		lx = link(context, mouseX, mouseY, lx, ly, "Save as file", "share-save", this::saveShareFile, panelHits) + 10;
 		if (shareSavedFile != null) {
 			Path folder = shareSavedFile.getParent();
-			int lx = x;
-			boolean hover = over(mouseX, mouseY, lx, y - 1, textRenderer.getWidth("Show the file"), 11);
-			context.drawText(textRenderer, Text.literal("Show the file").styled(s -> s.withUnderline(hover)), lx, y, hover ? HOVER_LINK : LINK, false);
-			panelHits.add(new Hit(lx, y - 1, lx + textRenderer.getWidth("Show the file"), y + 10, "share-show", () -> Util.getOperatingSystem().open(folder)));
+			link(context, mouseX, mouseY, lx, ly, "Show the file", "share-show", () -> Util.getOperatingSystem().open(folder), panelHits);
 		}
-		panelText(context, "Your friend opens ⇄ Share, picks Get from a friend, and pastes the code or drops the file on their game.",
-				x, bottom - 26, w, MUTED, 2);
+		panelText(context, "Links are locked: only someone with the whole link can read it. They expire after a while.",
+				x, bottom - 24, w, MUTED, 2);
+	}
+
+	/** The share link for the current choice, or null if it hasn't been made (or the choice changed since). */
+	private String currentLink() {
+		if (shareLink == null) return null;
+		return shareLinkKey.equals(shareChoiceKey()) ? shareLink : null;
+	}
+
+	private String shareChoiceKey() {
+		List<Profile> chosen = shareChoice();
+		int details = 0;
+		for (Profile p : chosen) details += p.details.size();
+		return shareScope + "/" + shareChat + "/" + chosen.size() + "/" + details + "/" + mod.ledger.changes();
+	}
+
+	/** Makes the share link (once), then copies it, or whispers it to {@code sendTo}. */
+	private void makeLink(String sendTo) {
+		if (shareChoice().isEmpty()) {
+			shareStatus = "Nobody to share yet. Put someone on a list first.";
+			shareStatusColor = NAUGHTY;
+			return;
+		}
+		String ready = currentLink();
+		if (ready != null) {
+			deliverLink(ready, sendTo);
+			return;
+		}
+		if (uploading) return;
+		uploading = true;
+		shareStatus = "Locking and uploading…";
+		shareStatusColor = MUTED;
+		String key = shareChoiceKey();
+		Sharing.Pack pack = Sharing.pack(shareChoice(), shareChat, myName(), myId(), mod.ledger.key());
+		CloudShare.upload(pack).whenComplete((link, error) -> client.execute(() -> {
+			uploading = false;
+			if (error != null) {
+				Throwable cause = error.getCause() != null ? error.getCause() : error;
+				shareStatus = cause.getMessage() == null ? "Couldn't make a link. Use Copy long code instead." : cause.getMessage();
+				shareStatusColor = NAUGHTY;
+				return;
+			}
+			shareLink = link;
+			shareLinkKey = key;
+			mod.watcher.ownLink(link);
+			deliverLink(link, sendTo);
+		}));
+	}
+
+	private void deliverLink(String link, String sendTo) {
+		if (sendTo == null) {
+			client.keyboard.setClipboard(link);
+			shareStatus = "Copied! Paste it to your friend anywhere (Discord, a whisper...). Their mod opens it.";
+			shareStatusColor = NICE;
+			return;
+		}
+		if (client.getNetworkHandler() == null) return;
+		String command = NNConfig.INSTANCE.whisperCommand.strip().replaceFirst("^/", "");
+		client.getNetworkHandler().sendChatCommand(command + " " + sendTo + " My Naughty or Nice lists: " + link);
+		shareStatus = "Sent to " + sendTo + " (/" + command + "). If they have the mod, they get a button to open it.";
+		shareStatusColor = NICE;
 	}
 
 	private void renderShareReceive(DrawContext context, int mouseX, int mouseY, int x, int y, int w, int bottom) {
@@ -4289,12 +5051,12 @@ public class ShopScreen extends Screen {
 		String drop = "Drop a .nnshare file onto the game";
 		context.drawText(textRenderer, Text.literal(drop).styled(s -> s.withBold(true)), x + (w - textRenderer.getWidth(Text.literal(drop).styled(s -> s.withBold(true)))) / 2,
 				y + 12, TEXT, false);
-		String or = "or paste a share code a friend sent you";
+		String or = "or paste a share link or code a friend sent you";
 		text(context, or, x + (w - textRenderer.getWidth(or)) / 2, y + 25, MUTED);
 		y += zoneH + 6;
 
 		int bw = (w - 6) / 2;
-		shareButton(context, mouseX, mouseY, x, y, bw, "Paste share code", YELLOW, YELLOW_EDGE, BUTTON_TEXT, "share-paste", this::pasteShare);
+		shareButton(context, mouseX, mouseY, x, y, bw, "Paste link or code", YELLOW, YELLOW_EDGE, BUTTON_TEXT, "share-paste", this::pasteShare);
 		shareButton(context, mouseX, mouseY, x + bw + 6, y, w - bw - 6, "Open shared folder", SOFT, BORDER, TEXT, "share-folder", () -> {
 			try {
 				Files.createDirectories(Sharing.folder());
@@ -4351,7 +5113,9 @@ public class ShopScreen extends Screen {
 				case YOU -> you = row;
 			}
 		}
-		if (you != null && you.in.verdict != Profile.Verdict.NONE) {
+		if (you != null && you.in.friend) {
+			y = panelText(context, "★ " + from + " has you as a friend.", x, y, w, FRIEND, 1);
+		} else if (you != null && you.in.verdict != Profile.Verdict.NONE) {
 			y = panelText(context, verdictMark(you.in.verdict) + from + " has you on their " + verdictWord(you.in.verdict) + " list.", x, y, w,
 					verdictColor(you.in.verdict), 1);
 		}
@@ -4412,9 +5176,9 @@ public class ShopScreen extends Screen {
 		if (conflict) rounded(context, x - 2, y - 1, w + 4, 22, BAD_BG);
 		face(context, row.in.id, x, y + 2, 16);
 		int tx = x + 22;
-		String verdictText = verdictWord(row.in.verdict);
+		String verdictText = row.in.friend ? "★ Their friend" : verdictWord(row.in.verdict);
 		int chipW = textRenderer.getWidth(verdictText) + 8;
-		int chipColor = verdictColor(row.in.verdict);
+		int chipColor = verdictColor(row.in.view());
 		context.drawText(textRenderer, Text.literal(fit(row.in.name, w - 22 - chipW - 6)).styled(s -> s.withBold(true)), tx, y + 2, TEXT, false);
 		roundedBorder(context, x + w - chipW, y + 1, chipW, 11, CARD, chipColor);
 		text(context, verdictText, x + w - chipW + 4, y + 3, chipColor);
@@ -4444,6 +5208,7 @@ public class ShopScreen extends Screen {
 			case NICE -> "Nice";
 			case NAUGHTY -> "Naughty";
 			case LOOK -> "Look Into";
+			case FRIEND -> "Friends";
 			case NONE -> "No list";
 		};
 	}
@@ -4453,16 +5218,18 @@ public class ShopScreen extends Screen {
 			case NICE -> NICE;
 			case NAUGHTY -> NAUGHTY;
 			case LOOK -> LOOK;
+			case FRIEND -> FRIEND;
 			case NONE -> MUTED;
 		};
 	}
 
-	/** "✔ ", "? ", "✖ " or nothing. */
+	/** "✔ ", "? ", "✖ ", "★ " or nothing. */
 	private static String verdictMark(Profile.Verdict verdict) {
 		return switch (verdict) {
 			case NICE -> "✔ ";
 			case NAUGHTY -> "✖ ";
 			case LOOK -> "? ";
+			case FRIEND -> "★ ";
 			case NONE -> "";
 		};
 	}
@@ -4591,5 +5358,36 @@ public class ShopScreen extends Screen {
 
 	public int testResultCount() {
 		return results().size();
+	}
+
+	/** Clicks a row of the circle picker; used by the self-test. */
+	public boolean testMenuClick(String label) {
+		for (Hit hit : List.copyOf(menuHits)) {
+			if (hit.label.equals(label)) {
+				hit.run.run();
+				return true;
+			}
+		}
+		return false;
+	}
+
+	public boolean testCircleMenu() {
+		return circleMenu != null;
+	}
+
+	public void testCircleText(String text) {
+		circleField.setText(text);
+	}
+
+	public String testShareLink() {
+		return currentLink();
+	}
+
+	public String testShareStatus() {
+		return shareStatus;
+	}
+
+	public boolean testPreview() {
+		return sharing && shareView == ShareView.PREVIEW && incomingRows != null;
 	}
 }
