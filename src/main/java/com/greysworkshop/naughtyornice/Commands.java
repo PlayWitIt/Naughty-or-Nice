@@ -1,0 +1,153 @@
+package com.greysworkshop.naughtyornice;
+
+import com.mojang.brigadier.CommandDispatcher;
+import com.mojang.brigadier.arguments.StringArgumentType;
+import com.mojang.brigadier.context.CommandContext;
+import com.mojang.brigadier.suggestion.SuggestionProvider;
+import net.fabricmc.fabric.api.client.command.v2.FabricClientCommandSource;
+import net.minecraft.client.MinecraftClient;
+import net.minecraft.client.network.PlayerListEntry;
+import net.minecraft.command.CommandSource;
+import net.minecraft.text.Text;
+import net.minecraft.util.Formatting;
+
+import java.util.ArrayList;
+import java.util.List;
+
+import static net.fabricmc.fabric.api.client.command.v2.ClientCommandManager.argument;
+import static net.fabricmc.fabric.api.client.command.v2.ClientCommandManager.literal;
+
+/** /nn commands. Client-side only; nothing reaches the server. */
+public final class Commands {
+	private Commands() {}
+
+	private static final SuggestionProvider<FabricClientCommandSource> NAMES = (context, builder) -> {
+		List<String> names = new ArrayList<>();
+		MinecraftClient client = MinecraftClient.getInstance();
+		if (client.getNetworkHandler() != null) {
+			for (PlayerListEntry entry : client.getNetworkHandler().getPlayerList()) names.add(entry.getProfile().name());
+		}
+		for (Profile profile : NaughtyOrNiceClient.INSTANCE.ledger.all()) {
+			if (!names.contains(profile.name)) names.add(profile.name);
+		}
+		return CommandSource.suggestMatching(names, builder);
+	};
+
+	private static final SuggestionProvider<FabricClientCommandSource> GROUPS = (context, builder) ->
+			CommandSource.suggestMatching(NaughtyOrNiceClient.INSTANCE.ledger.groups().keySet(), builder);
+
+	public static void register(CommandDispatcher<FabricClientCommandSource> dispatcher) {
+		dispatcher.register(literal("nn")
+				.executes(c -> {
+					NaughtyOrNiceClient.INSTANCE.openLater(new ShopScreen());
+					return 1;
+				})
+				.then(literal("nice").then(argument("player", StringArgumentType.word()).suggests(NAMES)
+						.executes(c -> mark(c, Profile.Verdict.NICE))))
+				.then(literal("naughty").then(argument("player", StringArgumentType.word()).suggests(NAMES)
+						.executes(c -> mark(c, Profile.Verdict.NAUGHTY))))
+				.then(literal("look").then(argument("player", StringArgumentType.word()).suggests(NAMES)
+						.executes(c -> mark(c, Profile.Verdict.LOOK))))
+				.then(literal("group").then(argument("player", StringArgumentType.word()).suggests(NAMES)
+						.then(argument("group", StringArgumentType.greedyString()).suggests(GROUPS).executes(Commands::group))))
+				.then(literal("chat").executes(c -> {
+					NaughtyOrNiceClient.INSTANCE.openLater(new ShopScreen(ShopScreen.Tab.CHAT, null));
+					return 1;
+				}).then(argument("player", StringArgumentType.word()).suggests(NAMES)
+						.executes(c -> {
+							Profile profile = find(c);
+							if (profile == null) return 0;
+							NaughtyOrNiceClient.INSTANCE.openLater(new ShopScreen(null, profile).withChatLog());
+							return 1;
+						})))
+				.then(literal("groups").executes(c -> {
+					NaughtyOrNiceClient.INSTANCE.openLater(new ShopScreen(ShopScreen.Tab.GROUPS, null));
+					return 1;
+				}))
+				.then(literal("unsort").then(argument("player", StringArgumentType.word()).suggests(NAMES)
+						.executes(c -> mark(c, Profile.Verdict.NONE))))
+				.then(literal("who").then(argument("player", StringArgumentType.word()).suggests(NAMES)
+						.executes(c -> {
+							Profile profile = find(c);
+							if (profile == null) return 0;
+							NaughtyOrNiceClient.INSTANCE.openLater(new ShopScreen(null, profile));
+							return 1;
+						})))
+				.then(literal("add").executes(c -> {
+					NaughtyOrNiceClient.INSTANCE.openLater(new ShopScreen().withAddPanel(Profile.Verdict.NICE));
+					return 1;
+				}))
+				.then(literal("share").executes(c -> {
+					NaughtyOrNiceClient.INSTANCE.openLater(new ShopScreen().withSharePanel(false));
+					return 1;
+				}))
+				.then(literal("import").executes(c -> {
+					NaughtyOrNiceClient.INSTANCE.openLater(new ShopScreen().withSharePanel(true));
+					return 1;
+				}))
+				.then(literal("check").executes(c -> {
+					NaughtyOrNiceClient.INSTANCE.openLater(new ShopScreen().withChatCheck());
+					return 1;
+				}))
+				.then(literal("settings").executes(c -> {
+					NaughtyOrNiceClient.INSTANCE.openLater(new ShopScreen(ShopScreen.Tab.SETTINGS, null));
+					return 1;
+				})));
+	}
+
+	/** A player we know of (online or in the lists) by the name argument, or null with an error shown. */
+	private static Profile find(CommandContext<FabricClientCommandSource> c) {
+		String name = StringArgumentType.getString(c, "player");
+		NaughtyOrNiceClient mod = NaughtyOrNiceClient.INSTANCE;
+		MinecraftClient client = MinecraftClient.getInstance();
+		Profile profile = mod.ledger.byName(name);
+		if (profile == null && client.getNetworkHandler() != null) {
+			PlayerListEntry entry = client.getNetworkHandler().getPlayerListEntry(name);
+			if (entry != null) profile = mod.ledger.getOrCreate(entry.getProfile().id(), entry.getProfile().name());
+		}
+		if (profile == null) c.getSource().sendError(Text.literal("No player called " + name + " is online or on your lists. Add them with /nn add."));
+		return profile;
+	}
+
+	private static int mark(CommandContext<FabricClientCommandSource> c, Profile.Verdict verdict) {
+		NaughtyOrNiceClient mod = NaughtyOrNiceClient.INSTANCE;
+		String name = StringArgumentType.getString(c, "player");
+		if (mod.ledger.key() == null) {
+			c.getSource().sendError(Text.literal("Join a world or server first."));
+			return 0;
+		}
+		Profile profile = mod.ledger.addByName(MinecraftClient.getInstance(), name);
+		mod.ledger.setVerdict(profile, verdict, false, null);
+		mod.ledger.save(false);
+		Text message = switch (verdict) {
+			case NICE -> Text.literal(profile.name + " is on your Nice list.").formatted(Formatting.GREEN);
+			case NAUGHTY -> Text.literal(profile.name + " is on your Naughty list.").formatted(Formatting.RED);
+			case LOOK -> Text.literal(profile.name + " is on your Look Into list.").formatted(Formatting.GOLD);
+			case NONE -> Text.literal(profile.name + " is off your lists.").formatted(Formatting.GRAY);
+		};
+		c.getSource().sendFeedback(Alerts.prefix().append(message));
+		return 1;
+	}
+
+	/** /nn group &lt;player&gt; &lt;group&gt;: puts them in the group (made if it's new). */
+	private static int group(CommandContext<FabricClientCommandSource> c) {
+		NaughtyOrNiceClient mod = NaughtyOrNiceClient.INSTANCE;
+		if (mod.ledger.key() == null) {
+			c.getSource().sendError(Text.literal("Join a world or server first."));
+			return 0;
+		}
+		String group = Ledger.cleanGroupName(StringArgumentType.getString(c, "group"));
+		if (group.isEmpty()) {
+			c.getSource().sendError(Text.literal("Give the group a name."));
+			return 0;
+		}
+		Profile profile = mod.ledger.addByName(MinecraftClient.getInstance(), StringArgumentType.getString(c, "player"));
+		boolean added = mod.ledger.addToGroup(profile, group);
+		mod.ledger.save(false);
+		String name = mod.ledger.groupName(group);
+		c.getSource().sendFeedback(Alerts.prefix().append(Text.literal(added
+				? profile.name + " is in the group " + name + " (" + mod.ledger.members(name).size() + " members)."
+				: profile.name + " is already in " + name + ".").formatted(Formatting.AQUA)));
+		return 1;
+	}
+}

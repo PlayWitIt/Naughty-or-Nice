@@ -1,0 +1,141 @@
+package com.greysworkshop.naughtyornice;
+
+import com.google.gson.Gson;
+import com.google.gson.GsonBuilder;
+import net.fabricmc.loader.api.FabricLoader;
+
+import java.io.IOException;
+import java.io.Reader;
+import java.io.Writer;
+import java.nio.file.Files;
+import java.nio.file.Path;
+
+/** User settings, saved to config/naughtyornice/settings.json. Missing fields keep their defaults. */
+public final class NNConfig {
+	private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
+
+	public static NNConfig INSTANCE = new NNConfig();
+
+	// ---- Looks ----
+	/** Dark theme for the lists screen. */
+	public boolean darkMode = true;
+	/** How big the lists screen is drawn: 0 small, 1 medium, 2 large (the game's own GUI scale). */
+	public int screenSize = 1;
+	/** The Chat tab shows chat from players on no list too (otherwise just listed or grouped players). */
+	public boolean chatShowEveryone = true;
+
+	// ---- Showing the lists ----
+	/** Green tick / red cross in front of names above players' heads. */
+	public boolean nametagMarks = true;
+	/** The same marks in the tab list. */
+	public boolean tabListMarks = true;
+	/** Group tags ("[SCG]") after the marks, on nametags and in the tab list. */
+	public boolean groupTags = true;
+
+	// ---- Warnings ----
+	/** Warn when a Naughty-list player comes into view. */
+	public boolean warnNaughtyNearby = true;
+	/** A quieter note when someone on your Look Into list comes into view or joins. */
+	public boolean noteLookInto = true;
+	/** Warn when a Naughty-list player joins the server. */
+	public boolean warnNaughtyJoin = true;
+	public boolean warnSounds = true;
+
+	// ---- Watching what people do ----
+	/** Put players who kill you on the Naughty list automatically (if they're not on a list yet). */
+	public boolean autoNaughtyKillers = true;
+	/** Notice friendly words and trash talk in chat. */
+	public boolean watchChat = true;
+	/** Players within this many blocks count as "near you" for peaceful time. */
+	public int nearRadius = 32;
+	/** Remember every player you see (nearby or in the tab list), not just ones on your lists. */
+	public boolean rememberEveryone = true;
+	/** Players not on a list, with no note and nothing done, are forgotten after this many days unseen (0 = never). */
+	public int forgetAfterDays = 180;
+	/** Most activity entries kept per player. */
+	public int maxActions = 60;
+
+	// ---- Chat log ----
+	/** Record conversations involving anyone on your Nice or Naughty list. */
+	public boolean chatLog = true;
+	/** A conversation ends once they've said nothing for this long. */
+	public int chatQuietSeconds = 180;
+	/** Chat from this long before they first spoke is kept, so you can see what they were answering. */
+	public int chatContextSeconds = 60;
+	/** Conversations older than this are dropped from the in-game log (the text files are kept). */
+	public int chatKeepDays = 30;
+	/** Most conversations kept in-game per player. */
+	public int chatKeepConversations = 100;
+	/** Also append every finished conversation to a text file per player. */
+	public boolean chatFiles = true;
+	/** The Chat tab keeps this many days of chat between sessions. */
+	public int chatHistoryDays = 7;
+	/** Also write everything said on the server to a text file a day. */
+	public boolean chatAllFiles = true;
+
+	// ---- Alerts ----
+	/** Words to be alerted about when someone else says them; "{me}" stands for your name. */
+	public java.util.List<String> alertWords = new java.util.ArrayList<>(java.util.List.of("{me}"));
+	/** Alert when someone posts coordinates near one of your Base Insurance bases. */
+	public boolean alertBaseCoords = true;
+	/** Alert when someone says the name of one of your Base Insurance bases. */
+	public boolean alertBaseNames = true;
+	/** A summary of who's online from your lists when you join a server. */
+	public boolean joinSummary = true;
+
+	// ---- Sightings ----
+	/** Note where and when players come into view, and what they're wearing. */
+	public boolean recordSightings = true;
+	/** Most sightings kept per player. */
+	public int maxSightings = 40;
+	/** Track who logs on, off and plays together, to suggest groups and spot alts. */
+	public boolean trackLinks = true;
+	/** Keep track of what hours players are online. */
+	public boolean trackHours = true;
+	/** Take a screenshot when someone kills you or a Naughty player comes into one of your bases. */
+	public boolean evidenceShots = true;
+
+	// ---- Other mods ----
+	/** Nice-list players count as friends in Base Insurance (no alerts about them). */
+	public boolean shareWithBaseInsurance = true;
+
+	/** Suggested groups you said aren't groups (their players' ids, sorted and joined). */
+	public java.util.List<String> dismissedSuggestions = new java.util.ArrayList<>();
+
+	/** Whether the first-time "press N" tip has been shown. */
+	public boolean seenTip = false;
+
+	public static Path dir() {
+		return FabricLoader.getInstance().getConfigDir().resolve("naughtyornice");
+	}
+
+	private static Path file() {
+		return dir().resolve("settings.json");
+	}
+
+	public static void load() {
+		if (!Files.exists(file())) return;
+		try (Reader reader = Files.newBufferedReader(file())) {
+			NNConfig loaded = GSON.fromJson(reader, NNConfig.class);
+			if (loaded != null) {
+				if (loaded.alertWords == null) loaded.alertWords = new java.util.ArrayList<>(java.util.List.of("{me}"));
+				loaded.alertWords.removeIf(w -> w == null || w.isBlank());
+				if (loaded.dismissedSuggestions == null) loaded.dismissedSuggestions = new java.util.ArrayList<>();
+				INSTANCE = loaded;
+			}
+		} catch (IOException | RuntimeException e) {
+			NaughtyOrNiceClient.LOGGER.error("Could not read {}", file(), e);
+		}
+	}
+
+	public static void save() {
+		try {
+			Files.createDirectories(dir());
+			try (Writer writer = Files.newBufferedWriter(file())) {
+				GSON.toJson(INSTANCE, writer);
+			}
+		} catch (IOException e) {
+			NaughtyOrNiceClient.LOGGER.error("Could not write {}", file(), e);
+		}
+	}
+}
