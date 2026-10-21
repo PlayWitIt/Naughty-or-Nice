@@ -433,6 +433,12 @@ public final class Watcher {
 		if (profile != null) said(profile, text);
 		String alert = whisper ? null : alertFor(client, text);
 		String name = profile != null ? profile.name : sender;
+		// You asked to hear whenever they talk (unless the line already sets off an alert of its own).
+		if (profile != null && profile.notifyChat && alert == null) {
+			Alerts.ping(Text.literal(name).formatted(verdictFormat(profile), Formatting.BOLD)
+					.append(Text.literal(whisper ? " whispered: " : ": ").formatted(Formatting.GRAY))
+					.append(Text.literal(text.length() > 100 ? text.substring(0, 100) + "…" : text).formatted(Formatting.WHITE)));
+		}
 		chatLogger.heard(profile, name, text, false, whisper, alert, now);
 		if (alert != null && fresh(name + "/" + alert, now)) {
 			Alerts.ping(Text.literal(name).formatted(profile != null && profile.verdict == Profile.Verdict.NAUGHTY ? Formatting.RED : Formatting.YELLOW, Formatting.BOLD)
@@ -600,6 +606,10 @@ public final class Watcher {
 		// Joins: who's on the tab list now that wasn't before.
 		Set<UUID> current = new HashSet<>();
 		boolean countHour = config.trackHours && secondsOn % 60 == 0;
+		// Once a minute: how many others are on, for the Activity tab.
+		if (config.trackHours && secondsOn % 60 == 0 && secondsOn > 0) {
+			ledger.activity.sample(client.getNetworkHandler().getPlayerList().size() - 1, java.time.LocalDateTime.now());
+		}
 		int hour = java.time.LocalTime.now().getHour();
 		for (PlayerListEntry entry : client.getNetworkHandler().getPlayerList()) {
 			UUID id = entry.getProfile().id();
@@ -620,7 +630,12 @@ public final class Watcher {
 			Profile profile = ledger.get(id);
 			if (profile == null) continue;
 			String alertGroup = ledger.alertGroupOf(profile);
-			if (profile.verdict == Profile.Verdict.NAUGHTY && config.warnNaughtyJoin) {
+			if (profile.notifyJoin && !(profile.verdict == Profile.Verdict.NAUGHTY && config.warnNaughtyJoin)) {
+				// You asked for this player in particular: always said, with a ping.
+				Alerts.ping(Text.literal(profile.name).formatted(verdictFormat(profile), Formatting.BOLD)
+						.append(groupTag(profile))
+						.append(Text.literal(" logged in").formatted(Formatting.GRAY)));
+			} else if (profile.verdict == Profile.Verdict.NAUGHTY && config.warnNaughtyJoin) {
 				Alerts.warn(Text.literal("Naughty-list player ").formatted(Formatting.RED)
 						.append(Text.literal(profile.name).formatted(Formatting.RED, Formatting.BOLD))
 						.append(groupTag(profile))
@@ -651,12 +666,29 @@ public final class Watcher {
 				if (config.trackLinks) ledger.links.left(id, now);
 				Profile gone = ledger.get(id);
 				if (gone != null) chatLogger.feedSystem(gone.name, "left", now);
+				if (gone != null && gone.notifyJoin) {
+					Alerts.chat(Text.literal(gone.name).formatted(verdictFormat(gone), Formatting.BOLD)
+							.append(groupTag(gone))
+							.append(Text.literal(" logged out").formatted(Formatting.GRAY)));
+				}
 			}
 		}
+		if (config.trackLinks && countHour) ledger.links.minute(current);
 		online = current;
 		onlineKnown = true;
 		// Wait a few seconds after joining for the tab list to fill in.
 		if (secondsOn == 5 && config.joinSummary) joinSummary(client);
+	}
+
+	/** Their list's colour, for chat notes. */
+	private static Formatting verdictFormat(Profile p) {
+		return switch (p.verdict) {
+			case NAUGHTY -> Formatting.RED;
+			case LOOK -> Formatting.GOLD;
+			case NICE -> Formatting.GREEN;
+			case FRIEND -> Formatting.AQUA;
+			case NONE -> Formatting.WHITE;
+		};
 	}
 
 	/** The friend's circle, if it pings when they join or come near; null otherwise. */
@@ -757,9 +789,24 @@ public final class Watcher {
 			list = list.subList(0, 40);
 		}
 		double near = Links.NEAR_BLOCKS * Links.NEAR_BLOCKS;
+		// How many others are close to each: in a crowd (spawn, a highway), being near someone means nothing.
+		int[] around = new int[list.size()];
+		boolean[][] close = new boolean[list.size()][list.size()];
+		for (int i = 0; i < list.size(); i++) {
+			ledger.links.seen(list.get(i).getUuid());
+			for (int j = i + 1; j < list.size(); j++) {
+				if (list.get(i).squaredDistanceTo(list.get(j)) <= near) {
+					close[i][j] = true;
+					around[i]++;
+					around[j]++;
+				}
+			}
+		}
 		for (int i = 0; i < list.size(); i++) {
 			for (int j = i + 1; j < list.size(); j++) {
-				if (list.get(i).squaredDistanceTo(list.get(j)) <= near) ledger.links.near(list.get(i).getUuid(), list.get(j).getUuid(), now);
+				if (close[i][j] && around[i] <= Links.CROWD && around[j] <= Links.CROWD) {
+					ledger.links.near(list.get(i).getUuid(), list.get(j).getUuid(), now);
+				}
 			}
 		}
 	}

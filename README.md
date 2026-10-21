@@ -1,6 +1,6 @@
 # Naughty or Nice
 
-A client-side Fabric mod for Minecraft 1.21.11 that keeps your **Friends** (in circles you name) and a **Nice list**, a
+A client-side Fabric mod for Minecraft 1.21.11 that keeps your **Friends** (each with a friend type you name) and a **Nice list**, a
 **Look Into list** and a **Naughty list** of players, with a store-style screen where one click puts someone on a list.
 
 By **PlayWit Creation**.
@@ -34,22 +34,41 @@ features. To share lists with a friend who has the mod, use **⇄ Share** in the
   biggest (about 540, never so big the panels don't fit). Whole-pixel scales are used where they're close, so text
   stays sharp.
 - Commands: `/nn`, `/nn add`, `/nn friends`, `/nn chat`, `/nn groups`, `/nn share`, `/nn import`, `/nn open <link>`,
-  `/nn disconnects`, `/nn friend <name> [circle]`, `/nn nice <name>`, `/nn look <name>`, `/nn naughty <name>`,
+  `/nn disconnects`, `/nn friend <name> [type]`, `/nn nice <name>`, `/nn look <name>`, `/nn naughty <name>`,
   `/nn unsort <name>`, `/nn group <name> <group>`, `/nn who <name>`, `/nn chat <name>`, `/nn settings`.
 
 ## Friends
-Friends are people you actually know, kept apart from Nice (behaves well), Look Into and Naughty. Each friend is in a
-**circle**: Close friends, Base mates and Allies to start with; rename them, recolour them, reorder them, add your own
-(up to 8) or remove them in Settings → **Friend circles**.
-- Press the **☆** in a card's corner to make someone a friend (they go in the top circle, or the circle you're looking
-  at). Press the **★** again to move them to another circle or stop being friends. The player page, the Add players
-  panel (pick the circle, then **★ Friends**) and `/nn friend <name> [circle]` work too.
-- The **Friends** tab shows them all, or one circle at a time, with how many of each are online.
-- Friends get a ★ in their circle's colour on nametags, in the tab list, in chat and on Base Insurance's map.
-- Per circle: **Trusted at my bases** (Base Insurance never alerts about them or names them as suspects) and **Ping
+Friends are people you actually know, kept apart from Nice (behaves well), Look Into and Naughty. Each friend has a
+**friend type** saying how you know them: Close friends, Base mates and Allies to start with. Rename, recolour, reorder,
+add your own (up to 8) or remove them in Settings → **Friend types**. Friend types always show with a **★**.
+
+Friend types aren't groups: a **friend type** is how *you* know someone (only friends have one); a **group** is who plays
+*together* (a crew, a team, someone's alts), and anyone can be in one, friend or Naughty. Groups show as square tags
+like `[SCG]`.
+- Press the **☆** in a card's corner to make someone a friend (they get the top type, or the one you're looking at).
+  Press the **★** again to change their type or stop being friends. The player page, the Add players panel (pick the
+  type, then **★ Friends**) and `/nn friend <name> [type]` work too.
+- The **Friends** tab shows them all, or one type at a time, with how many of each are online.
+- Friends get a ★ in their type's colour on nametags, in the tab list, in chat and on Base Insurance's map.
+- Per type: **Trusted at my bases** (Base Insurance never alerts about them or names them as suspects) and **Ping
   when they join or come near**.
 - Shared lists send your friends as Nice (older versions understand that), marked "their friend". Nothing a friend
   shares ever takes your friends off your Friends.
+
+## Notes about one player
+On any player's page, **Notify me when they**: **chat** (a ping with what they said) and **log in or out**. On the
+**Look Into** tab the same two switches are right on each card (**♪ Chat**, **♪ Log in/out**; ✔ when on).
+
+## Activity: when the server is busy
+The **Activity** tab shows when the server you're on is busy and quiet, from your own time on it: once a minute while
+you play, it counts who's on.
+- **Busiest** and **quietest** three-hour stretches, and whether **right now** is busier or quieter than usual.
+- **Players online by hour of day**: a bar per hour (the busiest stretch shaded, now marked). Until an hour has 10
+  minutes of your time measured, it's estimated from when players were seen on, and drawn as an outline.
+- **By day and hour**: the week as a grid, darker blue (lighter on the dark theme) for busier; hours you haven't been
+  on yet are empty outlines.
+- **When your lists are on**: when your Friends, Nice, Look Into and Naughty players are usually online.
+- Hover any bar or square for the numbers: about how many, the most at once, and how much of your time it's from.
 
 ## Groups
 Group people you know are teamed up or associated: a base crew, a griefing group, someone's alts. Make one from a
@@ -124,7 +143,7 @@ Listed players get a green ✔, gold ? or red ✖ on their nametag and in the ta
 get a warning (chat + sound) when a Naughty-list player comes into view or joins the server, and a quiet chat note for
 Look Into players.
 
-With **Base Insurance** installed, friends in trusted circles (and Nice-list players, unless you turn that off) count as Base Insurance friends, and base visits and block
+With **Base Insurance** installed, friends whose type is trusted at your bases (and Nice-list players, unless you turn that off) count as Base Insurance friends, and base visits and block
 breaking inside your bases show up on players' pages.
 
 Lists are saved per server in `config/naughtyornice/lists/`. The address is tidied up, so `Constantiam.net` and
@@ -137,8 +156,14 @@ address are merged automatically (the extra files are kept as `.merged`).
   everyone on your lists or in a group shows as a diamond on its map.
 - **When they're on:** a 24-hour chart of when each player is online (while you are), and "usually on 6pm to 11pm".
 - **Names they've had:** lists follow the account, so a rename keeps their history; search finds old names too.
-- **Seen with:** who logs on or off at the same time, plays near them, or takes turns with them (one logs off and
-  the other logs on, like alts). The Groups tab suggests crews it notices, with Make a group / Not a group.
+- **Seen with:** who logs on or off with them, plays near them, or takes turns with them (one logs off and the
+  other logs on, like alts). Busy servers are full of coincidences, so a pair only shows when it's a real share of
+  what they do: at least 3 logins or logouts together making up half or more of the quieter player's, or 5+ minutes
+  near each other away from crowds (spawn, highways) making up a quarter or more of the time they're seen. Logins
+  during a rush (a restart) don't count. "Maybe an alt" needs 3+ turn-takings and the two never on at the same time.
+  Each link says why, e.g. "logged on or off together 4 of 5 times". The Groups tab suggests crews it notices, with
+  Make a group / Not a group. (Seen-with data from before 1.6.0 counted every coincidence, so it starts afresh; the
+  old file is kept as `.links.json.old`.)
 - **Screenshots:** taken automatically when someone kills you or a Naughty / Look Into player comes into your base,
   listed on their page (saved in `screenshots/naughtyornice`).
 
@@ -148,6 +173,11 @@ address are merged automatically (the extra files are kept as `.merged`).
   near.
 - **Chat alerts:** a ping when someone says your name or any word you list in Settings, names one of your bases, or
   posts coordinates within 300 blocks of one (overworld or nether coordinates).
+
+## Updates
+Once per game session, a little after you join a world, the mod says in chat if a newer version is out on GitHub,
+with a **[Download]** link and **[Skip this version]**. Nothing downloads or installs by itself. Turn it off in
+Settings (**Tell me about updates**).
 
 ## Disconnects
 When you get disconnected, the mod notes the reason, **what did it**, who was near (and which list they're on) and the
@@ -174,5 +204,5 @@ is also written to a text file a day in `config/naughtyornice/chatlogs/<server>/
 
 ## Building
 Requires JDK 21. Run `./gradlew build`; the jar goes to `build/libs/`.
-`./gradlew runSelfTest` runs a scripted in-game test (158 checks) that spawns a fake griefer and saves screenshots to
+`./gradlew runSelfTest` runs a scripted in-game test (167 checks) that spawns a fake griefer and saves screenshots to
 `run/screenshots/`.

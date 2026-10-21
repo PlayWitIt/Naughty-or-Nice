@@ -713,7 +713,7 @@ public final class SelfTest {
 				ledger.getOrCreate(b, "Crew_Cody");
 				ledger.getOrCreate(c, "Main_Max");
 				ledger.getOrCreate(alt, "Alt_Al");
-				long t = System.currentTimeMillis() - 10_000_000L;
+				long t = System.currentTimeMillis() - 100_000_000L;
 				for (int i = 0; i < 3; i++) {
 					t += 600_000;
 					links.joined(a, t);
@@ -724,11 +724,41 @@ public final class SelfTest {
 					t += 600_000;
 					links.left(c, t);
 					links.joined(alt, t + 5000);
+					t += 600_000;
+					links.left(alt, t);
+					links.joined(c, t + 4000);
 				}
-				for (int i = 0; i < 300; i++) links.near(a, b, t);
-				check("logging on and off together links players (" + links.get(a, b).describe() + ")", links.get(a, b) != null
+				for (int i = 0; i < 300; i++) {
+					links.seen(a);
+					links.seen(b);
+					links.near(a, b, t);
+				}
+				// A busy server: 60 strangers logging on and off at random, a few seconds apart, and standing about together.
+				java.util.Random random = new java.util.Random(7);
+				List<UUID> strangers = new java.util.ArrayList<>();
+				for (int i = 0; i < 60; i++) strangers.add(id("Stranger_" + i));
+				for (int i = 0; i < 2000; i++) {
+					t += 2000 + random.nextInt(6000);
+					UUID who = strangers.get(random.nextInt(strangers.size()));
+					if (random.nextBoolean()) links.joined(who, t);
+					else links.left(who, t);
+				}
+				for (int s = 0; s < 600; s++) {
+					UUID x = strangers.get(random.nextInt(10)), y = strangers.get(10 + random.nextInt(10));
+					links.seen(x);
+					links.seen(y);
+					if (s % 10 == 0) links.near(x, y, t);
+				}
+				int falseLinks = 0;
+				for (UUID st : strangers) falseLinks += links.of(st).size();
+				check("strangers on a busy server aren't linked (" + falseLinks + " false links)", falseLinks == 0);
+				check("logging on and off together links players (" + links.describe(links.get(a, b), a) + ")", links.get(a, b) != null
 						&& links.get(a, b).joins == 3 && links.get(a, b).leaves == 3 && links.of(a).size() == 1);
-				check("taking turns looks like an alt", links.get(c, alt) != null && links.get(c, alt).looksLikeAlt());
+				Links.Link turns = links.get(c, alt);
+				check("taking turns looks like an alt (" + (turns == null ? "no link" : links.describe(turns, c)) + ")", turns != null && links.looksLikeAlt(turns));
+				links.minute(java.util.Set.of(c, alt));
+				check("...but not once they're both on at the same time", !links.looksLikeAlt(turns));
+				turns.minutesBothOn = 0;
 				client.setScreen(new ShopScreen(null, ledger.get(a)));
 			}
 			case 931 -> check("the Seen with section opens", screen(client).testClick("section:LINKS"));
@@ -972,8 +1002,54 @@ public final class SelfTest {
 				screenshot(client, "51_open_link");
 				client.setScreen(null);
 			}
+			// ---- Server activity ----
+			case 1045 -> {
+				ServerActivity act = new ServerActivity();
+				java.time.LocalDateTime monday = java.time.LocalDateTime.of(2026, 10, 19, 0, 0);
+				for (int d = 0; d < 7; d++) {
+					for (int hh = 0; hh < 24; hh++) {
+						// Busy in the evening, quiet early morning; weekends busier. A few hours never seen.
+						if (d == 2 && hh < 6) continue;
+						int players = hh >= 18 && hh <= 22 ? 40 + d * 3 : hh >= 3 && hh <= 8 ? 6 : 18;
+						for (int m = 0; m < 15; m++) act.sample(players + (m % 5), monday.plusDays(d).plusHours(hh));
+					}
+				}
+				ledger.activity = act;
+				int busy = ServerActivity.window(act.byHour(), 3, true);
+				int quiet = ServerActivity.window(act.byHour(), 3, false);
+				check("the busiest hours are found (" + busy + ")", busy >= 18 && busy <= 20);
+				check("...and the quietest (" + quiet + ")", quiet >= 3 && quiet <= 6);
+				check("hours not seen enough aren't guessed", act.average(ServerActivity.cell(java.time.DayOfWeek.WEDNESDAY, 2)) < 0);
+				check("newer versions are told apart", UpdateCheck.newer("1.10.0", "1.9.2") && !UpdateCheck.newer("1.5.0", "1.5.0")
+						&& !UpdateCheck.newer("1.4.9", "1.5.0") && UpdateCheck.newer("1.5.1", "1.5"));
+				client.setScreen(new ShopScreen(ShopScreen.Tab.ACTIVITY, null));
+			}
+			case 1048 -> screenshot(client, "52_activity");
+			// ---- Notes about one player: their chat, their logging in and out ----
+			case 1050 -> {
+				client.setScreen(new ShopScreen(ShopScreen.Tab.LOOK, null));
+				screen(client).testSearch("Lurking_Larry");
+			}
+			case 1052 -> {
+				Profile larry = ledger.byName("Lurking_Larry");
+				check("Look Into cards switch chat notes on", screen(client).testClick("notify-chat:Lurking_Larry") && larry.notifyChat);
+			}
+			case 1054 -> {
+				Profile larry = ledger.byName("Lurking_Larry");
+				check("...and log in/out notes", screen(client).testClick("notify-join:Lurking_Larry") && larry.notifyJoin);
+				mod.watcher.onGameMessage(client, Text.literal("<Lurking_Larry> anyone at spawn?"));
+				screenshot(client, "53_look_into_notes");
+			}
+			case 1056 -> {
+				client.setScreen(new ShopScreen(null, ledger.byName("Lurking_Larry")));
+			}
+			case 1058 -> {
+				check("the player page has the same switches", screen(client).testClick("page-notify-chat") && !ledger.byName("Lurking_Larry").notifyChat);
+				screenshot(client, "54_page_notes");
+				client.setScreen(null);
+			}
 			// ---- A real disconnect, by "another mod" (this test): recorded with who did it and who was near ----
-			case 1046 -> {
+			case 1062 -> {
 				log("Disconnecting on purpose");
 				disconnectedAt = System.currentTimeMillis();
 				client.getNetworkHandler().getConnection().disconnect(Text.literal("[AutoLog] " + GRIEFER + " came near"));
@@ -987,10 +1063,14 @@ public final class SelfTest {
 
 	/** After the test's own disconnect: check it was recorded, then finish. */
 	private static void afterDisconnect(MinecraftClient client) {
-		if (disconnectedAt == 0 || client.player != null || System.currentTimeMillis() - disconnectedAt < 3000) return;
-		disconnectedAt = 0;
+		if (disconnectedAt == 0) return;
 		List<Disconnects.Entry> all = Disconnects.all();
 		Disconnects.Entry e = all.isEmpty() ? null : all.get(all.size() - 1);
+		// Wait for it to be recorded (or give up after 20 seconds).
+		boolean recorded = e != null && e.time >= disconnectedAt - 1000;
+		if (!recorded && System.currentTimeMillis() - disconnectedAt < 20_000) return;
+		disconnectedAt = 0;
+		if (!recorded) e = null;
 		check("the disconnect was recorded (" + (e == null ? "nothing" : Disconnects.line(e)) + ")", e != null && e.reason.contains("[AutoLog]"));
 		check("...as done by a mod (" + (e == null ? "" : e.kind + ": " + e.culprit + " · " + e.detail) + ")", e != null && e.kind == Disconnects.Kind.MOD
 				&& e.detail.contains("SelfTest"));
