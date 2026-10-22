@@ -64,6 +64,15 @@ public final class Watcher {
 
 	private record Hurt(UUID attacker, String attackerName, long time) {}
 
+	/** Where a player in view was a second ago, and their speed over the two seconds before. */
+	private record Moved(String dimension, double x, double y, double z, long time, double speed1, double speed2) {}
+
+	/** Wall-clock time of the last once-a-second pass, so time adds up right even if the game stalls. */
+	private long lastSecond;
+	/** Each online player's current session. */
+	private final Map<UUID, PlayerStats.Session> sessions = new HashMap<>();
+	private final Map<UUID, Moved> moved = new HashMap<>();
+
 	public Watcher(Ledger ledger, ChatLogger chatLogger, Diagnostics diagnostics) {
 		this.ledger = ledger;
 		this.chatLogger = chatLogger;
@@ -79,6 +88,9 @@ public final class Watcher {
 		onlineKnown = false;
 		secondsOn = 0;
 		recentAlerts.clear();
+		lastSecond = 0;
+		sessions.clear();
+		moved.clear();
 	}
 
 	// ---- Recording ----
@@ -171,7 +183,46 @@ public final class Watcher {
 
 	private void killedPlayer(UUID killer, String killerName, String victim) {
 		if (seenKill(victim, killerName)) return;
-		record(ledger.getOrCreate(killer, killerName), Profile.Kind.KILLED_PLAYER, victim);
+		Profile profile = ledger.getOrCreate(killer, killerName);
+		record(profile, Profile.Kind.KILLED_PLAYER, victim);
+		PlayerStats.bump(profile.stats.victims, victim, 1);
+	}
+
+	/**
+	 * Someone died, by the server's death message (sent once per death, to everyone): counts towards their deaths,
+	 * and who killed them with what. {@code killer} is null when no player did it.
+	 */
+	private void died(MinecraftClient client, String victim, String killer, String weapon, String message) {
+		if (victim == null || victim.equalsIgnoreCase(client.player.getGameProfile().name())) return;
+		UUID id = playerId(client, victim);
+		long now = System.currentTimeMillis();
+		if (id != null) {
+			PlayerStats st = ledger.getOrCreate(id, victim).stats;
+			st.deaths++;
+			st.lastDeath = message.length() > 120 ? message.substring(0, 120) + "…" : message;
+			st.lastDeathTime = now;
+			if (killer != null) {
+				st.deathsToPlayers++;
+				PlayerStats.bump(st.killedBy, killer, 1);
+			}
+			ledger.markDirty();
+		}
+		Profile k = killer == null ? null : ledger.byName(killer);
+		if (k != null && weapon != null && !weapon.isBlank()) {
+			// The game shows the item as "[Diamond Sword]".
+			PlayerStats.bump(k.stats.weapons, weapon.replaceAll("^\\[(.*)]$", "$1"), 1);
+			ledger.markDirty();
+		}
+	}
+
+	/** Another player used up a Totem of Undying in view. */
+	public void onTotem(MinecraftClient client, Entity entity) {
+		PlayerEntity player = otherPlayer(client, entity);
+		if (player == null) return;
+		PlayerStats st = profile(player).stats;
+		st.totemPops++;
+		st.lastTotemPop = System.currentTimeMillis();
+		ledger.markDirty();
 	}
 
 	private boolean seenKill(String victim, String killer) {
@@ -239,18 +290,20 @@ public final class Watcher {
 			String key = t.getKey();
 			Object[] args = t.getArgs();
 			if (key.startsWith("death.")) {
-				if (args.length >= 2) {
-					String victim = argString(args[0]);
-					String killer = argString(args[1]);
-					UUID killerId = playerId(client, killer);
-					if (killerId != null && !killer.equalsIgnoreCase(victim)) {
-						diagnostics.understood(Diagnostics.Kind.KILL, raw, killer + " killed " + victim);
-						if (victim.equalsIgnoreCase(client.player.getGameProfile().name())) killedMe(killerId, killer);
-						else killedPlayer(killerId, killer, victim);
-						return;
-					}
+				String victim = args.length >= 1 ? playerArg(args[0]) : null;
+				String killer = args.length >= 2 ? playerArg(args[1]) : null;
+				UUID killerId = killer == null ? null : playerId(client, killer);
+				boolean byPlayer = victim != null && killerId != null && !killer.equalsIgnoreCase(victim);
+				// "X was slain by Y using [Z]": the weapon is the last argument.
+				String weapon = byPlayer && key.endsWith(".item") && args.length >= 3 ? argString(args[2]) : null;
+				died(client, victim, byPlayer ? killer : null, weapon, raw);
+				if (byPlayer) {
+					diagnostics.understood(Diagnostics.Kind.KILL, raw, killer + " killed " + victim);
+					if (victim.equalsIgnoreCase(client.player.getGameProfile().name())) killedMe(killerId, killer);
+					else killedPlayer(killerId, killer, victim);
+					return;
 				}
-				diagnostics.understood(Diagnostics.Kind.DEATH, raw, (args.length > 0 ? argString(args[0]) : "someone") + " died (no player killer)");
+				diagnostics.understood(Diagnostics.Kind.DEATH, raw, (victim != null ? victim : args.length > 0 ? argString(args[0]) : "someone") + " died (no player killer)");
 				return;
 			}
 			if ((key.startsWith("multiplayer.player.joined") || key.equals("multiplayer.player.left")) && args.length >= 1) {
@@ -388,6 +441,7 @@ public final class Watcher {
 				break;
 			}
 		}
+		died(client, victim, killer, null, line);
 		if (killerId == null) {
 			diagnostics.understood(Diagnostics.Kind.DEATH, line, victim + " died (no player killer)");
 			return true;
@@ -423,6 +477,7 @@ public final class Watcher {
 			if (whisperTarget != null) {
 				UUID id = playerId(client, whisperTarget);
 				target = id == null ? null : ledger.getOrCreate(id, whisperTarget);
+				if (target != null) target.stats.whispersFromYou++;
 			}
 			chatLogger.heard(target, whisperTarget != null ? (target != null ? target.name : whisperTarget) : sender, text, true, whisper, now);
 			return;
@@ -430,7 +485,15 @@ public final class Watcher {
 		UUID id = senderId != null ? senderId : playerId(client, sender);
 		Profile profile = id == null ? null : ledger.getOrCreate(id, sender);
 		offerShareLink(profile != null ? profile.name : sender, text);
-		if (profile != null) said(profile, text);
+		if (profile != null) {
+			PlayerStats st = profile.stats;
+			st.messages++;
+			if (whisper) st.whispersToYou++;
+			st.words += text.isBlank() ? 0 : text.strip().split("\\s+").length;
+			if (st.firstMessage == 0) st.firstMessage = now;
+			st.lastMessage = now;
+			said(profile, text);
+		}
 		String alert = whisper ? null : alertFor(client, text);
 		String name = profile != null ? profile.name : sender;
 		// You asked to hear whenever they talk (unless the line already sets off an alert of its own).
@@ -523,6 +586,26 @@ public final class Watcher {
 		return arg instanceof Text text ? text.getString() : String.valueOf(arg);
 	}
 
+	private static final Pattern PLAIN_NAME = Pattern.compile("[A-Za-z0-9_]{1,16}");
+
+	/**
+	 * The player named by a message argument, or null if it's some other entity (a mob, a named pet). The game marks
+	 * a player's name with the name itself as its insertion (shift-click text), and other entities with their UUID,
+	 * so ranks and team prefixes around the name ("[VIP] Steve") don't get in the way.
+	 */
+	static String playerArg(Object arg) {
+		if (!(arg instanceof Text text)) return String.valueOf(arg);
+		String insertion = text.visit((style, part) -> java.util.Optional.ofNullable(style.getInsertion()), net.minecraft.text.Style.EMPTY).orElse(null);
+		if (insertion != null) return PLAIN_NAME.matcher(insertion).matches() ? insertion : null;
+		String plain = text.getString().strip();
+		if (PLAIN_NAME.matcher(plain).matches()) return plain;
+		// No insertion (a plugin rebuilt it): the last thing in it that could be a name.
+		Matcher m = WORD.matcher(plain);
+		String last = plain;
+		while (m.find()) last = m.group();
+		return last;
+	}
+
 	/** A player's UUID from the tab list (or the lists, for someone who just left), by name. */
 	private UUID playerId(MinecraftClient client, String name) {
 		if (client.getNetworkHandler() != null) {
@@ -540,6 +623,11 @@ public final class Watcher {
 		if (world == null || client.player == null || client.getNetworkHandler() == null) return;
 		if (++tick % 20 != 0) return;
 		long now = System.currentTimeMillis();
+		// Time actually passed since the last pass: a second, unless the game stalled. At most 3s, so a long
+		// freeze or a sleeping computer isn't counted as time on.
+		long dt = lastSecond == 0 ? 1000 : Math.max(0, Math.min(3000, now - lastSecond));
+		lastSecond = now;
+		ledger.activity.addMyTime(dt);
 		chatLogger.tick(now);
 		NNConfig config = NNConfig.INSTANCE;
 		String dimension = world.getRegistryKey().getValue().toString();
@@ -560,6 +648,7 @@ public final class Watcher {
 			boolean arrived = seenBefore == null || now - seenBefore > 60_000;
 			String base = BaseInsuranceBridge.baseAt(dimension, player.getBlockPos());
 			if (config.recordSightings) sighted(profile, player, dimension, base, arrived, now);
+			inView(profile, player, dimension, distance, arrived, dt, now);
 			String alertGroup = ledger.alertGroupOf(profile);
 			if (arrived && profile.verdict == Profile.Verdict.NAUGHTY && config.warnNaughtyNearby) {
 				Alerts.warn(Text.literal("Naughty-list player ").formatted(Formatting.RED)
@@ -601,6 +690,7 @@ public final class Watcher {
 			}
 		}
 		lastVisible.values().removeIf(t -> now - t > 600_000);
+		moved.values().removeIf(m -> now - m.time() > 5_000);
 		if (config.trackLinks) nearEachOther(visible, now);
 
 		// Joins: who's on the tab list now that wasn't before.
@@ -617,6 +707,7 @@ public final class Watcher {
 			boolean me = id.equals(client.player.getUuid());
 			// Everyone on the server is remembered, so they're still listed once they log off.
 			if (config.rememberEveryone && !me) ledger.getOrCreate(id, entry.getProfile().name()).lastSeen = now;
+			if (!me) onTabList(entry, ledger.get(id), countHour, dt, now);
 			if (countHour && !me) {
 				Profile p = ledger.get(id);
 				if (p != null) {
@@ -629,6 +720,8 @@ public final class Watcher {
 			if (config.trackLinks) ledger.links.joined(id, now);
 			Profile profile = ledger.get(id);
 			if (profile == null) continue;
+			profile.stats.logins++;
+			profile.stats.lastLogin = now;
 			String alertGroup = ledger.alertGroupOf(profile);
 			if (profile.notifyJoin && !(profile.verdict == Profile.Verdict.NAUGHTY && config.warnNaughtyJoin)) {
 				// You asked for this player in particular: always said, with a ping.
@@ -665,7 +758,13 @@ public final class Watcher {
 				if (current.contains(id) || id.equals(client.player.getUuid())) continue;
 				if (config.trackLinks) ledger.links.left(id, now);
 				Profile gone = ledger.get(id);
-				if (gone != null) chatLogger.feedSystem(gone.name, "left", now);
+				PlayerStats.Session session = sessions.remove(id);
+				if (gone != null) {
+					if (session != null) gone.stats.endSession(session, now);
+					gone.stats.logouts++;
+					gone.stats.lastLogout = now;
+					chatLogger.feedSystem(gone.name, "left", now);
+				}
 				if (gone != null && gone.notifyJoin) {
 					Alerts.chat(Text.literal(gone.name).formatted(verdictFormat(gone), Formatting.BOLD)
 							.append(groupTag(gone))
@@ -678,6 +777,82 @@ public final class Watcher {
 		onlineKnown = true;
 		// Wait a few seconds after joining for the tab list to fill in.
 		if (secondsOn == 5 && config.joinSummary) joinSummary(client);
+	}
+
+	/**
+	 * Once a second for everyone on the tab list: their time online and current session, and once a minute their
+	 * ping and game mode. Their skin is read when their session starts and once a minute after.
+	 */
+	private void onTabList(PlayerListEntry entry, Profile profile, boolean minute, long dt, long now) {
+		if (profile == null) return;
+		PlayerStats st = profile.stats;
+		if (st.myMsAtStart < 0) st.myMsAtStart = ledger.activity.myMs;
+		st.onlineMs += dt;
+		st.lastOnline = now;
+		PlayerStats.Session session = sessions.get(profile.id);
+		// None yet, or one belonging to a profile that's since been forgotten.
+		boolean started = session == null || !st.sessions.contains(session);
+		if (started) {
+			PlayerStats.Session latest = st.sessions.isEmpty() ? null : st.sessions.get(st.sessions.size() - 1);
+			if (latest != null && !latest.endSeen && now - latest.end <= 5_000) {
+				// Still going: the lists were just loaded again (or you were gone only a moment).
+				session = latest;
+			} else {
+				// Only a login you saw if they weren't on already when you got here.
+				boolean seenLogin = session == null && onlineKnown && !online.contains(profile.id);
+				int keep = profile.verdict == Profile.Verdict.NONE && profile.groups.isEmpty() ? 10 : 50;
+				session = st.startSession(now, seenLogin, keep);
+			}
+			sessions.put(profile.id, session);
+		}
+		st.continueSession(session, now);
+		if (minute) {
+			st.ping(entry.getLatency());
+			if (entry.getGameMode() != null) PlayerStats.bump(st.gameModes, entry.getGameMode().asString(), 1);
+		}
+		if ((started || minute) && st.readSkin(entry.getProfile(), now)) {
+			record(profile, Profile.Kind.LISTED, "Changed their skin");
+		}
+		// Saved with the next save after a minute's worth, not every second.
+		if (started || minute) ledger.markDirty();
+	}
+
+	/** Once a second for each player in view: time, distance from you, how they move, what they ride and hold. */
+	private void inView(Profile profile, PlayerEntity player, String dimension, double distance, boolean arrived, long dt, long now) {
+		PlayerStats st = profile.stats;
+		if (arrived) st.timesSeen++;
+		st.inViewMs += dt;
+		st.lastInView = now;
+		if (st.closest < 0 || distance < st.closest) st.closest = distance;
+		PlayerStats.bump(st.dimensions, dimension, 1);
+		if (player.isGliding()) st.glidingMs += dt;
+		Entity vehicle = player.getVehicle();
+		if (vehicle != null) PlayerStats.bump(st.vehicles, vehicle.getType().getName().getString(), 1);
+		ItemStack main = player.getMainHandStack();
+		if (!main.isEmpty()) PlayerStats.bump(st.held, main.getName().getString(), 1);
+		for (EquipmentSlot slot : new EquipmentSlot[] {EquipmentSlot.HEAD, EquipmentSlot.CHEST, EquipmentSlot.LEGS, EquipmentSlot.FEET}) {
+			ItemStack stack = player.getEquippedStack(slot);
+			if (stack.isEmpty()) continue;
+			String path = Registries.ITEM.getId(stack.getItem()).getPath();
+			int cut = path.lastIndexOf('_');
+			if (cut > 0) st.armour(path.substring(0, cut));
+		}
+		// How far and fast they go. A pearl or a teleport is one big jump, so top speed is the slowest of three
+		// seconds in a row, and a second over 150 blocks isn't counted as travel.
+		Moved last = moved.get(player.getUuid());
+		double speed = 0;
+		if (last != null && !arrived && last.dimension().equals(dimension) && now - last.time() >= 500) {
+			double d = Math.sqrt(player.squaredDistanceTo(last.x(), last.y(), last.z()));
+			speed = d / ((now - last.time()) / 1000.0);
+			if (speed <= 150) {
+				st.travelled += d;
+				double sustained = Math.min(speed, Math.min(last.speed1(), last.speed2()));
+				if (sustained > st.topSpeed) st.topSpeed = sustained;
+			} else {
+				speed = 0;
+			}
+		}
+		moved.put(player.getUuid(), new Moved(dimension, player.getX(), player.getY(), player.getZ(), now, speed, last == null ? 0 : last.speed1()));
 	}
 
 	/** Their list's colour, for chat notes. */

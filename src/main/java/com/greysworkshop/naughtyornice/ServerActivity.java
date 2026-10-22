@@ -32,6 +32,8 @@ public final class ServerActivity {
 	public int[] peak = new int[CELLS];
 	public long since;
 	public long last;
+	/** Your own time on this server, in milliseconds (wall clock), since 1.7.0. */
+	public long myMs;
 
 	private transient boolean dirty;
 	private transient int version;
@@ -51,6 +53,12 @@ public final class ServerActivity {
 		last = t;
 		dirty = true;
 		version++;
+	}
+
+	/** Another stretch of you being on. */
+	public void addMyTime(long ms) {
+		myMs += ms;
+		dirty = true;
 	}
 
 	public int version() {

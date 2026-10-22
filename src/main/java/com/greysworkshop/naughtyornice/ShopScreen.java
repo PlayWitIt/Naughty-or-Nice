@@ -49,7 +49,8 @@ public class ShopScreen extends Screen {
 	}
 
 	private enum Sort {
-		RECENT("Recently seen"), CLOSEST("Closest"), NAME("Name"), NAUGHTIEST("Naughtiest"), NICEST("Nicest");
+		RECENT("Recently seen"), CLOSEST("Closest"), NAME("Name"), NAUGHTIEST("Naughtiest"), NICEST("Nicest"),
+		MOST_ONLINE("Most time online"), MOST_KILLS("Most kills");
 
 		final String label;
 
@@ -233,7 +234,7 @@ public class ShopScreen extends Screen {
 	private List<Profile> cachedResults;
 
 	/** What the player page shows under "About this player". */
-	private enum Section { DETAILS, ACTIVITY, SEEN, LINKS, CHAT }
+	private enum Section { DETAILS, ACTIVITY, STATS, SEEN, LINKS, CHAT }
 
 	private static final DateTimeFormatter DAY = DateTimeFormatter.ofPattern("EEE d MMM", Locale.ROOT);
 	private static final DateTimeFormatter CLOCK = DateTimeFormatter.ofPattern("HH:mm", Locale.ROOT);
@@ -382,7 +383,12 @@ public class ShopScreen extends Screen {
 	// ---- Layout ----
 
 	private int logoRight() {
-		return 8 + textRenderer.getWidth("naughty&nice") + 4;
+		return 8 + logoWidth() + 4;
+	}
+
+	/** The header wordmark, "naughty or nice" with a 2px gap either side of the orange "or". */
+	private int logoWidth() {
+		return textRenderer.getWidth("naughty") + 2 + textRenderer.getWidth("or") + 2 + textRenderer.getWidth("nice");
 	}
 
 	private int countersLeft() {
@@ -685,6 +691,8 @@ public class ShopScreen extends Screen {
 			case NAME -> Comparator.comparing(p -> p.name.toLowerCase(Locale.ROOT));
 			case NAUGHTIEST -> Comparator.comparingInt(Profile::score).thenComparing(p -> -p.lastSeen);
 			case NICEST -> Comparator.comparingInt((Profile p) -> -p.score()).thenComparing(p -> -p.lastSeen);
+			case MOST_ONLINE -> Comparator.comparingLong((Profile p) -> -onlineMs(p)).thenComparing(p -> -p.lastSeen);
+			case MOST_KILLS -> Comparator.comparingInt((Profile p) -> -kills(p)).thenComparing(p -> -p.lastSeen);
 		};
 		// Your Look Into list comes before the suggestions.
 		if (tab == Tab.LOOK) order = Comparator.comparing((Profile p) -> p.verdict != Profile.Verdict.LOOK).thenComparing(order);
@@ -888,7 +896,81 @@ public class ShopScreen extends Screen {
 		PlayerEntity player = entity(p);
 		if (player != null && client.player != null) return "Here now · " + (int) player.distanceTo(client.player) + " blocks away";
 		if (isOnline(p)) return "Online now";
+		if (p.stats.lastOnline > 0) return "Last online " + ago(p.stats.lastOnline);
 		return p.lastSeen <= 0 ? "Not seen yet" : "Seen " + ago(p.lastSeen);
+	}
+
+	/** Time seen online: measured to the second since 1.7.0, by the minute before that. */
+	private static long onlineMs(Profile p) {
+		return Math.max(p.stats.onlineMs, p.minutesOnline() * 60_000L);
+	}
+
+	/** Players they killed, you included. */
+	private static int kills(Profile p) {
+		return p.count(Profile.Kind.KILLED_PLAYER) + p.count(Profile.Kind.KILLED_YOU);
+	}
+
+	/** "3d 4h", "5h 12m", "40m", "12s": durations long and short. */
+	static String span(long ms) {
+		long s = ms / 1000;
+		if (s >= 2 * 86400) return s / 86400 + "d " + s % 86400 / 3600 + "h";
+		return duration((int) s);
+	}
+
+	/** Other players seen wearing the same skin, by skin, rebuilt when the lists change. */
+	private Map<String, List<Profile>> skinIndex;
+	private int skinIndexAt = -1;
+
+	/** Other accounts that have worn the skin this player wears (or wore). Default skins don't count. */
+	private List<Profile> sameSkin(Profile p) {
+		if (skinIndex == null || skinIndexAt != mod.ledger.changes()) {
+			skinIndex = new HashMap<>();
+			for (Profile o : mod.ledger.all()) {
+				if (!o.stats.skin.isEmpty()) skinIndex.computeIfAbsent(o.stats.skin, k -> new ArrayList<>()).add(o);
+				for (String past : o.stats.pastSkins) skinIndex.computeIfAbsent(past, k -> new ArrayList<>()).add(o);
+			}
+			skinIndexAt = mod.ledger.changes();
+		}
+		List<Profile> same = new ArrayList<>();
+		List<String> mine = new ArrayList<>(p.stats.pastSkins);
+		if (!p.stats.skin.isEmpty()) mine.add(p.stats.skin);
+		for (String skin : mine) {
+			for (Profile o : skinIndex.getOrDefault(skin, List.of())) {
+				if (o != p && !same.contains(o)) same.add(o);
+			}
+		}
+		return same;
+	}
+
+	private static String percent(double part, double whole) {
+		if (whole <= 0) return "";
+		double pc = 100 * part / whole;
+		return pc > 0 && pc < 1 ? "<1%" : Math.round(pc) + "%";
+	}
+
+	private static String capital(String s) {
+		return s.isEmpty() ? s : Character.toUpperCase(s.charAt(0)) + s.substring(1);
+	}
+
+	/** "Name ×3", from the top of a count map; "" if empty. */
+	private static String topOf(Map<String, Integer> map) {
+		String top = PlayerStats.top(map);
+		if (top == null) return "";
+		int n = map.get(top);
+		return top + (n > 1 ? " ×" + n : "");
+	}
+
+	/** "Overworld 70% · Nether 30%", biggest first. */
+	private static String shares(Map<String, Integer> map, java.util.function.Function<String, String> name, int most) {
+		int total = PlayerStats.total(map);
+		List<Map.Entry<String, Integer>> entries = new ArrayList<>(map.entrySet());
+		entries.sort(Map.Entry.<String, Integer>comparingByValue().reversed());
+		List<String> parts = new ArrayList<>();
+		for (Map.Entry<String, Integer> e : entries) {
+			if (parts.size() == most) break;
+			parts.add(name.apply(e.getKey()) + " " + percent(e.getValue(), total));
+		}
+		return String.join(" · ", parts);
 	}
 
 	/** The most telling thing about them, for the card. */
@@ -1004,10 +1086,10 @@ public class ShopScreen extends Screen {
 		// Logo with the smile underneath.
 		int x = 8;
 		text(context, "naughty", x, 7, WHITE);
-		int amp = x + textRenderer.getWidth("naughty");
-		text(context, "&", amp, 7, ORANGE);
-		text(context, "nice", amp + textRenderer.getWidth("&"), 7, WHITE);
-		int smileW = textRenderer.getWidth("naughty&nice") - 6;
+		int or = x + textRenderer.getWidth("naughty") + 2;
+		text(context, "or", or, 7, ORANGE);
+		text(context, "nice", or + textRenderer.getWidth("or") + 2, 7, WHITE);
+		int smileW = logoWidth() - 6;
 		for (int i = 0; i <= smileW; i++) {
 			int dy = (int) Math.round(2.5 * Math.sin(Math.PI * i / smileW));
 			context.fill(x + 3 + i, 17 + dy, x + 4 + i, 18 + dy, ORANGE);
@@ -1808,12 +1890,12 @@ public class ShopScreen extends Screen {
 		int conversations = p.conversations.size();
 		String live = mod.chatLogger.isOpen(p) ? " ● live" : "";
 		int links = mod.ledger.links.of(p.id).size();
-		String[] labels = {"Details (" + p.details.size() + ")", "What they've done", "Where & when (" + p.sightings.size() + ")",
+		String[] labels = {"Details (" + p.details.size() + ")", "What they've done", "Stats", "Where & when (" + p.sightings.size() + ")",
 				"Seen with (" + links + ")", "Chat log (" + conversations + ")" + live};
-		Section[] targets = {Section.DETAILS, Section.ACTIVITY, Section.SEEN, Section.LINKS, Section.CHAT};
+		Section[] targets = {Section.DETAILS, Section.ACTIVITY, Section.STATS, Section.SEEN, Section.LINKS, Section.CHAT};
 		// Shorter names when the page is narrow, and a second row if even those don't fit.
 		if (tabsWidth(labels, 12) > right - left) {
-			labels = new String[] {"Details (" + p.details.size() + ")", "Activity", "Seen (" + p.sightings.size() + ")", "With (" + links + ")",
+			labels = new String[] {"Details (" + p.details.size() + ")", "Activity", "Stats", "Seen (" + p.sightings.size() + ")", "With (" + links + ")",
 					"Chat (" + conversations + ")" + live};
 		}
 		int tx = left;
@@ -1838,6 +1920,8 @@ public class ShopScreen extends Screen {
 			for (Profile.Action action : actions) {
 				ty = activityRow(context, action, left, ty, right - left);
 			}
+		} else if (section == Section.STATS) {
+			ty = renderStats(context, p, left, ty, right - left);
 		} else if (section == Section.SEEN) {
 			ty = renderSeen(context, mouseX, mouseY, p, left, ty, right - left);
 		} else if (section == Section.LINKS) {
@@ -1885,6 +1969,138 @@ public class ShopScreen extends Screen {
 		String[] names = {"S", "SW", "W", "NW", "N", "NE", "E", "SE"};
 		String dir = names[(int) Math.floorMod(Math.round(Math.toDegrees(Math.atan2(-dx, dz)) / 45), 8)];
 		return String.format(Locale.ROOT, "%,d blocks %s of %s", (int) bestD, dir, best.name());
+	}
+
+	/** One box on the Stats section: a title, label/value rows, and a note on where the numbers come from. */
+	private record StatBox(String title, List<String[]> rows, String note) {}
+
+	private static void row(List<String[]> rows, String label, String value) {
+		if (value != null && !value.isEmpty()) rows.add(new String[] {label, value});
+	}
+
+	/** Everything counted about them, in boxes: online, fights, up close, chat, skin. */
+	private List<StatBox> statBoxes(Profile p) {
+		PlayerStats st = p.stats;
+		long now = System.currentTimeMillis();
+		List<StatBox> boxes = new ArrayList<>();
+
+		List<String[]> rows = new ArrayList<>();
+		long online = onlineMs(p);
+		row(rows, "Time online", online >= 1000 ? span(online) : "");
+		long mine = mod.ledger.activity.myMs - st.myMsAtStart;
+		if (st.myMsAtStart >= 0 && mine >= 600_000) row(rows, "Share of your time", percent(st.onlineMs, mine) + " of " + span(mine));
+		row(rows, "Usually on", p.usuallyOn() == null ? "" : p.usuallyOn());
+		row(rows, "Status", isOnline(p) ? "Online now" : st.lastOnline > 0 ? "Last online " + ago(st.lastOnline) : "");
+		row(rows, "Logins seen", st.logins > 0 ? String.valueOf(st.logins) + (st.lastLogin > 0 ? ", last " + ago(st.lastLogin) : "") : "");
+		row(rows, "Logouts seen", st.logouts > 0 ? String.valueOf(st.logouts) + (st.lastLogout > 0 ? ", last " + ago(st.lastLogout) : "") : "");
+		long avg = st.averageSession();
+		row(rows, "Average session", avg >= 0 ? span(avg) + " (" + st.wholeSessions + (st.wholeSessions == 1 ? " session)" : " sessions)") : "");
+		row(rows, "Longest in one go", st.longestSessionMs >= 60_000 ? span(st.longestSessionMs) : "");
+		int ping = st.averagePing();
+		row(rows, "Ping", ping < 0 ? "" : ping + " ms" + (st.pingMin != st.pingMax ? " (" + st.pingMin + " to " + st.pingMax + ")" : ""));
+		if (!st.gameModes.isEmpty() && !(st.gameModes.size() == 1 && st.gameModes.containsKey("survival"))) {
+			row(rows, "Game mode", shares(st.gameModes, ShopScreen::capital, 3));
+		}
+		boxes.add(new StatBox("Online", rows, "From the tab list, while you're on too. Logins and sessions only count ones you were there for."));
+
+		rows = new ArrayList<>();
+		int kills = kills(p);
+		row(rows, "Kills", kills > 0 ? kills + (p.count(Profile.Kind.KILLED_YOU) > 0 ? " (" + p.count(Profile.Kind.KILLED_YOU) + " of them you)" : "") : "");
+		row(rows, "Deaths", st.deaths > 0 ? st.deaths + (st.deathsToPlayers > 0 ? " (" + st.deathsToPlayers + " to players)" : "") : "");
+		double kd = st.killsPerDeath(p);
+		row(rows, "Kills per death", kd >= 0 ? String.format(Locale.ROOT, "%.2f", kd) : "");
+		row(rows, "Totems popped", st.totemPops > 0 ? st.totemPops + ", last " + ago(st.lastTotemPop) : "");
+		row(rows, "Hit you", p.count(Profile.Kind.HIT_YOU) > 0 ? p.count(Profile.Kind.HIT_YOU) + (p.count(Profile.Kind.HIT_YOU) == 1 ? " time" : " times") : "");
+		row(rows, "Attacked others", p.count(Profile.Kind.HIT_PLAYER) > 0 ? p.count(Profile.Kind.HIT_PLAYER) + " hits" : "");
+		row(rows, "Killed most", topOf(st.victims));
+		row(rows, "Killed most by", topOf(st.killedBy));
+		row(rows, "Kills with", topOf(st.weapons));
+		row(rows, "Last death", st.lastDeathTime > 0 ? ago(st.lastDeathTime) + ": " + st.lastDeath : "");
+		boxes.add(new StatBox("Fights", rows, "Kills and deaths from death messages (the whole server); hits and totems only in view."));
+
+		rows = new ArrayList<>();
+		row(rows, "Times seen", st.timesSeen > 0 ? String.valueOf(st.timesSeen) : "");
+		row(rows, "Time in view", st.inViewMs >= 1000 ? span(st.inViewMs) : "");
+		row(rows, "Time near you", p.secondsNear > 0 ? duration(p.secondsNear) + " (within " + NNConfig.INSTANCE.nearRadius + " blocks)" : "");
+		row(rows, "Last up close", st.lastInView > 0 ? ago(st.lastInView) : "");
+		row(rows, "Closest to you", st.closest >= 0 ? String.format(Locale.ROOT, "%.1f blocks", st.closest) : "");
+		row(rows, "Travelled in view", st.travelled >= 1 ? String.format(Locale.ROOT, "%,.0f blocks", st.travelled) : "");
+		row(rows, "Top speed", st.topSpeed >= 0.5 ? String.format(Locale.ROOT, "%.1f blocks/s (%.0f km/h)", st.topSpeed, st.topSpeed * 3.6) : "");
+		row(rows, "Flying (elytra)", st.glidingMs >= 1000 ? span(st.glidingMs) + " (" + percent(st.glidingMs, st.inViewMs) + " of the time)" : "");
+		row(rows, "Where", shares(st.dimensions, ShopScreen::dimensionName, 3));
+		row(rows, "Rides", topOf(st.vehicles).replaceFirst(" ×\\d+$", ""));
+		row(rows, "Best armour", st.bestArmour.isEmpty() ? "" : capital(st.bestArmour.equals("golden") ? "gold" : st.bestArmour));
+		row(rows, "Usually holding", PlayerStats.top(st.held) == null ? "" : PlayerStats.top(st.held));
+		boxes.add(new StatBox("Up close", rows, "While they're in view (render distance). Top speed is kept over three seconds in a row, so pearls don't count."));
+
+		rows = new ArrayList<>();
+		row(rows, "Messages", st.messages > 0 ? String.valueOf(st.messages) : "");
+		row(rows, "Words per message", st.messages > 0 ? String.format(Locale.ROOT, "%.1f", st.words / (double) st.messages) : "");
+		row(rows, "Whispers to you", st.whispersToYou > 0 ? String.valueOf(st.whispersToYou) : "");
+		row(rows, "Your whispers to them", st.whispersFromYou > 0 ? String.valueOf(st.whispersFromYou) : "");
+		row(rows, "Friendly / trash talk", p.count(Profile.Kind.KIND_WORDS) + p.count(Profile.Kind.RUDE) > 0
+				? p.count(Profile.Kind.KIND_WORDS) + " / " + p.count(Profile.Kind.RUDE) : "");
+		row(rows, "First heard", st.firstMessage > 0 ? day(st.firstMessage) + ", " + clock(st.firstMessage) : "");
+		row(rows, "Last heard", st.lastMessage > 0 ? ago(st.lastMessage) : "");
+		boxes.add(new StatBox("Chat", rows, ""));
+
+		rows = new ArrayList<>();
+		if (!st.skin.isEmpty()) row(rows, "Skin", "Custom (" + (st.model.equals("slim") ? "slim arms" : "wide arms") + ")" + (st.cape.isEmpty() ? "" : ", has a cape"));
+		row(rows, "Skin changes", st.pastSkins.isEmpty() ? "" : st.pastSkins.size() + ", last " + ago(st.skinChanged));
+		List<String> same = new ArrayList<>();
+		for (Profile o : sameSkin(p)) same.add(o.name);
+		row(rows, "Same skin as", String.join(", ", same));
+		row(rows, "Names", p.pastNames.isEmpty() ? "" : String.join(" → ", p.pastNames) + " → " + p.name);
+		row(rows, "First seen", p.firstSeen > 0 ? day(p.firstSeen) + " (" + ago(p.firstSeen) + ")" : "");
+		boxes.add(new StatBox("Account", rows, "The same skin on two accounts is a hint they're one person's, not proof: some skins are popular."));
+		boxes.removeIf(b -> b.rows().isEmpty());
+		return boxes;
+	}
+
+	/** The Stats section: boxes in one or two columns. */
+	private int renderStats(DrawContext context, Profile p, int x, int y, int w) {
+		List<StatBox> boxes = statBoxes(p);
+		if (boxes.isEmpty()) {
+			for (var line : textRenderer.wrapLines(Text.literal("Nothing counted yet. Numbers fill in while they're online, in view or in chat with you on."), w)) {
+				context.drawText(textRenderer, line, x, y, MUTED, false);
+				y += 10;
+			}
+			return y;
+		}
+		int columns = w >= 380 ? 2 : 1;
+		int gap = 8;
+		int colW = (w - gap * (columns - 1)) / columns;
+		int[] colY = new int[columns];
+		java.util.Arrays.fill(colY, y);
+		for (StatBox box : boxes) {
+			int c = 0;
+			for (int i = 1; i < columns; i++) {
+				if (colY[i] < colY[c]) c = i;
+			}
+			int bx = x + c * (colW + gap);
+			var note = box.note().isEmpty() ? List.<net.minecraft.text.OrderedText>of() : textRenderer.wrapLines(Text.literal(box.note()), colW - 12);
+			int h = 18 + box.rows().size() * 11 + (note.isEmpty() ? 2 : note.size() * 10 + 4);
+			roundedBorder(context, bx, colY[c], colW, h, CARD, BORDER);
+			context.drawText(textRenderer, Text.literal(box.title()).styled(s -> s.withBold(true)), bx + 6, colY[c] + 5, TEXT, false);
+			int ry = colY[c] + 18;
+			int labelW = 0;
+			for (String[] r : box.rows()) labelW = Math.max(labelW, textRenderer.getWidth(r[0]));
+			labelW = Math.min(labelW + 8, (colW - 12) / 2);
+			for (String[] r : box.rows()) {
+				textTrim(context, r[0], bx + 6, ry, labelW - 4, MUTED);
+				textTrim(context, r[1], bx + 6 + labelW, ry, colW - 12 - labelW, TEXT);
+				ry += 11;
+			}
+			ry += 2;
+			for (var line : note) {
+				context.drawText(textRenderer, line, bx + 6, ry, MUTED, false);
+				ry += 10;
+			}
+			colY[c] += h + gap;
+		}
+		int bottom = y;
+		for (int cy : colY) bottom = Math.max(bottom, cy);
+		return bottom;
 	}
 
 	/** The "Where & when" section: when they're usually on, names they've had, screenshots, and every sighting. */
@@ -2298,10 +2514,20 @@ public class ShopScreen extends Screen {
 			String names = mates.size() > 4 ? String.join(", ", mates.subList(0, 4)) + " and " + (mates.size() - 4) + " more" : join(mates);
 			facts.add("In " + g + " with " + names + (naughty > 0 ? " (" + naughty + " on your Naughty list)" : ""));
 		}
-		int minutes = p.minutesOnline();
-		if (minutes > 0) {
+		long online = onlineMs(p);
+		if (online >= 60_000) {
 			String usually = p.usuallyOn();
-			facts.add("Seen online for " + duration(minutes * 60) + (usually != null ? ", usually " + usually : ""));
+			facts.add("Seen online for " + span(online) + (usually != null ? ", usually " + usually : ""));
+		}
+		if (p.stats.deaths > 0 || kills(p) > 0) {
+			facts.add(kills(p) + (kills(p) == 1 ? " kill, " : " kills, ") + p.stats.deaths + (p.stats.deaths == 1 ? " death" : " deaths")
+					+ (p.stats.totemPops > 0 ? ", " + p.stats.totemPops + (p.stats.totemPops == 1 ? " totem" : " totems") + " popped" : ""));
+		}
+		List<Profile> sameSkin = sameSkin(p);
+		if (!sameSkin.isEmpty()) {
+			List<String> names = new ArrayList<>();
+			for (Profile o : sameSkin) names.add(o.name);
+			facts.add("Same skin as " + (names.size() > 3 ? String.join(", ", names.subList(0, 3)) + " and " + (names.size() - 3) + " more" : join(names)));
 		}
 		Profile.Sighting last = p.lastSighting();
 		if (last != null) {
@@ -5776,6 +6002,15 @@ public class ShopScreen extends Screen {
 
 	public void testSearch(String text) {
 		search.setText(text);
+	}
+
+	/** The selected player's Stats rows, "Label: value" one a line. */
+	public String testStats() {
+		StringBuilder sb = new StringBuilder();
+		for (StatBox box : statBoxes(selected)) {
+			for (String[] r : box.rows()) sb.append(r[0]).append(": ").append(r[1]).append('\n');
+		}
+		return sb.toString();
 	}
 
 	public Profile testSelected() {

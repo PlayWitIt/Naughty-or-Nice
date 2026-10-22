@@ -53,6 +53,12 @@ public final class SelfTest {
 			client.send(() -> openWorld(client));
 		});
 		ClientTickEvents.END_CLIENT_TICK.register(SelfTest::tick);
+		net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents.END_SERVER_TICK.register(server -> {
+			if (walkTicks > 0 && griefer != null) {
+				walkTicks--;
+				griefer.refreshPositionAndAngles(griefer.getX() + 0.25, griefer.getY(), griefer.getZ(), 180, 0);
+			}
+		});
 		// Count frames, so each step waits for the screen to have been drawn since the last one (clicks need
 		// what's on screen to be current, and a busy machine can draw fewer frames than it runs ticks).
 		WorldRenderEvents.BEFORE_DEBUG_RENDER.register(context -> frames++);
@@ -109,6 +115,27 @@ public final class SelfTest {
 				check("chat kept on the profile", hana.recentChat.contains("thanks for the help earlier!"));
 				mod.watcher.onGameMessage(client, Text.literal("<xX_Toxic_Xx> ez noob"));
 				check("trash talk folded into one entry", toxic.count(Profile.Kind.RUDE) == 2 && toxic.actions.stream().filter(a -> a.kind == Profile.Kind.RUDE).count() == 1);
+
+				// ---- Stats: all-time counts, death messages, chat ----
+				check("chat counted (" + hana.stats.messages + " messages, " + hana.stats.words + " words)", hana.stats.messages == 1 && hana.stats.words == 5);
+				Profile sam = ledger.getOrCreate(id("Serial_Sam"), "Serial_Sam");
+				for (int i = 0; i < 70; i++) mod.watcher.record(sam, Profile.Kind.KILLED_PLAYER, "Victim" + i);
+				check("counts survive the activity list being trimmed (" + sam.count(Profile.Kind.KILLED_PLAYER) + ", " + sam.actions.size() + " entries)",
+						sam.count(Profile.Kind.KILLED_PLAYER) == 70 && sam.actions.size() <= NNConfig.INSTANCE.maxActions);
+				ledger.forget(sam);
+				Text vipHana = Text.literal("[VIP] ").append(Text.literal("Helpful_Hana").styled(st -> st.withInsertion("Helpful_Hana")));
+				Text toxicName = Text.literal("xX_Toxic_Xx").styled(st -> st.withInsertion("xX_Toxic_Xx"));
+				check("a ranked name in a message is read as the player", "Helpful_Hana".equals(Watcher.playerArg(vipHana)));
+				check("a mob in a message isn't a player", Watcher.playerArg(Text.literal("Zombie").styled(st -> st.withInsertion(UUID.randomUUID().toString()))) == null);
+				check("a plugin's plain ranked name still finds the player", "Steve".equals(Watcher.playerArg(Text.literal("[Admin] Steve"))));
+				mod.watcher.onGameMessage(client, Text.translatable("death.attack.player.item", vipHana, toxicName, Text.literal("[Diamond Sword]")));
+				check("death counted for the victim (" + hana.stats.deaths + ")", hana.stats.deaths == 1 && hana.stats.deathsToPlayers == 1
+						&& hana.stats.killedBy.getOrDefault("xX_Toxic_Xx", 0) == 1);
+				check("kill counted for the killer, with victim and weapon (" + toxic.count(Profile.Kind.KILLED_PLAYER) + ", " + toxic.stats.weapons + ")",
+						toxic.count(Profile.Kind.KILLED_PLAYER) == 2 && toxic.stats.victims.getOrDefault("Helpful_Hana", 0) == 1
+						&& toxic.stats.weapons.getOrDefault("Diamond Sword", 0) == 1);
+				mod.watcher.onGameMessage(client, Text.translatable("death.fell.accident.generic", Text.literal("Steve_Builder").styled(st -> st.withInsertion("Steve_Builder"))));
+				check("a death with no killer counts as a death only", ledger.byName("Steve_Builder").stats.deaths == 1 && ledger.byName("Steve_Builder").stats.deathsToPlayers == 0);
 			}
 			case 80 -> {
 				log("Spawning the fake griefer in front of the player");
@@ -1048,8 +1075,41 @@ public final class SelfTest {
 				screenshot(client, "54_page_notes");
 				client.setScreen(null);
 			}
+			// ---- Stats from a player in view: a totem pop, walking at a known speed, time online ----
+			case 1059 -> {
+				log("Griefer pops a totem and walks off at 5 blocks a second");
+				IntegratedServer server = client.getServer();
+				server.execute(() -> griefer.getEntityWorld().sendEntityStatus(griefer, net.minecraft.entity.EntityStatuses.USE_TOTEM_OF_UNDYING));
+				walkTicks = 100;
+			}
+			case 1064 -> {
+				Profile gary = ledger.get(id(GRIEFER));
+				check("totem pop counted (" + gary.stats.totemPops + ")", gary.stats.totemPops == 1);
+			}
+			case 1190 -> {
+				Profile gary = ledger.get(id(GRIEFER));
+				PlayerStats st = gary.stats;
+				log("Griefer stats: travelled " + st.travelled + ", top speed " + st.topSpeed + ", in view " + st.inViewMs + "ms, online " + st.onlineMs
+						+ "ms, seen " + st.timesSeen + ", closest " + st.closest + ", logins " + st.logins + ", sessions " + st.sessions.size());
+				check("distance travelled in view (" + Math.round(st.travelled) + ")", st.travelled >= 15 && st.travelled <= 35);
+				check("top speed is the walking speed (" + String.format(java.util.Locale.ROOT, "%.1f", st.topSpeed) + ")", st.topSpeed >= 3.5 && st.topSpeed <= 6.5);
+				check("time in view and online counted", st.inViewMs >= 30_000 && st.onlineMs >= 30_000 && st.timesSeen >= 1 && st.closest >= 0 && st.closest < 8);
+				check("their login was seen, and one session runs through list reloads (" + st.sessions.size() + ")", st.logins == 1 && st.sessions.size() == 1 && st.sessions.get(0).startSeen
+						&& st.longestSessionMs >= 60_000);
+				check("best armour and held item noted", st.bestArmour.equals("netherite") && "End Crystal".equals(PlayerStats.top(st.held)));
+				client.setScreen(new ShopScreen(null, gary));
+			}
+			case 1193 -> check("Stats section opens", screen(client).testClick("section:STATS"));
+			case 1196 -> {
+				String stats = screen(client).testStats();
+				log("Stats rows:\n" + stats);
+				check("Stats page shows fights, movement and gear", stats.contains("Totems popped: 1") && stats.contains("Best armour: Netherite")
+						&& stats.contains("Top speed: ") && stats.contains("Kills: 1 (1 of them you)"));
+				screenshot(client, "55_stats");
+			}
+			case 1199 -> client.setScreen(null);
 			// ---- A real disconnect, by "another mod" (this test): recorded with who did it and who was near ----
-			case 1062 -> {
+			case 1202 -> {
 				log("Disconnecting on purpose");
 				disconnectedAt = System.currentTimeMillis();
 				client.getNetworkHandler().getConnection().disconnect(Text.literal("[AutoLog] " + GRIEFER + " came near"));
@@ -1059,6 +1119,8 @@ public final class SelfTest {
 	}
 
 	private static String shareLink;
+	/** Server ticks the fake griefer has left to walk (a quarter block each, east). */
+	private static int walkTicks;
 	private static long disconnectedAt;
 
 	/** After the test's own disconnect: check it was recorded, then finish. */

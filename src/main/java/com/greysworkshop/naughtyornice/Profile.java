@@ -116,6 +116,8 @@ public final class Profile {
 	public boolean notifyJoin;
 	/** Which list friends who shared their lists have them on. */
 	public List<FriendView> friendViews = new ArrayList<>();
+	/** All-time numbers: online time, sessions, kills and deaths, what they're seen doing (see {@link PlayerStats}). */
+	public PlayerStats stats = new PlayerStats();
 
 	/** One time they came into view: where and when it started, where they were last, and their gear. */
 	public static final class Sighting {
@@ -312,8 +314,8 @@ public final class Profile {
 	/** Number of things they've done that count for or against them. */
 	public int ratedActions() {
 		int n = 0;
-		for (Action action : actions) {
-			if (action.points != 0) n += action.count;
+		for (Kind kind : Kind.values()) {
+			if (kind.points != 0) n += count(kind);
 		}
 		return n;
 	}
@@ -329,6 +331,7 @@ public final class Profile {
 	/** Records an action, folding it into the previous one of the same kind if it's recent. */
 	public Action record(Kind kind, String detail, int maxActions) {
 		long now = System.currentTimeMillis();
+		stats.tally.merge(kind.name(), 1, Integer::sum);
 		String d = detail == null ? "" : detail;
 		if (kind.foldSeconds > 0) {
 			for (int i = actions.size() - 1; i >= 0 && i >= actions.size() - 8; i--) {
@@ -401,12 +404,9 @@ public final class Profile {
 		return false;
 	}
 
+	/** Times they've done this, all-time (the activity list only keeps the latest entries). */
 	public int count(Kind kind) {
-		int n = 0;
-		for (Action action : actions) {
-			if (action.kind == kind) n += action.count;
-		}
-		return n;
+		return stats.count(kind);
 	}
 
 	/** Whether there's anything to them beyond having been seen: on a list, noted, did something, or said something. */

@@ -150,6 +150,27 @@ Lists are saved per server in `config/naughtyornice/lists/`. The address is tidi
 `constantiam.net:25565` share one set of lists; lists that older versions saved under different spellings of the same
 address are merged automatically (the extra files are kept as `.merged`).
 
+## Stats
+Every player page has a **Stats** tab: all-time numbers from everything your game gets to see, in five boxes. Each
+box says where its numbers come from. Nothing is guessed or estimated, and totals are never trimmed, however long you
+play (before 1.7.0, counts like "Killed you ×12" dropped old events once a player had 60 entries).
+- **Online** (from the tab list, while you're on too): time online, measured to the second; what share of *your* time on
+  the server they were on; logins and logouts you saw; average session (only sessions you saw start *and* end) and the
+  longest; ping (average, lowest to highest); game modes other than survival.
+- **Fights**: kills (and how many were you), deaths (and how many to players) and kills per death, from death messages,
+  which the whole server gets; who they kill most, who kills them most, what they kill with ("using [Diamond Sword]"),
+  their last death; totems popped, hits on you and on others (in view).
+- **Up close** (while they're in render distance): times seen, time in view and near you, closest they've come,
+  distance travelled, top speed (the slowest of three seconds in a row, so an ender pearl or a teleport isn't counted),
+  time flying with an elytra, which dimensions, what they ride, best armour seen, what they usually hold.
+- **Chat**: messages, words per message, whispers both ways, friendly lines and trash talk, first and last heard.
+- **Account**: their skin (slim or wide arms, cape), skin changes, **other accounts seen wearing the same skin** (a hint
+  of an alt, not proof), names they've had, first seen.
+
+The player summary uses the same numbers ("4 kills, 2 deaths, 3 totems popped", "Same skin as …"), the page header
+says when they were last *online* (not just last heard of), and the list can be sorted by **Most time online** and
+**Most kills**. Rank prefixes in death messages (`[VIP] Steve was slain by…`) no longer make one kill count twice.
+
 ## Where & when, and who with
 - **Sightings:** every time a player comes into view, where (with how far it was from your nearest base), how long
   they stayed, and their gear (armour, elytra, what's in their hands). With Base Insurance, the last sighting of
@@ -204,5 +225,5 @@ is also written to a text file a day in `config/naughtyornice/chatlogs/<server>/
 
 ## Building
 Requires JDK 21. Run `./gradlew build`; the jar goes to `build/libs/`.
-`./gradlew runSelfTest` runs a scripted in-game test (167 checks) that spawns a fake griefer and saves screenshots to
+`./gradlew runSelfTest` runs a scripted in-game test (183 checks) that spawns a fake griefer and saves screenshots to
 `run/screenshots/`.
