@@ -72,6 +72,8 @@ public final class Watcher {
 	/** Each online player's current session. */
 	private final Map<UUID, PlayerStats.Session> sessions = new HashMap<>();
 	private final Map<UUID, Moved> moved = new HashMap<>();
+	/** When each player last came into view. */
+	private final Map<UUID, Long> arrivals = new HashMap<>();
 
 	public Watcher(Ledger ledger, ChatLogger chatLogger, Diagnostics diagnostics) {
 		this.ledger = ledger;
@@ -91,6 +93,7 @@ public final class Watcher {
 		lastSecond = 0;
 		sessions.clear();
 		moved.clear();
+		arrivals.clear();
 	}
 
 	// ---- Recording ----
@@ -192,7 +195,7 @@ public final class Watcher {
 	 * Someone died, by the server's death message (sent once per death, to everyone): counts towards their deaths,
 	 * and who killed them with what. {@code killer} is null when no player did it.
 	 */
-	private void died(MinecraftClient client, String victim, String killer, String weapon, String message) {
+	private void died(MinecraftClient client, String victim, String killer, String weapon, String message, String cause) {
 		if (victim == null || victim.equalsIgnoreCase(client.player.getGameProfile().name())) return;
 		UUID id = playerId(client, victim);
 		long now = System.currentTimeMillis();
@@ -201,6 +204,7 @@ public final class Watcher {
 			st.deaths++;
 			st.lastDeath = message.length() > 120 ? message.substring(0, 120) + "…" : message;
 			st.lastDeathTime = now;
+			PlayerStats.bump(st.deathCauses, PlayerStats.deathCause(cause, killer != null), 1);
 			if (killer != null) {
 				st.deathsToPlayers++;
 				PlayerStats.bump(st.killedBy, killer, 1);
@@ -296,7 +300,7 @@ public final class Watcher {
 				boolean byPlayer = victim != null && killerId != null && !killer.equalsIgnoreCase(victim);
 				// "X was slain by Y using [Z]": the weapon is the last argument.
 				String weapon = byPlayer && key.endsWith(".item") && args.length >= 3 ? argString(args[2]) : null;
-				died(client, victim, byPlayer ? killer : null, weapon, raw);
+				died(client, victim, byPlayer ? killer : null, weapon, raw, key);
 				if (byPlayer) {
 					diagnostics.understood(Diagnostics.Kind.KILL, raw, killer + " killed " + victim);
 					if (victim.equalsIgnoreCase(client.player.getGameProfile().name())) killedMe(killerId, killer);
@@ -339,6 +343,17 @@ public final class Watcher {
 					}
 					default -> {}
 				}
+			}
+			if (key.startsWith("chat.type.advancement.") && args.length >= 2) {
+				String who = playerArg(args[0]);
+				UUID id = who == null ? null : playerId(client, who);
+				String what = argString(args[1]).replaceAll("^\\[(.*)]$", "$1");
+				diagnostics.understood(Diagnostics.Kind.IGNORED, raw, who + " made an advancement: " + what);
+				if (id != null && !id.equals(client.player.getUuid())) {
+					PlayerStats.note(ledger.getOrCreate(id, who).stats.advancements, what, 80);
+					ledger.markDirty();
+				}
+				return;
 			}
 			if (key.startsWith("chat.type.advancement") || key.startsWith("commands.") || key.startsWith("multiplayer.") || key.startsWith("sleep.")) {
 				diagnostics.understood(Diagnostics.Kind.IGNORED, raw, "game message (" + key + ")");
@@ -441,7 +456,7 @@ public final class Watcher {
 				break;
 			}
 		}
-		died(client, victim, killer, null, line);
+		died(client, victim, killer, null, line, rest);
 		if (killerId == null) {
 			diagnostics.understood(Diagnostics.Kind.DEATH, line, victim + " died (no player killer)");
 			return true;
@@ -492,6 +507,7 @@ public final class Watcher {
 			st.words += text.isBlank() ? 0 : text.strip().split("\\s+").length;
 			if (st.firstMessage == 0) st.firstMessage = now;
 			st.lastMessage = now;
+			chatAnalytics(client, profile, text);
 			said(profile, text);
 		}
 		String alert = whisper ? null : alertFor(client, text);
@@ -508,6 +524,53 @@ public final class Watcher {
 					.append(Text.literal(" " + alert + ": ").formatted(Formatting.YELLOW))
 					.append(Text.literal(text.length() > 80 ? text.substring(0, 80) + "…" : text).formatted(Formatting.WHITE)));
 		}
+	}
+
+	private static final Set<String> COMMON = Set.of("that", "this", "with", "have", "just", "what", "your", "from", "they", "were", "will",
+			"there", "their", "would", "about", "like", "dont", "it's", "i'm", "know", "when", "then", "them", "some", "been", "here",
+			"want", "need", "where", "only", "also", "much", "very", "yeah", "even", "into", "than", "more", "make", "good", "does", "cant",
+			"can't", "don't", "because", "still", "should", "could", "really", "think", "going", "gonna", "well", "back", "time", "anyone",
+			"who's", "that's", "didn't", "doesn't", "isn't", "you're", "what's", "thats", "lmao");
+	private static final Pattern CHAT_WORD = Pattern.compile("[a-z][a-z']{3,15}");
+	private static final Pattern URL = Pattern.compile("(?i)\\b(?:https?://\\S+|www\\.\\S+|discord\\.gg/\\S+|discord\\.com/invite/\\S+)");
+
+	/** What a line says about them: who they name, their words, caps, questions, and coordinates or links they post. */
+	private void chatAnalytics(MinecraftClient client, Profile profile, String text) {
+		PlayerStats st = profile.stats;
+		st.chatHours[java.time.LocalTime.now().getHour()]++;
+		String lower = text.toLowerCase(Locale.ROOT);
+		Set<String> online = onlineNames(client);
+		String me = client.player.getGameProfile().name().toLowerCase(Locale.ROOT);
+		Set<String> named = new HashSet<>();
+		Matcher w = WORD.matcher(text);
+		while (w.find()) {
+			String n = w.group().toLowerCase(Locale.ROOT);
+			if (!online.contains(n) || n.equals(profile.name.toLowerCase(Locale.ROOT)) || !named.add(n)) continue;
+			if (n.equals(me)) {
+				st.mentionsOfYou++;
+				continue;
+			}
+			Profile other = ledger.byName(n);
+			PlayerStats.bump(st.mentions, other != null ? other.name : w.group(), 1);
+			if (other != null) PlayerStats.bump(other.stats.mentionedBy, profile.name, 1);
+		}
+		Matcher cw = CHAT_WORD.matcher(lower);
+		while (cw.find()) {
+			String word = cw.group();
+			if (!COMMON.contains(word) && !online.contains(word)) PlayerStats.bump(st.topWords, word, 1, 25);
+		}
+		long letters = text.chars().filter(Character::isLetter).count();
+		if (letters >= 5 && text.chars().filter(Character::isUpperCase).count() >= letters * 0.8) st.capsMessages++;
+		if (text.strip().endsWith("?")) st.questions++;
+		// Coordinates: two or more numbers of 3+ digits, like "1200 -3400" or "x 1200 y 64 z -3400".
+		int big = 0;
+		Matcher m = NUMBER.matcher(text);
+		while (m.find()) {
+			if (m.group().replace("-", "").length() >= 3) big++;
+		}
+		if (big >= 2) PlayerStats.note(st.coordsPosted, text, 15);
+		Matcher url = URL.matcher(text);
+		if (url.find()) PlayerStats.note(st.linksPosted, url.group(), 15);
 	}
 
 	private boolean fresh(String key, long now) {
@@ -631,6 +694,7 @@ public final class Watcher {
 		chatLogger.tick(now);
 		NNConfig config = NNConfig.INSTANCE;
 		String dimension = world.getRegistryKey().getValue().toString();
+		if (secondsOn == 0) ledger.activity.myJoins++;
 		if (secondsOn++ == 0) chatLogger.feedMarker("You joined " + Sharing.placeName(ledger.key()), now);
 		Disconnects.snapshot(client, ledger);
 		if (secondsOn == 4) Disconnects.tellIfNew();
@@ -649,6 +713,7 @@ public final class Watcher {
 			String base = BaseInsuranceBridge.baseAt(dimension, player.getBlockPos());
 			if (config.recordSightings) sighted(profile, player, dimension, base, arrived, now);
 			inView(profile, player, dimension, distance, arrived, dt, now);
+			if (arrived) arrivals.put(player.getUuid(), now);
 			String alertGroup = ledger.alertGroupOf(profile);
 			if (arrived && profile.verdict == Profile.Verdict.NAUGHTY && config.warnNaughtyNearby) {
 				Alerts.warn(Text.literal("Naughty-list player ").formatted(Formatting.RED)
@@ -691,6 +756,7 @@ public final class Watcher {
 		}
 		lastVisible.values().removeIf(t -> now - t > 600_000);
 		moved.values().removeIf(m -> now - m.time() > 5_000);
+		arrivals.values().removeIf(t -> now - t > 60_000);
 		if (config.trackLinks) nearEachOther(visible, now);
 
 		// Joins: who's on the tab list now that wasn't before.
@@ -722,6 +788,8 @@ public final class Watcher {
 			if (profile == null) continue;
 			profile.stats.logins++;
 			profile.stats.lastLogin = now;
+			profile.stats.clock(true, java.time.LocalTime.now());
+			if (secondsOn <= 120) profile.stats.joinedAfterYou++;
 			String alertGroup = ledger.alertGroupOf(profile);
 			if (profile.notifyJoin && !(profile.verdict == Profile.Verdict.NAUGHTY && config.warnNaughtyJoin)) {
 				// You asked for this player in particular: always said, with a ping.
@@ -761,8 +829,14 @@ public final class Watcher {
 				PlayerStats.Session session = sessions.remove(id);
 				if (gone != null) {
 					if (session != null) gone.stats.endSession(session, now);
-					gone.stats.logouts++;
-					gone.stats.lastLogout = now;
+					PlayerStats st = gone.stats;
+					st.logouts++;
+					st.lastLogout = now;
+					st.clock(false, java.time.LocalTime.now());
+					if (secondsOn <= 60) st.leftAfterYouJoined++;
+					Long arrived = arrivals.get(id);
+					if (arrived != null && now - arrived <= 30_000) st.leftWhenSeen++;
+					if (st.lastDeathTime > 0 && now - st.lastDeathTime <= 60_000) st.leftAfterDying++;
 					chatLogger.feedSystem(gone.name, "left", now);
 				}
 				if (gone != null && gone.notifyJoin) {
@@ -807,14 +881,40 @@ public final class Watcher {
 		}
 		st.continueSession(session, now);
 		if (minute) {
+			st.onlineMinute(java.time.LocalDateTime.now());
 			st.ping(entry.getLatency());
 			if (entry.getGameMode() != null) PlayerStats.bump(st.gameModes, entry.getGameMode().asString(), 1);
 		}
 		if ((started || minute) && st.readSkin(entry.getProfile(), now)) {
 			record(profile, Profile.Kind.LISTED, "Changed their skin");
 		}
+		if (started || minute) identity(entry, profile);
 		// Saved with the next save after a minute's worth, not every second.
 		if (started || minute) ledger.markDirty();
+	}
+
+	/** What the tab list says about who they are: the server's name for them (ranks), and their chat signing. */
+	private void identity(PlayerListEntry entry, Profile profile) {
+		PlayerStats st = profile.stats;
+		Text display = entry.getDisplayName();
+		String shown = display == null ? "" : display.getString().strip();
+		if (shown.equals(profile.name)) shown = "";
+		if (!shown.equals(st.tabName)) {
+			if (!st.tabName.isEmpty()) {
+				st.pastTabNames.remove(st.tabName);
+				st.pastTabNames.add(st.tabName);
+				while (st.pastTabNames.size() > 6) st.pastTabNames.remove(0);
+			}
+			st.tabName = shown;
+		}
+		net.minecraft.network.encryption.PublicPlayerSession session = entry.getSession();
+		st.signedKnown = true;
+		st.signedChat = session != null;
+		if (session != null && session.publicKeyData() != null) {
+			long key = session.publicKeyData().data().expiresAt().toEpochMilli();
+			if (st.chatKey != 0 && key != st.chatKey) st.chatKeyChanges++;
+			st.chatKey = key;
+		}
 	}
 
 	/** Once a second for each player in view: time, distance from you, how they move, what they ride and hold. */

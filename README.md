@@ -151,25 +151,38 @@ Lists are saved per server in `config/naughtyornice/lists/`. The address is tidi
 address are merged automatically (the extra files are kept as `.merged`).
 
 ## Stats
-Every player page has a **Stats** tab: all-time numbers from everything your game gets to see, in five boxes. Each
-box says where its numbers come from. Nothing is guessed or estimated, and totals are never trimmed, however long you
-play (before 1.7.0, counts like "Killed you ×12" dropped old events once a player had 60 entries).
-- **Online** (from the tab list, while you're on too): time online, measured to the second; what share of *your* time on
-  the server they were on; logins and logouts you saw; average session (only sessions you saw start *and* end) and the
-  longest; ping (average, lowest to highest); game modes other than survival.
-- **Fights**: kills (and how many were you), deaths (and how many to players) and kills per death, from death messages,
-  which the whole server gets; who they kill most, who kills them most, what they kill with ("using [Diamond Sword]"),
-  their last death; totems popped, hits on you and on others (in view).
-- **Up close** (while they're in render distance): times seen, time in view and near you, closest they've come,
-  distance travelled, top speed (the slowest of three seconds in a row, so an ender pearl or a teleport isn't counted),
-  time flying with an elytra, which dimensions, what they ride, best armour seen, what they usually hold.
-- **Chat**: messages, words per message, whispers both ways, friendly lines and trash talk, first and last heard.
-- **Account**: their skin (slim or wide arms, cape), skin changes, **other accounts seen wearing the same skin** (a hint
-  of an alt, not proof), names they've had, first seen.
+Every player page has a **Stats** tab: all-time numbers from everything your game gets to see. Most of it works for
+anyone on the server, wherever they are; only "Up close" needs them in render distance. Each box says where its
+numbers come from, and nothing is guessed. Totals are never trimmed, however long you play.
+- **Online** (from the tab list, while you're on too): time online to the second, and what share of *your* time on the
+  server they were on; days online (in the last 7 and 30 days too), most days in a row, busiest day of the week, the
+  time they usually log in and out; logins and logouts you saw, average session (only ones you saw start *and* end) and
+  the longest; ping (average, range, steady or jumpy); game mode if it isn't survival.
+- **Fights** (death messages, which the whole server gets): kills (how many were you), deaths, kills per death, **how
+  they die** (player, explosion, elytra crash, fall, void...), who they kill most and who kills them most, what they
+  kill with, last death; totems popped and hits (in view).
+- **Up close** (in render distance): times seen, time in view and near you, closest they've come, distance travelled,
+  top speed (the slowest of three seconds in a row, so pearls don't count), elytra time, dimensions, what they ride,
+  best armour, what they usually hold.
+- **Chat**: messages, words per message, whispers both ways, chattiest hour, **who they talk to** and who talks about
+  them, how often they say your name, favourite words, all caps, questions.
+- **Coordinates they posted** and **links they posted** (Discord invites...): the lines themselves, newest first.
+- **Around you**: how often they log in just after you join, log out as you join, log out within 30 seconds of coming
+  into your view, or log out after dying. Each is shown against how often it would happen **by chance**, and marked
+  "more than chance" when it's well over.
+- **Progress**: advancements the server announced for them.
+- **Account**: the kind of account (Java/Mojang, offline-mode, Bedrock through Geyser, NPC), the server's name for
+  them in the tab list (ranks) and what it used to be, chat signing (off hints at a no-chat-reports mod or a modified
+  client) and new chat keys (game restarts), their skin and where it came from (skin plugins name the account),
+  skin changes, names they've had.
+- **Maybe also**: other accounts that may be the same person, with a score and the reasons: the same skin (now or
+  before), a borrowed skin, taking turns online without ever being on together, similar names, the same ping. One
+  hint alone isn't enough to be listed.
 
-The player summary uses the same numbers ("4 kills, 2 deaths, 3 totems popped", "Same skin as …"), the page header
-says when they were last *online* (not just last heard of), and the list can be sorted by **Most time online** and
-**Most kills**. Rank prefixes in death messages (`[VIP] Steve was slain by…`) no longer make one kill count twice.
+The **Activity** tab has **Top players** boards for the server: most time online, most days online, most kills, most
+deaths, most totems, chattiest, most advancements, most coordinates posted, fastest seen. Click a name for their page.
+The player summary uses the same numbers, the page header says when they were last *online*, and the list can be
+sorted by **Most time online** and **Most kills**.
 
 ## Where & when, and who with
 - **Sightings:** every time a player comes into view, where (with how far it was from your nearest base), how long
@@ -225,5 +238,5 @@ is also written to a text file a day in `config/naughtyornice/chatlogs/<server>/
 
 ## Building
 Requires JDK 21. Run `./gradlew build`; the jar goes to `build/libs/`.
-`./gradlew runSelfTest` runs a scripted in-game test (183 checks) that spawns a fake griefer and saves screenshots to
+`./gradlew runSelfTest` runs a scripted in-game test (192 checks) that spawns a fake griefer and saves screenshots to
 `run/screenshots/`.

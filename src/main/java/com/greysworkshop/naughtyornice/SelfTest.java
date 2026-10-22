@@ -136,6 +136,17 @@ public final class SelfTest {
 						&& toxic.stats.weapons.getOrDefault("Diamond Sword", 0) == 1);
 				mod.watcher.onGameMessage(client, Text.translatable("death.fell.accident.generic", Text.literal("Steve_Builder").styled(st -> st.withInsertion("Steve_Builder"))));
 				check("a death with no killer counts as a death only", ledger.byName("Steve_Builder").stats.deaths == 1 && ledger.byName("Steve_Builder").stats.deathsToPlayers == 0);
+				Text steveName = Text.literal("Steve_Builder").styled(st -> st.withInsertion("Steve_Builder"));
+				mod.watcher.onGameMessage(client, Text.translatable("death.attack.flyIntoWall", steveName));
+				check("how they died is sorted (" + ledger.byName("Steve_Builder").stats.deathCauses + ", " + hana.stats.deathCauses + ")",
+						ledger.byName("Steve_Builder").stats.deathCauses.getOrDefault("Fall", 0) == 1
+						&& ledger.byName("Steve_Builder").stats.deathCauses.getOrDefault("Elytra crash", 0) == 1
+						&& hana.stats.deathCauses.getOrDefault("Killed by a player", 0) == 1);
+				mod.watcher.onGameMessage(client, Text.translatable("chat.type.advancement.task", vipHana, Text.literal("[Diamonds!]")));
+				check("advancements noted (" + hana.stats.advancements.size() + ")", hana.stats.advancements.size() == 1 && hana.stats.advancements.get(0).text.equals("Diamonds!"));
+				check("account types told apart", PlayerStats.accountType(UUID.fromString("00000000-0000-0000-0009-01f6d8e1a2b3")).startsWith("Bedrock")
+						&& PlayerStats.accountType(UUID.randomUUID()).startsWith("Java") && PlayerStats.accountType(id("Helpful_Hana")).startsWith("Offline"));
+				check("usual login time needs logins close together", usualTimes());
 			}
 			case 80 -> {
 				log("Spawning the fake griefer in front of the player");
@@ -1085,6 +1096,22 @@ public final class SelfTest {
 			case 1064 -> {
 				Profile gary = ledger.get(id(GRIEFER));
 				check("totem pop counted (" + gary.stats.totemPops + ")", gary.stats.totemPops == 1);
+				Profile rick = ledger.byName("RandomRick");
+				mod.watcher.onGameMessage(client, Text.literal("<RandomRick> hey " + GRIEFER + " meet me at 1200 -3400, join discord.gg/abc123 ?"));
+				check("who they talk to (" + rick.stats.mentions + ")", rick.stats.mentions.getOrDefault(GRIEFER, 0) == 1 && gary.stats.mentionedBy.getOrDefault("RandomRick", 0) == 1);
+				check("coordinates and links they post are kept", rick.stats.coordsPosted.size() == 1 && rick.stats.linksPosted.size() == 1
+						&& rick.stats.linksPosted.get(0).text.equals("discord.gg/abc123") && rick.stats.questions == 1);
+				Profile hana = ledger.byName("Helpful_Hana");
+				Profile alt = ledger.getOrCreate(id("HelpfulHana2"), "HelpfulHana2");
+				hana.stats.skin = "abc123skin";
+				alt.stats.skin = "abc123skin";
+				List<Alts.Suspect> alts = Alts.of(ledger, hana);
+				check("a same-skin, same-name account is a possible alt (" + (alts.isEmpty() ? "none" : alts.get(0).score() + " " + alts.get(0).reasons()) + ")",
+						!alts.isEmpty() && alts.get(0).other() == alt && alts.get(0).score() >= 60);
+				alt.stats.skin = "";
+				check("...but a similar name alone isn't enough", Alts.of(ledger, hana).isEmpty());
+				hana.stats.skin = "";
+				ledger.forget(alt);
 			}
 			case 1190 -> {
 				Profile gary = ledger.get(id(GRIEFER));
@@ -1104,18 +1131,40 @@ public final class SelfTest {
 				String stats = screen(client).testStats();
 				log("Stats rows:\n" + stats);
 				check("Stats page shows fights, movement and gear", stats.contains("Totems popped: 1") && stats.contains("Best armour: Netherite")
-						&& stats.contains("Top speed: ") && stats.contains("Kills: 1 (1 of them you)"));
+						&& stats.contains("Top speed: ") && stats.contains("Kills: 1 (1 of them you)")
+						&& stats.contains("Account: Offline-mode") && stats.contains("Days online: 1"));
 				screenshot(client, "55_stats");
 			}
-			case 1199 -> client.setScreen(null);
+			case 1199 -> client.setScreen(new ShopScreen(ShopScreen.Tab.ACTIVITY, null));
+			case 1201 -> screen(client).testScroll(10_000);
+			case 1203 -> {
+				screenshot(client, "56_top_players");
+				check("Top players open a player's page", screen(client).testClick("top:2:Griefer_Gary") && screen(client).testSelected() == ledger.get(id(GRIEFER)));
+			}
+			case 1205 -> client.setScreen(null);
 			// ---- A real disconnect, by "another mod" (this test): recorded with who did it and who was near ----
-			case 1202 -> {
+			case 1210 -> {
 				log("Disconnecting on purpose");
 				disconnectedAt = System.currentTimeMillis();
 				client.getNetworkHandler().getConnection().disconnect(Text.literal("[AutoLog] " + GRIEFER + " came near"));
 			}
 			default -> {}
 		}
+	}
+
+	/** Logins all around the clock have no usual time; ones near 8pm do. */
+	private static boolean usualTimes() {
+		PlayerStats spread = new PlayerStats();
+		PlayerStats evening = new PlayerStats();
+		for (int h = 0; h < 24; h += 3) {
+			spread.logins++;
+			spread.clock(true, java.time.LocalTime.of(h, 0));
+		}
+		for (int m : new int[] {50, 55, 5, 10}) {
+			evening.logins++;
+			evening.clock(true, java.time.LocalTime.of(m > 30 ? 19 : 20, m));
+		}
+		return spread.usualTime(true) == null && "20:00".equals(evening.usualTime(true));
 	}
 
 	private static String shareLink;

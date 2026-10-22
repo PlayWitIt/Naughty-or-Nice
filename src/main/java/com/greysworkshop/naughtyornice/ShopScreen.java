@@ -917,31 +917,6 @@ public class ShopScreen extends Screen {
 		return duration((int) s);
 	}
 
-	/** Other players seen wearing the same skin, by skin, rebuilt when the lists change. */
-	private Map<String, List<Profile>> skinIndex;
-	private int skinIndexAt = -1;
-
-	/** Other accounts that have worn the skin this player wears (or wore). Default skins don't count. */
-	private List<Profile> sameSkin(Profile p) {
-		if (skinIndex == null || skinIndexAt != mod.ledger.changes()) {
-			skinIndex = new HashMap<>();
-			for (Profile o : mod.ledger.all()) {
-				if (!o.stats.skin.isEmpty()) skinIndex.computeIfAbsent(o.stats.skin, k -> new ArrayList<>()).add(o);
-				for (String past : o.stats.pastSkins) skinIndex.computeIfAbsent(past, k -> new ArrayList<>()).add(o);
-			}
-			skinIndexAt = mod.ledger.changes();
-		}
-		List<Profile> same = new ArrayList<>();
-		List<String> mine = new ArrayList<>(p.stats.pastSkins);
-		if (!p.stats.skin.isEmpty()) mine.add(p.stats.skin);
-		for (String skin : mine) {
-			for (Profile o : skinIndex.getOrDefault(skin, List.of())) {
-				if (o != p && !same.contains(o)) same.add(o);
-			}
-		}
-		return same;
-	}
-
 	private static String percent(double part, double whole) {
 		if (whole <= 0) return "";
 		double pc = 100 * part / whole;
@@ -958,6 +933,48 @@ public class ShopScreen extends Screen {
 		if (top == null) return "";
 		int n = map.get(top);
 		return top + (n > 1 ? " ×" + n : "");
+	}
+
+	/** "gg ×12, base ×4, spawn ×3": the biggest few of a count map. */
+	private static String topN(Map<String, Integer> map, int n) {
+		List<Map.Entry<String, Integer>> entries = new ArrayList<>(map.entrySet());
+		entries.sort(Map.Entry.<String, Integer>comparingByValue().reversed());
+		List<String> parts = new ArrayList<>();
+		for (Map.Entry<String, Integer> e : entries) {
+			if (parts.size() == n) break;
+			parts.add(e.getKey() + (e.getValue() > 1 ? " ×" + e.getValue() : ""));
+		}
+		return String.join(", ", parts);
+	}
+
+	/**
+	 * "5 of 20 (about 1 by chance)": how often something happened, against how often it would by luck alone, with
+	 * "more than chance" when it's at least 3 times and three times what luck would give.
+	 */
+	private static String vsChance(int n, int of, double expected) {
+		if (n == 0) return "";
+		String text = n + " of " + of;
+		if (expected >= 0) {
+			text += expected < 0.5 ? " (under 1 by chance)" : String.format(Locale.ROOT, " (about %.0f by chance)", expected);
+			if (n >= 3 && n >= expected * 3) text += ", more than chance";
+		}
+		return text;
+	}
+
+	private static final String[] WEEKDAYS = {"Mondays", "Tuesdays", "Wednesdays", "Thursdays", "Fridays", "Saturdays", "Sundays"};
+
+	/** Possible alts, worked out again only when the lists change. */
+	private List<Alts.Suspect> altsCache;
+	private Profile altsFor;
+	private int altsAt = -1;
+
+	private List<Alts.Suspect> alts(Profile p) {
+		if (altsCache == null || altsFor != p || altsAt != mod.ledger.changes()) {
+			altsCache = Alts.of(mod.ledger, p);
+			altsFor = p;
+			altsAt = mod.ledger.changes();
+		}
+		return altsCache;
 	}
 
 	/** "Overworld 70% · Nether 30%", biggest first. */
@@ -1996,8 +2013,26 @@ public class ShopScreen extends Screen {
 		long avg = st.averageSession();
 		row(rows, "Average session", avg >= 0 ? span(avg) + " (" + st.wholeSessions + (st.wholeSessions == 1 ? " session)" : " sessions)") : "");
 		row(rows, "Longest in one go", st.longestSessionMs >= 60_000 ? span(st.longestSessionMs) : "");
+		if (!st.days.isEmpty()) {
+			row(rows, "Days online", String.valueOf(st.days.size()));
+			row(rows, "Last 7 / 30 days", st.daysInLast(7) + " / " + st.daysInLast(30));
+			int[] streak = st.streaks();
+			row(rows, "Days in a row", streak[0] > 1 ? "best " + streak[0] + (streak[1] > 1 ? ", now " + streak[1] : "") : "");
+			row(rows, "Online since", day(java.time.LocalDate.ofEpochDay(st.days.get(0)).atStartOfDay(java.time.ZoneId.systemDefault()).toInstant().toEpochMilli()));
+		}
+		int busiest = 0, weekTotal = 0;
+		for (int d = 0; d < 7; d++) {
+			weekTotal += st.weekdays[d];
+			if (st.weekdays[d] > st.weekdays[busiest]) busiest = d;
+		}
+		row(rows, "Busiest day", weekTotal >= 120 ? WEEKDAYS[busiest] + " (" + percent(st.weekdays[busiest], weekTotal) + ")" : "");
+		String in = st.usualTime(true), out = st.usualTime(false);
+		row(rows, "Usually logs in", in == null ? "" : "around " + in);
+		row(rows, "Usually logs out", out == null ? "" : "around " + out);
 		int ping = st.averagePing();
-		row(rows, "Ping", ping < 0 ? "" : ping + " ms" + (st.pingMin != st.pingMax ? " (" + st.pingMin + " to " + st.pingMax + ")" : ""));
+		int spread = st.pingSpread();
+		row(rows, "Ping", ping < 0 ? "" : ping + " ms" + (st.pingMin != st.pingMax ? " (" + st.pingMin + " to " + st.pingMax + ")" : "")
+				+ (spread < 0 ? "" : spread <= 15 ? ", steady" : spread <= 60 ? ", a little jumpy" : ", very jumpy"));
 		if (!st.gameModes.isEmpty() && !(st.gameModes.size() == 1 && st.gameModes.containsKey("survival"))) {
 			row(rows, "Game mode", shares(st.gameModes, ShopScreen::capital, 3));
 		}
@@ -2015,6 +2050,7 @@ public class ShopScreen extends Screen {
 		row(rows, "Killed most", topOf(st.victims));
 		row(rows, "Killed most by", topOf(st.killedBy));
 		row(rows, "Kills with", topOf(st.weapons));
+		row(rows, "How they die", shares(st.deathCauses, c -> c, 4));
 		row(rows, "Last death", st.lastDeathTime > 0 ? ago(st.lastDeathTime) + ": " + st.lastDeath : "");
 		boxes.add(new StatBox("Fights", rows, "Kills and deaths from death messages (the whole server); hits and totems only in view."));
 
@@ -2042,17 +2078,73 @@ public class ShopScreen extends Screen {
 				? p.count(Profile.Kind.KIND_WORDS) + " / " + p.count(Profile.Kind.RUDE) : "");
 		row(rows, "First heard", st.firstMessage > 0 ? day(st.firstMessage) + ", " + clock(st.firstMessage) : "");
 		row(rows, "Last heard", st.lastMessage > 0 ? ago(st.lastMessage) : "");
+		int chatPeak = 0;
+		for (int h = 0; h < 24; h++) {
+			if (st.chatHours[h] > st.chatHours[chatPeak]) chatPeak = h;
+		}
+		row(rows, "Chattiest hour", st.messages >= 10 ? Profile.hourName(chatPeak) + " to " + Profile.hourName((chatPeak + 1) % 24) : "");
+		row(rows, "Talks to most", topN(st.mentions, 3));
+		row(rows, "Named most by", topN(st.mentionedBy, 3));
+		row(rows, "Says your name", st.mentionsOfYou > 0 ? st.mentionsOfYou + (st.mentionsOfYou == 1 ? " time" : " times") : "");
+		row(rows, "Favourite words", topN(st.topWords, 5));
+		row(rows, "All caps", st.messages >= 10 && st.capsMessages > 0 ? percent(st.capsMessages, st.messages) + " of messages" : "");
+		row(rows, "Questions", st.messages >= 10 && st.questions > 0 ? percent(st.questions, st.messages) + " of messages" : "");
 		boxes.add(new StatBox("Chat", rows, ""));
 
 		rows = new ArrayList<>();
+		for (int i = st.coordsPosted.size() - 1; i >= 0 && rows.size() < 6; i--) {
+			PlayerStats.Note n = st.coordsPosted.get(i);
+			row(rows, ago(n.time), n.text);
+		}
+		if (st.coordsPosted.size() > 6) row(rows, "", "and " + (st.coordsPosted.size() - 6) + " more (the last 15 are kept)");
+		boxes.add(new StatBox("Coordinates they posted", rows, "Lines where they wrote two or more 3-digit numbers. Read them yourself: not every one is a place."));
+
+		rows = new ArrayList<>();
+		for (int i = st.linksPosted.size() - 1; i >= 0 && rows.size() < 5; i--) {
+			PlayerStats.Note n = st.linksPosted.get(i);
+			row(rows, ago(n.time), n.text);
+		}
+		boxes.add(new StatBox("Links they posted", rows, ""));
+
+		// How they act around you, each against what chance alone would give.
+		rows = new ArrayList<>();
+		ServerActivity act = mod.ledger.activity;
+		double joinWindow = act.myJoins >= 3 && act.myMs > 0 ? Math.min(1, act.myJoins * 120_000.0 / act.myMs) : -1;
+		double leaveWindow = act.myJoins >= 3 && act.myMs > 0 ? Math.min(1, act.myJoins * 60_000.0 / act.myMs) : -1;
+		row(rows, "Logged in just after you", vsChance(st.joinedAfterYou, st.logins, joinWindow < 0 ? -1 : st.logins * joinWindow) + (st.joinedAfterYou > 0 ? " (within 2 min)" : ""));
+		row(rows, "Logged out as you joined", vsChance(st.leftAfterYouJoined, st.logouts, leaveWindow < 0 ? -1 : st.logouts * leaveWindow) + (st.leftAfterYouJoined > 0 ? " (within 1 min)" : ""));
+		double seenWindow = st.onlineMs > 0 ? Math.min(1, st.timesSeen * 30_000.0 / st.onlineMs) : -1;
+		row(rows, "Logged out once in view", vsChance(st.leftWhenSeen, st.logouts, seenWindow < 0 ? -1 : st.logouts * seenWindow) + (st.leftWhenSeen > 0 ? " (within 30 s)" : ""));
+		row(rows, "Logged out after dying", st.leftAfterDying > 0 ? st.leftAfterDying + " of " + st.deaths + " deaths (within 1 min)" : "");
+		boxes.add(new StatBox("Around you", rows, "Logins and logouts you saw. \"By chance\" is how many would land there if they came and went at random."));
+
+		rows = new ArrayList<>();
+		if (!st.advancements.isEmpty()) {
+			row(rows, "Advancements", st.advancements.size() + (st.advancements.size() >= 80 ? "+" : "") + " made while you were on");
+			for (int i = st.advancements.size() - 1; i >= 0 && rows.size() < 7; i--) {
+				PlayerStats.Note n = st.advancements.get(i);
+				row(rows, ago(n.time), n.text);
+			}
+		}
+		boxes.add(new StatBox("Progress", rows, ""));
+
+		rows = new ArrayList<>();
+		if (!p.placeholder && p.id != null) row(rows, "Account", PlayerStats.accountType(p.id));
+		row(rows, "Tab list name", st.tabName);
+		row(rows, "Was shown as", String.join(", ", st.pastTabNames));
+		row(rows, "Chat signing", !st.signedKnown ? "" : st.signedChat ? "On" + (st.chatKeyChanges > 0 ? ", new key " + st.chatKeyChanges + "× (game restarts)" : "")
+				: "Off (a no-chat-reports mod, an offline account or a modified client)");
+		row(rows, "Skin from", st.skinOwner.isEmpty() ? "" : st.skinOwner + "'s account");
 		if (!st.skin.isEmpty()) row(rows, "Skin", "Custom (" + (st.model.equals("slim") ? "slim arms" : "wide arms") + ")" + (st.cape.isEmpty() ? "" : ", has a cape"));
 		row(rows, "Skin changes", st.pastSkins.isEmpty() ? "" : st.pastSkins.size() + ", last " + ago(st.skinChanged));
-		List<String> same = new ArrayList<>();
-		for (Profile o : sameSkin(p)) same.add(o.name);
-		row(rows, "Same skin as", String.join(", ", same));
+		for (Alts.Suspect a : alts(p)) {
+			if (rows.size() > 16) break;
+			row(rows, "Maybe also", a.other().name + " · " + a.score() + "% · " + String.join(", ", a.reasons()));
+		}
 		row(rows, "Names", p.pastNames.isEmpty() ? "" : String.join(" → ", p.pastNames) + " → " + p.name);
 		row(rows, "First seen", p.firstSeen > 0 ? day(p.firstSeen) + " (" + ago(p.firstSeen) + ")" : "");
-		boxes.add(new StatBox("Account", rows, "The same skin on two accounts is a hint they're one person's, not proof: some skins are popular."));
+		boxes.add(new StatBox("Account", rows, "\"Maybe also\" adds up hints that two accounts are one person: the same skin, a borrowed skin, "
+				+ "taking turns online, similar names, the same ping. Hints, not proof."));
 		boxes.removeIf(b -> b.rows().isEmpty());
 		return boxes;
 	}
@@ -2523,12 +2615,13 @@ public class ShopScreen extends Screen {
 			facts.add(kills(p) + (kills(p) == 1 ? " kill, " : " kills, ") + p.stats.deaths + (p.stats.deaths == 1 ? " death" : " deaths")
 					+ (p.stats.totemPops > 0 ? ", " + p.stats.totemPops + (p.stats.totemPops == 1 ? " totem" : " totems") + " popped" : ""));
 		}
-		List<Profile> sameSkin = sameSkin(p);
-		if (!sameSkin.isEmpty()) {
-			List<String> names = new ArrayList<>();
-			for (Profile o : sameSkin) names.add(o.name);
-			facts.add("Same skin as " + (names.size() > 3 ? String.join(", ", names.subList(0, 3)) + " and " + (names.size() - 3) + " more" : join(names)));
+		List<Alts.Suspect> alts = alts(p);
+		if (!alts.isEmpty()) {
+			Alts.Suspect top = alts.get(0);
+			facts.add("Maybe the same person as " + top.other().name + " (" + String.join(", ", top.reasons()) + ")"
+					+ (alts.size() > 1 ? " and " + (alts.size() - 1) + " more, see Stats" : ""));
 		}
+		if (!p.stats.coordsPosted.isEmpty()) facts.add("Posted coordinates in chat " + p.stats.coordsPosted.size() + (p.stats.coordsPosted.size() == 1 ? " time" : " times") + ", see Stats");
 		Profile.Sighting last = p.lastSighting();
 		if (last != null) {
 			String near = fromBase(last.dimension, last.lastX, last.lastZ);
@@ -4143,7 +4236,8 @@ public class ShopScreen extends Screen {
 		y = hourChart(context, mouseX, mouseY, a, shown, estimated, busy, len, x, y, w) + 10;
 		y = weekHeatmap(context, mouseX, mouseY, a, x, y, w) + 10;
 		y = listsByHour(context, mouseX, mouseY, x, y, w) + 6;
-		y = wrapped(context, "Counted once a minute while you're on (Settings: Track hours online). Saved per server with your lists.", x, y, w, MUTED, 2);
+		y = wrapped(context, "Counted once a minute while you're on (Settings: Track hours online). Saved per server with your lists.", x, y, w, MUTED, 2) + 12;
+		y = leaderboards(context, mouseX, mouseY, x, y, w);
 
 		context.disableScissor();
 		contentHeight = y - y0 + 10;
@@ -4382,6 +4476,76 @@ public class ShopScreen extends Screen {
 			ry += rowH;
 		}
 		return y + h;
+	}
+
+	/** One "Top players" board: a title, how to rank, how to show the number. */
+	private record Board(String title, java.util.function.ToLongFunction<Profile> value, java.util.function.LongFunction<String> shown) {}
+
+	private static final Board[] BOARDS = {
+			new Board("Most time online", ShopScreen::onlineMs, ShopScreen::span),
+			new Board("Most days online", p -> p.stats.days.size(), n -> n + (n == 1 ? " day" : " days")),
+			new Board("Most kills", ShopScreen::kills, n -> String.valueOf(n)),
+			new Board("Most deaths", p -> p.stats.deaths, n -> String.valueOf(n)),
+			new Board("Most totems popped", p -> p.stats.totemPops, n -> String.valueOf(n)),
+			new Board("Chattiest", p -> p.stats.messages, n -> n + (n == 1 ? " msg" : " msgs")),
+			new Board("Most advancements", p -> p.stats.advancements.size(), n -> String.valueOf(n)),
+			new Board("Most coordinates posted", p -> p.stats.coordsPosted.size(), n -> String.valueOf(n)),
+			new Board("Fastest seen", p -> Math.round(p.stats.topSpeed * 10), n -> String.format(Locale.ROOT, "%.1f b/s", n / 10.0)),
+	};
+
+	/** Top five for each board, worked out again when the lists change. */
+	private List<List<Profile>> boardsCache;
+	private int boardsAt = -1;
+
+	/** "Top players": who leads on this server for time online, kills, deaths, totems, chat... Click a name for their page. */
+	private int leaderboards(DrawContext context, int mouseX, int mouseY, int x, int y, int w) {
+		if (boardsCache == null || boardsAt != mod.ledger.changes()) {
+			boardsCache = new ArrayList<>();
+			UUID me = client.player == null ? null : client.player.getUuid();
+			for (Board b : BOARDS) {
+				List<Profile> top = new ArrayList<>();
+				for (Profile p : mod.ledger.all()) {
+					if (!p.id.equals(me) && b.value().applyAsLong(p) > 0) top.add(p);
+				}
+				top.sort(Comparator.comparingLong((Profile p) -> -b.value().applyAsLong(p)));
+				boardsCache.add(top.size() > 5 ? new ArrayList<>(top.subList(0, 5)) : top);
+			}
+			boardsAt = mod.ledger.changes();
+		}
+		context.drawText(textRenderer, Text.literal("Top players").styled(s -> s.withBold(true)), x, y, TEXT, false);
+		y += 12;
+		y = wrapped(context, "From everything your game has seen on this server while you were on. Click a name for their page.", x, y, w, MUTED, 2) + 4;
+		int columns = w >= 600 ? 3 : w >= 380 ? 2 : 1;
+		int gap = 6;
+		int colW = (w - gap * (columns - 1)) / columns;
+		int boxH = 20 + 5 * 11 + 4;
+		int shownBoards = 0;
+		for (int i = 0; i < BOARDS.length; i++) {
+			List<Profile> top = boardsCache.get(i);
+			if (top.isEmpty()) continue;
+			int bx = x + (shownBoards % columns) * (colW + gap);
+			int by = y + (shownBoards / columns) * (boxH + gap);
+			shownBoards++;
+			roundedBorder(context, bx, by, colW, boxH, CARD, BORDER);
+			context.drawText(textRenderer, Text.literal(BOARDS[i].title()).styled(s -> s.withBold(true)), bx + 8, by + 6, TEXT, false);
+			int ry = by + 20;
+			for (int r = 0; r < top.size(); r++) {
+				Profile p = top.get(r);
+				String value = BOARDS[i].shown().apply(BOARDS[i].value().applyAsLong(p));
+				int vw = textRenderer.getWidth(value);
+				text(context, (r + 1) + ".", bx + 8, ry, MUTED);
+				int nx = bx + 22;
+				int nw = Math.min(textRenderer.getWidth(p.name), colW - 38 - vw);
+				boolean hover = over(mouseX, mouseY, nx, ry - 1, nw, 11);
+				context.drawText(textRenderer, Text.literal(fit(p.name, colW - 38 - vw)).styled(st -> st.withUnderline(hover)), nx, ry,
+						p.verdict == Profile.Verdict.NONE ? (hover ? HOVER_LINK : LINK) : verdictColor(p.verdict), false);
+				hit(nx, ry - 1, nw, 11, "top:" + i + ":" + p.name, () -> open(p));
+				text(context, value, bx + colW - 8 - vw, ry, TEXT);
+				ry += 11;
+			}
+		}
+		if (shownBoards == 0) return wrapped(context, "Nothing yet: it fills in as you play.", x, y, w, MUTED, 2);
+		return y + ((shownBoards + columns - 1) / columns) * (boxH + gap);
 	}
 
 	/** A small card by the mouse with a few lines, kept on screen. */
@@ -6002,6 +6166,10 @@ public class ShopScreen extends Screen {
 
 	public void testSearch(String text) {
 		search.setText(text);
+	}
+
+	public void testScroll(double to) {
+		scroll = Math.max(0, Math.min(to, maxScroll()));
 	}
 
 	/** The selected player's Stats rows, "Label: value" one a line. */
