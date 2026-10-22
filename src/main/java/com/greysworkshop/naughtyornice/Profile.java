@@ -132,6 +132,8 @@ public final class Profile {
 		public String gear = "";
 		/** The Base Insurance base they were in, if any. */
 		public String base = "";
+		/** How they were moving when last in view, in blocks a second (east and south). */
+		public float vx, vz;
 	}
 
 	/** A screenshot taken as evidence. */

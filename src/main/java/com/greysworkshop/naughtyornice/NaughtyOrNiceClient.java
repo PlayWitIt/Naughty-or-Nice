@@ -6,6 +6,7 @@ import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientLifecycleEvents;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper;
 import net.fabricmc.fabric.api.client.message.v1.ClientReceiveMessageEvents;
+import net.fabricmc.fabric.api.client.message.v1.ClientSendMessageEvents;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.screen.Screen;
@@ -63,6 +64,10 @@ public class NaughtyOrNiceClient implements ClientModInitializer {
 			if (!overlay) Safe.run("reading a server message", () -> watcher.onGameMessage(MinecraftClient.getInstance(), message));
 		});
 
+		// Your own messages: held back if they'd give your location away (see CoordGuard).
+		ClientSendMessageEvents.ALLOW_CHAT.register(message -> Safe.get("checking your message", () -> CoordGuard.allowChat(message), true));
+		ClientSendMessageEvents.ALLOW_COMMAND.register(command -> Safe.get("checking your message", () -> CoordGuard.allowCommand(command), true));
+
 		ClientTickEvents.END_CLIENT_TICK.register(client -> Safe.run("ticking", () -> tick(client)));
 
 		// Disconnect fires on the network thread; do the work on the game thread.
@@ -95,7 +100,7 @@ public class NaughtyOrNiceClient implements ClientModInitializer {
 	 * the last 30 days. Worked out again only when the lists change.
 	 */
 	private List<Map<String, Object>> mapPins(String dimension) {
-		String key = dimension + "/" + ledger.changes() + "/" + ledger.key();
+		String key = dimension + "/" + ledger.changes() + "/" + ledger.activity.version() + "/" + ledger.key();
 		if (key.equals(pinsKey)) return pins;
 		List<Map<String, Object>> list = new ArrayList<>();
 		long oldest = System.currentTimeMillis() - 30L * 86_400_000L;
@@ -122,6 +127,32 @@ public class NaughtyOrNiceClient implements ClientModInitializer {
 			pin.put("color", color);
 			pin.put("label", (p.verdict == Profile.Verdict.FRIEND ? "★ " : "") + p.name + (p.groups.isEmpty() ? "" : " [" + p.groups.get(0) + "]"));
 			pin.put("detail", "Seen " + ShopScreen.ago(last.until) + (last.gear.isEmpty() ? "" : " · " + last.gear));
+			list.add(pin);
+		}
+		// Places players gave away in this dimension, and world events here (last 30 days, newest 150).
+		List<Object[]> placed = new ArrayList<>();
+		for (Profile p : ledger.all()) {
+			for (PlayerStats.Place pl : p.stats.places) {
+				if (pl.dimension.equals(dimension) && pl.time >= oldest) placed.add(new Object[] {pl.time, p.name + ": " + ShopScreen.howLabel(pl.how).toLowerCase(java.util.Locale.ROOT), pl.x, pl.z, pl.text});
+			}
+		}
+		for (ServerActivity.WorldEvent e : ledger.activity.events) {
+			if (!e.dimension.equals(dimension) || e.time < oldest || !e.who.isEmpty()) continue;
+			String what = switch (e.kind) {
+				case "wither" -> "A wither spawned";
+				case "end_portal" -> "End portal lit";
+				default -> "The dragon died";
+			};
+			placed.add(new Object[] {e.time, what, e.x, e.z, "Heard server-wide"});
+		}
+		placed.sort((a1, b1) -> Long.compare((long) b1[0], (long) a1[0]));
+		for (Object[] o : placed.subList(0, Math.min(150, placed.size()))) {
+			Map<String, Object> pin = new HashMap<>();
+			pin.put("x", o[2]);
+			pin.put("z", o[3]);
+			pin.put("color", 0xFFFFA41C);
+			pin.put("label", o[1]);
+			pin.put("detail", ShopScreen.ago((long) o[0]) + " · " + o[4]);
 			list.add(pin);
 		}
 		pins = list;

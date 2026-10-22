@@ -1099,7 +1099,8 @@ public final class SelfTest {
 				Profile rick = ledger.byName("RandomRick");
 				mod.watcher.onGameMessage(client, Text.literal("<RandomRick> hey " + GRIEFER + " meet me at 1200 -3400, join discord.gg/abc123 ?"));
 				check("who they talk to (" + rick.stats.mentions + ")", rick.stats.mentions.getOrDefault(GRIEFER, 0) == 1 && gary.stats.mentionedBy.getOrDefault("RandomRick", 0) == 1);
-				check("coordinates and links they post are kept", rick.stats.coordsPosted.size() == 1 && rick.stats.linksPosted.size() == 1
+				check("coordinates and links they post are kept (" + rick.stats.places.size() + ")", rick.stats.places.size() == 1
+						&& rick.stats.places.get(0).x == 1200 && rick.stats.places.get(0).z == -3400 && rick.stats.linksPosted.size() == 1
 						&& rick.stats.linksPosted.get(0).text.equals("discord.gg/abc123") && rick.stats.questions == 1);
 				Profile hana = ledger.byName("Helpful_Hana");
 				Profile alt = ledger.getOrCreate(id("HelpfulHana2"), "HelpfulHana2");
@@ -1110,6 +1111,43 @@ public final class SelfTest {
 						!alts.isEmpty() && alts.get(0).other() == alt && alts.get(0).score() >= 60);
 				alt.stats.skin = "";
 				check("...but a similar name alone isn't enough", Alts.of(ledger, hana).isEmpty());
+				Profile bob = ledger.getOrCreate(id("Unrelated_Bob"), "Unrelated_Bob");
+				hana.stats.skin = "abc123skin";
+				bob.stats.skin = "abc123skin";
+				check("...and neither is the same skin alone (popular skins)", Alts.of(ledger, hana).isEmpty());
+				bob.stats.skin = "";
+				ledger.forget(bob);
+
+				// ---- Intel: amounts aren't places, threats, tone, wither summoners, the coordinate guard ----
+				mod.watcher.onGameMessage(client, Text.literal("<RandomRick> I have 1000 diamonds and 200 gold"));
+				check("amounts aren't taken for coordinates", rick.stats.places.size() == 1);
+				int stashTalk = rick.stats.topics.getOrDefault("STASH", 0);
+				mod.watcher.onGameMessage(client, Text.literal("<RandomRick> stash is on the -x highway at 20k nether"));
+				PlayerStats.Place hw = rick.stats.places.get(rick.stats.places.size() - 1);
+				check("highway distances are places (" + hw.coords() + " " + hw.dimension + ")", hw.x == -20000 && hw.z == 0 && hw.how.equals("highway")
+						&& hw.dimension.equals("minecraft:the_nether") && rick.stats.topics.getOrDefault("STASH", 0) == stashTalk + 1);
+				String me = client.player.getGameProfile().name();
+				check("a threat aimed at you alerts (" + mod.watcher.alertFor(client, "gonna grief " + me + "'s base lol", false) + ")",
+						"threatened you".equals(mod.watcher.alertFor(client, "im gonna grief your base " + me, false))
+						&& "threatened you".equals(mod.watcher.alertFor(client, "i know where your stash is", true)));
+				check("...one aimed at nobody in particular doesn't", mod.watcher.alertFor(client, "we griefed spawn yesterday", false) == null);
+				int rudeBefore = hana.count(Profile.Kind.RUDE);
+				mod.watcher.onGameMessage(client, Text.literal("<Helpful_Hana> brb taking out the trash"));
+				check("ordinary words aren't trash talk", hana.count(Profile.Kind.RUDE) == rudeBefore);
+				long t0 = System.currentTimeMillis();
+				mod.watcher.summonedWither(rick, t0);
+				mod.watcher.worldEvent("wither", "minecraft:overworld", 500, 70, -900, t0 + 11_000);
+				PlayerStats.Place w = rick.stats.places.get(rick.stats.places.size() - 1);
+				check("a wither's spawn is matched to its summoner", w.how.equals("wither") && w.x == 500 && w.z == -900);
+				Profile hanaW = ledger.byName("Helpful_Hana");
+				int hanaPlaces = hanaW.stats.places.size();
+				mod.watcher.summonedWither(hanaW, t0 + 100_000);
+				mod.watcher.summonedWither(rick, t0 + 100_500);
+				mod.watcher.worldEvent("wither", "minecraft:overworld", 9000, 70, 9000, t0 + 111_000);
+				check("...but not when two players could have done it", hanaW.stats.places.size() == hanaPlaces && rick.stats.places.stream().noneMatch(pl -> pl.x == 9000));
+				check("the coordinate guard reads your messages", !CoordGuard.reasons("meet me at 1200 -3400").isEmpty() && CoordGuard.reasons("hello there").isEmpty()
+						&& !CoordGuard.reasons("im at " + client.player.getBlockX() + " lol").isEmpty() == (Math.abs(client.player.getBlockX()) >= 500));
+				check("...holds a message that gives coordinates away", !CoordGuard.allowChat("base at 1200 -3400") && CoordGuard.allowChat("hello there"));
 				hana.stats.skin = "";
 				ledger.forget(alt);
 			}
@@ -1141,9 +1179,30 @@ public final class SelfTest {
 				screenshot(client, "56_top_players");
 				check("Top players open a player's page", screen(client).testClick("top:2:Griefer_Gary") && screen(client).testSelected() == ledger.get(id(GRIEFER)));
 			}
-			case 1205 -> client.setScreen(null);
+			case 1205 -> client.setScreen(new ShopScreen(ShopScreen.Tab.INTEL, null));
+			case 1207 -> {
+				check("Intel lists places and topics", screen(client).testClick("intel-filter:PLACES"));
+				screenshot(client, "57_intel");
+			}
+			case 1209 -> {
+				log("Griefer logs out in front of the player");
+				IntegratedServer server = client.getServer();
+				server.execute(() -> server.getPlayerManager().sendToAll(new net.minecraft.network.packet.s2c.play.PlayerRemoveS2CPacket(List.of(id(GRIEFER)))));
+			}
+			case 1214 -> {
+				Profile gary = ledger.get(id(GRIEFER));
+				PlayerStats.Place last = gary.stats.places.isEmpty() ? null : gary.stats.places.get(gary.stats.places.size() - 1);
+				check("where they logged out in view is kept (" + (last == null ? "none" : last.how + " " + last.coords()) + ")",
+						last != null && last.how.equals("logout") && Math.abs(last.x - (int) Math.floor(griefer.getX())) <= 2);
+				client.setScreen(new ShopScreen(ShopScreen.Tab.SETTINGS, null));
+			}
+			case 1216 -> screen(client).testScroll(1_000_000);
+			case 1218 -> {
+				screenshot(client, "58_settings_bottom");
+				client.setScreen(null);
+			}
 			// ---- A real disconnect, by "another mod" (this test): recorded with who did it and who was near ----
-			case 1210 -> {
+			case 1220 -> {
 				log("Disconnecting on purpose");
 				disconnectedAt = System.currentTimeMillis();
 				client.getNetworkHandler().getConnection().disconnect(Text.literal("[AutoLog] " + GRIEFER + " came near"));

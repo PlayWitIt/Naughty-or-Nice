@@ -505,6 +505,7 @@ public final class Ledger {
 	}
 
 	private void load() {
+		waitForWrites();
 		List<Path> others = migrate();
 		loadLists();
 		for (Path other : others) mergeFrom(other);
@@ -655,6 +656,40 @@ public final class Ledger {
 		return System.currentTimeMillis() - profile.lastSeen > days * 86_400_000L;
 	}
 
+	private static final java.util.concurrent.ExecutorService WRITER = java.util.concurrent.Executors.newSingleThreadExecutor(r -> {
+		Thread t = new Thread(r, "Naughty or Nice saving");
+		t.setDaemon(true);
+		return t;
+	});
+	private java.util.concurrent.Future<?> pending;
+
+	/** Waits for a background save to finish, so the file is complete before it's read or written again. */
+	private void waitForWrites() {
+		if (pending == null) return;
+		try {
+			pending.get();
+		} catch (InterruptedException e) {
+			Thread.currentThread().interrupt();
+		} catch (java.util.concurrent.ExecutionException e) {
+			NaughtyOrNiceClient.LOGGER.error("Saving the lists failed", e.getCause());
+		}
+		pending = null;
+	}
+
+	private static void writeAtomically(Path file, String json) {
+		try {
+			Path temp = file.resolveSibling(file.getFileName() + ".tmp");
+			Files.writeString(temp, json);
+			try {
+				Files.move(temp, file, java.nio.file.StandardCopyOption.REPLACE_EXISTING, java.nio.file.StandardCopyOption.ATOMIC_MOVE);
+			} catch (java.nio.file.AtomicMoveNotSupportedException e) {
+				Files.move(temp, file, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+			}
+		} catch (IOException e) {
+			NaughtyOrNiceClient.LOGGER.error("Could not write {}", file, e);
+		}
+	}
+
 	/** Writes the lists if anything changed (or always, with {@code force}). */
 	public void save(boolean force) {
 		if (key == null) return;
@@ -670,8 +705,16 @@ public final class Ledger {
 		try {
 			if (keep.isEmpty() && !Files.exists(file)) return;
 			Files.createDirectories(file.getParent());
-			try (Writer writer = Files.newBufferedWriter(file)) {
-				GSON.toJson(keep, writer);
+			// The snapshot is taken here, on the game thread; writing it out happens in the background (or right away
+			// when the game is closing or switching servers), into a temporary file that then replaces the real one,
+			// so a crash mid-write can't leave half a file.
+			String json = GSON.toJson(keep);
+			Runnable write = () -> writeAtomically(file, json);
+			if (force) {
+				waitForWrites();
+				write.run();
+			} else {
+				pending = WRITER.submit(write);
 			}
 			// Only the colours of groups that still exist.
 			Map<String, Integer> colors = new java.util.TreeMap<>();

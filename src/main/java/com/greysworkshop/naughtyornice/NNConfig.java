@@ -80,6 +80,14 @@ public final class NNConfig {
 	public boolean alertBaseCoords = true;
 	/** Alert when someone says the name of one of your Base Insurance bases. */
 	public boolean alertBaseNames = true;
+	/** Alert when someone threatens you or your base (or whispers you a threat). */
+	public boolean alertThreats = true;
+	/** Topics ({@link ChatIntel.Topic} names) to be pinged about whenever anyone talks about them. */
+	public java.util.List<String> topicPings = new java.util.ArrayList<>();
+	/** Ping whenever anyone posts coordinates. */
+	public boolean pingAllCoords = false;
+	/** Hold your own chat message when it gives away coordinates or a base name, until you say send anyway. */
+	public boolean guardMyCoords = true;
 	/** A summary of who's online from your lists when you join a server. */
 	public boolean joinSummary = true;
 
@@ -140,6 +148,7 @@ public final class NNConfig {
 			if (loaded != null) {
 				if (loaded.alertWords == null) loaded.alertWords = new java.util.ArrayList<>(java.util.List.of("{me}"));
 				loaded.alertWords.removeIf(w -> w == null || w.isBlank());
+				if (loaded.topicPings == null) loaded.topicPings = new java.util.ArrayList<>();
 				if (loaded.dismissedSuggestions == null) loaded.dismissedSuggestions = new java.util.ArrayList<>();
 				if (loaded.circles != null) loaded.circles.removeIf(c -> c == null || c.id == null || c.id.isBlank() || c.name == null || c.name.isBlank());
 				if (loaded.circles == null || loaded.circles.isEmpty()) loaded.circles = Friends.defaultCircles();

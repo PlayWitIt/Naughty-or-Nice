@@ -11,6 +11,7 @@ import net.minecraft.network.packet.s2c.play.BlockBreakingProgressS2CPacket;
 import net.minecraft.network.packet.s2c.play.DeathMessageS2CPacket;
 import net.minecraft.network.packet.s2c.play.EntityDamageS2CPacket;
 import net.minecraft.network.packet.s2c.play.EntityStatusS2CPacket;
+import net.minecraft.network.packet.s2c.play.WorldEventS2CPacket;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
@@ -55,6 +56,14 @@ public abstract class ClientPlayNetworkHandlerMixin {
 		NaughtyOrNiceClient mod = NaughtyOrNiceClient.INSTANCE;
 		if (client.world == null || mod == null) return;
 		Safe.run("watching your death", () -> mod.watcher.onDeath(client, client.world.getEntityById(packet.playerId())));
+	}
+
+	@Inject(method = "onWorldEvent", at = @At("TAIL"))
+	private void naughtyornice$worldEvent(WorldEventS2CPacket packet, CallbackInfo ci) {
+		MinecraftClient client = MinecraftClient.getInstance();
+		NaughtyOrNiceClient mod = NaughtyOrNiceClient.INSTANCE;
+		if (client.world == null || mod == null) return;
+		Safe.run("watching world events", () -> mod.watcher.onWorldEvent(client, packet.getEventId(), packet.getPos(), packet.isGlobal()));
 	}
 
 	@Inject(method = "onBlockBreakingProgress", at = @At("TAIL"))

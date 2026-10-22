@@ -37,10 +37,6 @@ import java.util.regex.Pattern;
  * spent nearby. Also warns when a Naughty-list player shows up.
  */
 public final class Watcher {
-	private static final Pattern KIND = Pattern.compile(
-			"\\b(thanks|thank you|thx|ty|tysm|tyvm|np|no problem|you're welcome|youre welcome|here you go|have this|gift|gl|good luck|nice base|welcome)\\b");
-	private static final Pattern RUDE = Pattern.compile(
-			"\\b(ez|noob|n00b|trash|loser|bozo|cry about it|get good|stfu|idiot|clown|kys)\\b");
 	private static final long KILL_WINDOW = 5000;
 	private static final long SAME_KILL = 8000;
 
@@ -94,6 +90,8 @@ public final class Watcher {
 		sessions.clear();
 		moved.clear();
 		arrivals.clear();
+		witherSummoners.clear();
+		recentWithers.clear();
 	}
 
 	// ---- Recording ----
@@ -350,7 +348,9 @@ public final class Watcher {
 				String what = argString(args[1]).replaceAll("^\\[(.*)]$", "$1");
 				diagnostics.understood(Diagnostics.Kind.IGNORED, raw, who + " made an advancement: " + what);
 				if (id != null && !id.equals(client.player.getUuid())) {
-					PlayerStats.note(ledger.getOrCreate(id, who).stats.advancements, what, 80);
+					Profile p = ledger.getOrCreate(id, who);
+					PlayerStats.note(p.stats.advancements, what, 80);
+					if (hasKey(args[1], "advancements.nether.summon_wither.title") || what.equalsIgnoreCase("Withering Heights")) summonedWither(p, System.currentTimeMillis());
 					ledger.markDirty();
 				}
 				return;
@@ -445,7 +445,10 @@ public final class Watcher {
 		String victim = words.group();
 		if (playerId(client, victim) == null && !victim.equalsIgnoreCase(client.player.getGameProfile().name())) return false;
 		String rest = line.substring(words.end());
-		if (!DEATH_WORDS.matcher(rest.toLowerCase(Locale.ROOT)).find()) return false;
+		// The death wording comes straight after the name ("Steve was slain by", "Steve fell from"), within a few words.
+		String[] next = rest.strip().toLowerCase(Locale.ROOT).split("\\s+", 5);
+		String head = String.join(" ", java.util.Arrays.copyOf(next, Math.min(next.length, 4)));
+		if (!DEATH_WORDS.matcher(head).find()) return false;
 		String killer = null;
 		UUID killerId = null;
 		while (words.find()) {
@@ -510,7 +513,7 @@ public final class Watcher {
 			chatAnalytics(client, profile, text);
 			said(profile, text);
 		}
-		String alert = whisper ? null : alertFor(client, text);
+		String alert = alertFor(client, text, whisper);
 		String name = profile != null ? profile.name : sender;
 		// You asked to hear whenever they talk (unless the line already sets off an alert of its own).
 		if (profile != null && profile.notifyChat && alert == null) {
@@ -562,13 +565,8 @@ public final class Watcher {
 		long letters = text.chars().filter(Character::isLetter).count();
 		if (letters >= 5 && text.chars().filter(Character::isUpperCase).count() >= letters * 0.8) st.capsMessages++;
 		if (text.strip().endsWith("?")) st.questions++;
-		// Coordinates: two or more numbers of 3+ digits, like "1200 -3400" or "x 1200 y 64 z -3400".
-		int big = 0;
-		Matcher m = NUMBER.matcher(text);
-		while (m.find()) {
-			if (m.group().replace("-", "").length() >= 3) big++;
-		}
-		if (big >= 2) PlayerStats.note(st.coordsPosted, text, 15);
+		st.placesFrom(text, System.currentTimeMillis());
+		for (ChatIntel.Topic t : ChatIntel.topics(text, online)) PlayerStats.bump(st.topics, t.name(), 1, 20);
 		Matcher url = URL.matcher(text);
 		if (url.find()) PlayerStats.note(st.linksPosted, url.group(), 15);
 	}
@@ -578,16 +576,27 @@ public final class Watcher {
 		return recentAlerts.put(key, now) == null;
 	}
 
-	private static final Pattern NUMBER = Pattern.compile("(?<![\\w.])-?\\d{2,8}(?![\\w.])");
-
 	/**
-	 * Why a line someone else said is worth an alert, or null: it says one of your alert words (your name by
-	 * default), the name of one of your bases, or coordinates near one.
+	 * Why a line someone else said is worth an alert, or null, most urgent first: a threat aimed at you (or your
+	 * base), one of your alert words (your name by default), the name of one of your bases, coordinates near one, a topic
+	 * you asked to hear about, or (if you asked) any coordinates at all. A whisper to you is always aimed at you.
 	 */
-	String alertFor(MinecraftClient client, String text) {
+	String alertFor(MinecraftClient client, String text, boolean whisper) {
 		NNConfig config = NNConfig.INSTANCE;
 		String lower = text.toLowerCase(Locale.ROOT);
 		String me = client.player == null ? "" : client.player.getGameProfile().name();
+		List<BaseInsuranceBridge.BaseArea> bases = BaseInsuranceBridge.bases();
+		String namedBase = null;
+		for (BaseInsuranceBridge.BaseArea base : bases) {
+			String n = base.name().toLowerCase(Locale.ROOT);
+			if (n.length() >= 3 && Pattern.compile("(?<![a-z0-9_])" + Pattern.quote(n) + "(?![a-z0-9_])").matcher(lower).find()) namedBase = base.name();
+		}
+		java.util.Set<ChatIntel.Topic> topics = ChatIntel.topics(text, onlineNames(client));
+		boolean aimedAtMe = whisper || namedBase != null || Pattern.compile("(?<![a-z0-9_])" + Pattern.quote(me.toLowerCase(Locale.ROOT)) + "(?![a-z0-9_])").matcher(lower).find();
+		if (config.alertThreats && topics.contains(ChatIntel.Topic.THREAT) && aimedAtMe) {
+			return namedBase != null ? "threatened your base \"" + namedBase + "\"" : "threatened you";
+		}
+		if (whisper) return null;
 		for (String word : config.alertWords) {
 			String w = word.replace("{me}", me).strip().toLowerCase(Locale.ROOT);
 			if (w.length() < 2) continue;
@@ -595,42 +604,103 @@ public final class Watcher {
 				return word.equals("{me}") ? "said your name" : "said \"" + word.strip() + "\"";
 			}
 		}
-		List<BaseInsuranceBridge.BaseArea> bases = config.alertBaseNames || config.alertBaseCoords ? BaseInsuranceBridge.bases() : List.of();
-		if (config.alertBaseNames) {
-			for (BaseInsuranceBridge.BaseArea base : bases) {
-				String n = base.name().toLowerCase(Locale.ROOT);
-				if (n.length() >= 3 && Pattern.compile("(?<![a-z0-9_])" + Pattern.quote(n) + "(?![a-z0-9_])").matcher(lower).find()) {
-					return "named your base \"" + base.name() + "\"";
+		if (config.alertBaseNames && namedBase != null) return "named your base \"" + namedBase + "\"";
+		List<ChatIntel.Coord> coords = ChatIntel.coords(text);
+		if (config.alertBaseCoords) {
+			for (ChatIntel.Coord c : coords) {
+				for (BaseInsuranceBridge.BaseArea base : bases) {
+					double[] at = inDimension(c, base.dimension());
+					if (at != null && base.distance(at[0], at[1]) <= 300) return "posted coordinates near your base \"" + base.name() + "\"";
 				}
 			}
 		}
-		if (config.alertBaseCoords && !bases.isEmpty()) {
-			List<Integer> numbers = new java.util.ArrayList<>();
-			Matcher m = NUMBER.matcher(text);
-			while (m.find()) {
-				try {
-					numbers.add(Integer.parseInt(m.group()));
-				} catch (NumberFormatException ignored) {
-					// Too long to be a coordinate.
-				}
-			}
-			// "x z" or "x y z": try each neighbouring pair, and every other number.
-			for (int i = 0; i + 1 < numbers.size(); i++) {
-				for (int j = i + 1; j <= i + 2 && j < numbers.size(); j++) {
-					int x = numbers.get(i), z = numbers.get(j);
-					if (Math.abs(x) < 100 && Math.abs(z) < 100) continue;
-					for (BaseInsuranceBridge.BaseArea base : bases) {
-						boolean nether = base.dimension().endsWith("the_nether");
-						// The same place in the other dimension, too (8 overworld blocks to 1 nether block).
-						double[][] tries = {{x, z}, nether ? new double[] {x / 8.0, z / 8.0} : new double[] {x * 8.0, z * 8.0}};
-						for (double[] at : tries) {
-							if (base.distance(at[0], at[1]) <= 300) return "posted coordinates near your base \"" + base.name() + "\"";
-						}
-					}
-				}
-			}
+		for (ChatIntel.Topic t : topics) {
+			if (config.topicPings.contains(t.name())) return "talked about " + t.label.toLowerCase(Locale.ROOT);
 		}
+		if (config.pingAllCoords && !coords.isEmpty()) return "posted coordinates (" + coords.get(0).text() + ")";
 		return null;
+	}
+
+	/**
+	 * Where a written place is in a dimension, as x and z: as written if it's that dimension (or they didn't say),
+	 * scaled 8 to 1 between the overworld and the nether, or null for the end against anything else.
+	 */
+	static double[] inDimension(ChatIntel.Coord c, String dimension) {
+		if (c.dimension() == null || c.dimension().equals(dimension)) return new double[] {c.x(), c.z()};
+		boolean toNether = dimension.endsWith("the_nether") && c.dimension().endsWith("overworld");
+		boolean toOverworld = dimension.endsWith("overworld") && c.dimension().endsWith("the_nether");
+		if (toNether) return new double[] {c.x() / 8.0, c.z() / 8.0};
+		if (toOverworld) return new double[] {c.x() * 8.0, c.z() * 8.0};
+		return null;
+	}
+
+	// ---- World events and who caused them ----
+
+	/** Recent "Withering Heights" advancements, waiting for the wither's spawn to be heard. */
+	private final List<Object[]> witherSummoners = new ArrayList<>();
+	/** Recent wither spawns heard, waiting to see who summoned them. */
+	private final List<ServerActivity.WorldEvent> recentWithers = new ArrayList<>();
+	/**
+	 * A wither's spawn is heard when it finishes charging, about 11 seconds (220 ticks, longer on a laggy server)
+	 * after the summoner gets "Withering Heights". Only a match with one advancement and one spawn in this window
+	 * says who it was.
+	 */
+	static final long WITHER_MIN = 5_000, WITHER_MAX = 40_000;
+
+	/** A sound the server sent to everyone in the dimension, with where it happened. */
+	public void onWorldEvent(MinecraftClient client, int id, BlockPos pos, boolean global) {
+		if (!global || client.world == null) return;
+		String kind = switch (id) {
+			case net.minecraft.world.WorldEvents.WITHER_SPAWNS -> "wither";
+			case net.minecraft.world.WorldEvents.END_PORTAL_OPENED -> "end_portal";
+			case net.minecraft.world.WorldEvents.ENDER_DRAGON_DIES -> "dragon";
+			default -> null;
+		};
+		if (kind == null) return;
+		worldEvent(kind, client.world.getRegistryKey().getValue().toString(), pos.getX(), pos.getY(), pos.getZ(), System.currentTimeMillis());
+	}
+
+	void worldEvent(String kind, String dimension, int x, int y, int z, long now) {
+		ServerActivity.WorldEvent e = new ServerActivity.WorldEvent();
+		e.time = now;
+		e.kind = kind;
+		e.dimension = dimension;
+		e.x = x;
+		e.y = y;
+		e.z = z;
+		ledger.activity.event(e);
+		if (kind.equals("wither")) {
+			recentWithers.add(e);
+			matchWithers(now);
+		}
+		ledger.markDirty();
+	}
+
+	/** Someone got "Withering Heights": they just summoned a wither. */
+	void summonedWither(Profile profile, long now) {
+		witherSummoners.add(new Object[] {profile, now});
+		matchWithers(now);
+	}
+
+	/** Pairs a wither spawn with its summoner, only when there's exactly one of each in the window. */
+	private void matchWithers(long now) {
+		witherSummoners.removeIf(w -> now - (long) w[1] > WITHER_MAX + 5_000);
+		recentWithers.removeIf(e -> now - e.time > WITHER_MAX + 5_000);
+		for (ServerActivity.WorldEvent e : List.copyOf(recentWithers)) {
+			List<Object[]> who = new ArrayList<>();
+			for (Object[] w : witherSummoners) {
+				long gap = e.time - (long) w[1];
+				if (gap >= WITHER_MIN && gap <= WITHER_MAX) who.add(w);
+			}
+			long others = recentWithers.stream().filter(o -> o != e && Math.abs(o.time - e.time) <= WITHER_MAX).count();
+			if (who.size() != 1 || others > 0) continue;
+			Profile p = (Profile) who.get(0)[0];
+			e.who = p.name;
+			p.stats.addPlace(e.x, e.y, e.z, e.dimension, "wither", "Summoned a wither here (its spawn was heard server-wide)", e.time);
+			recentWithers.remove(e);
+			witherSummoners.remove(who.get(0));
+			ledger.markDirty();
+		}
 	}
 
 	private void said(Profile profile, String body) {
@@ -639,14 +709,31 @@ public final class Watcher {
 		profile.lastSeen = System.currentTimeMillis();
 		ledger.markDirty();
 		if (!NNConfig.INSTANCE.watchChat) return;
-		String lower = body.toLowerCase(Locale.ROOT);
 		String quote = body.length() > 40 ? body.substring(0, 40) + "..." : body;
-		if (RUDE.matcher(lower).find()) record(profile, Profile.Kind.RUDE, quote);
-		else if (KIND.matcher(lower).find()) record(profile, Profile.Kind.KIND_WORDS, quote);
+		switch (ChatIntel.tone(body, onlineNames(MinecraftClient.getInstance()))) {
+			case RUDE -> record(profile, Profile.Kind.RUDE, quote);
+			case KIND -> record(profile, Profile.Kind.KIND_WORDS, quote);
+			case NONE -> {}
+		}
 	}
 
 	private static String argString(Object arg) {
 		return arg instanceof Text text ? text.getString() : String.valueOf(arg);
+	}
+
+	/** Whether a message argument is, or contains, the game text with this translation key. */
+	static boolean hasKey(Object arg, String key) {
+		if (!(arg instanceof Text text)) return false;
+		if (text.getContent() instanceof TranslatableTextContent t) {
+			if (t.getKey().equals(key)) return true;
+			for (Object a : t.getArgs()) {
+				if (hasKey(a, key)) return true;
+			}
+		}
+		for (Text sibling : text.getSiblings()) {
+			if (hasKey(sibling, key)) return true;
+		}
+		return false;
 	}
 
 	private static final Pattern PLAIN_NAME = Pattern.compile("[A-Za-z0-9_]{1,16}");
@@ -837,6 +924,11 @@ public final class Watcher {
 					Long arrived = arrivals.get(id);
 					if (arrived != null && now - arrived <= 30_000) st.leftWhenSeen++;
 					if (st.lastDeathTime > 0 && now - st.lastDeathTime <= 60_000) st.leftAfterDying++;
+					// In view as they went: where they logged out is certain (often at or near their base).
+					Profile.Sighting sg = gone.lastSighting();
+					if (sg != null && now - sg.until <= 3_000) {
+						st.addPlace(sg.lastX, sg.lastY, sg.lastZ, sg.dimension, "logout", "Logged out here while you could see them", now);
+					}
 					chatLogger.feedSystem(gone.name, "left", now);
 				}
 				if (gone != null && gone.notifyJoin) {
@@ -946,6 +1038,12 @@ public final class Watcher {
 			speed = d / ((now - last.time()) / 1000.0);
 			if (speed <= 150) {
 				st.travelled += d;
+				Profile.Sighting sg = profile.lastSighting();
+				if (sg != null && sg.dimension.equals(dimension)) {
+					double secs = (now - last.time()) / 1000.0;
+					sg.vx = (float) ((player.getX() - last.x()) / secs);
+					sg.vz = (float) ((player.getZ() - last.z()) / secs);
+				}
 				double sustained = Math.min(speed, Math.min(last.speed1(), last.speed2()));
 				if (sustained > st.topSpeed) st.topSpeed = sustained;
 			} else {
