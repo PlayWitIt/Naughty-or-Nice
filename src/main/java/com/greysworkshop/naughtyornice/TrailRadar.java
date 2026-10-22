@@ -54,9 +54,16 @@ public final class TrailRadar {
 		// Land, chunk by chunk (a little past the corners, since the map turns).
 		int pcx = (int) Math.floor(me.x) >> 4, pcz = (int) Math.floor(me.z) >> 4;
 		int reach = (int) Math.ceil(SPAN * 1.45);
+		// What's been read around you, so it's clear the radar is working even with no trail in sight.
+		int fresh = 0, old = 0, unclear = 0;
 		for (int i = -reach; i <= reach; i++) {
 			for (int j = -reach; j <= reach; j++) {
 				byte s = trails.state(dim, pcx + i, pcz + j);
+				if (Math.abs(i) <= SPAN && Math.abs(j) <= SPAN) {
+					if (s == ChunkTrails.NEW) fresh++;
+					else if (s == ChunkTrails.OLD) old++;
+					else if (client.world.getChunkManager().isChunkLoaded(pcx + i, pcz + j)) unclear++;
+				}
 				int bx = (int) Math.round((pcx + i) * 16 - me.x), bz = (int) Math.round((pcz + j) * 16 - me.z);
 				if (s == 0) {
 					// Loaded, but nothing in it to tell by: dotted, so it's clearly "looked, can't tell", not "never seen".
@@ -106,10 +113,14 @@ public final class TrailRadar {
 			double turn = ChunkTrails.turn(yaw, p[0] - me.x, p[1] - me.z);
 			lines.add("§7Old land in fresh land");
 			lines.add(String.format(java.util.Locale.ROOT, "§f%,d blocks %s: fly over it", (int) Math.hypot(p[0] - me.x, p[1] - me.z), ChunkTrails.side(turn)));
+		} else if (fresh + old == 0) {
+			lines.add("§7Nothing to read here yet");
+			lines.add("§8It reads land by its water and lava");
 		} else {
 			lines.add("§7No trail here");
 			lines.add("§8Fly through fresh land to find one");
 		}
+		lines.add(String.format(java.util.Locale.ROOT, "§8Around you: §9%d new §8· §7%d old §8· %d can't tell", fresh, old, unclear));
 		int ty = y0 + SIZE + 4;
 		for (String line : lines) {
 			int w = font.getWidth(line);

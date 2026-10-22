@@ -188,6 +188,16 @@ public class NaughtyOrNiceClient implements ClientModInitializer {
 
 	/** Every two seconds: trails around you, and a chat note for each new one. */
 	private void lookForTrails(MinecraftClient client) {
+		if (!NNConfig.INSTANCE.trailRadar && !NNConfig.INSTANCE.seenRadarTip) {
+			// Finding trails happens out of sight: say once where to see it.
+			NNConfig.INSTANCE.seenRadarTip = true;
+			NNConfig.save();
+			Alerts.chat(Text.literal("Chunk trails are on. Press ").formatted(Formatting.GRAY)
+					.append(Text.keybind("key.naughtyornice.radar").formatted(Formatting.YELLOW))
+					.append(Text.literal(" for the radar (new land blue, old land grey, trails amber), or ").formatted(Formatting.GRAY))
+					.append(Text.literal("[show it]").styled(st -> st.withColor(Formatting.AQUA).withUnderline(true)
+							.withClickEvent(new ClickEvent.RunCommand("/nn radar")))));
+		}
 		String dim = client.world.getRegistryKey().getValue().toString();
 		int cx = client.player.getBlockX() >> 4, cz = client.player.getBlockZ() >> 4;
 		ChunkTrails trails = ledger.chunkTrails;
@@ -354,7 +364,11 @@ public class NaughtyOrNiceClient implements ClientModInitializer {
 						() -> c.deathRecap, v -> c.deathRecap = v),
 				ModsPanel.section("Chunk trails"),
 				ModsPanel.toggle("Find chunk trails", "Tells old land from fresh land by how its water and lava flow, and finds the paths players left.",
-						() -> c.chunkTrails, v -> c.chunkTrails = v),
+						() -> c.chunkTrails, v -> {
+							c.chunkTrails = v;
+							// The radar is what you see: on with it, so turning trails on is never "nothing happened".
+							if (v) c.trailRadar = true;
+						}),
 				ModsPanel.toggle("Chunk trail radar", "The small turning map on the right (J shows or hides it in game).", () -> c.trailRadar, v -> {
 					c.trailRadar = v;
 					if (v) c.chunkTrails = true;

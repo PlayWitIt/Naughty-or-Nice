@@ -162,6 +162,9 @@ public final class NNConfig {
 	/** Suggested groups you said aren't groups (their players' ids, sorted and joined). */
 	public java.util.List<String> dismissedSuggestions = new java.util.ArrayList<>();
 
+	/** Whether the "chunk trails are on: press J for the radar" tip has been shown. */
+	public boolean seenRadarTip = false;
+
 	/** Whether the first-time "press N" tip has been shown. */
 	public boolean seenTip = false;
 
