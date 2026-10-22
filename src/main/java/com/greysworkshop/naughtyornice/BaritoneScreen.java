@@ -432,6 +432,14 @@ public class BaritoneScreen extends Screen {
 
 	@Override
 	public void render(DrawContext context, int mouseX, int mouseY, float delta) {
+		if (ModsPanel.streamSafe()) {
+			// Its fields and places are all coordinates.
+			super.render(context, mouseX, mouseY, delta);
+			context.fill(0, 0, width, height, 0xF0101418);
+			context.drawCenteredTextWithShadow(textRenderer, "Hidden while stream-safe mode is on", width / 2, height / 2 - 10, 0xFFFFFFFF);
+			context.drawCenteredTextWithShadow(textRenderer, "It's full of coordinates. Press Esc, then the stream-safe key to show it.", width / 2, height / 2 + 4, 0xFF9AA4AE);
+			return;
+		}
 		super.render(context, mouseX, mouseY, delta);
 		int x = width / 2 - 200;
 		String state;

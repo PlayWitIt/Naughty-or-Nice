@@ -23,6 +23,29 @@ import java.util.Locale;
 public final class EventHooks {
 	private EventHooks() {}
 
+	/**
+	 * Hits and totem pops wait a moment before they're logged: the server sends the damage first and the new health
+	 * after it, so reading the health straight away would give what it was before the hit.
+	 */
+	private record Pending(EventLog.Entry entry, LivingEntity who, long due) {}
+
+	private static final java.util.ArrayDeque<Pending> pending = new java.util.ArrayDeque<>();
+	private static final long SETTLE_MS = 150;
+
+	static void afterHealthArrives(EventLog.Entry entry, LivingEntity who) {
+		pending.addLast(new Pending(entry, who, System.currentTimeMillis() + SETTLE_MS));
+	}
+
+	/** Logs the waiting entries whose health has had time to arrive (all of them if {@code all}). */
+	public static void flush(boolean all) {
+		long now = System.currentTimeMillis();
+		while (!pending.isEmpty() && (all || pending.peekFirst().due <= now)) {
+			Pending p = pending.pollFirst();
+			p.entry.health = p.who.getHealth();
+			EventLog.add(p.entry);
+		}
+	}
+
 	private static String name(Entity e) {
 		if (e == null) return "";
 		if (e instanceof PlayerEntity p) return p.getGameProfile().name();
@@ -57,8 +80,7 @@ public final class EventHooks {
 		if (!detail.isEmpty()) detail.append(" · ");
 		detail.append(damageType.replace('_', ' '));
 		EventLog.Entry e = at(EventLog.entry(EventLog.Type.HIT, name(cause), name(target), detail.toString()), client, target.getEntityPos());
-		if (target instanceof LivingEntity living) e.health = living.getHealth();
-		EventLog.add(e);
+		afterHealthArrives(e, (LivingEntity) target);
 	}
 
 	/** A player swung their arm (attacking, using or breaking something). */
@@ -124,8 +146,8 @@ public final class EventHooks {
 	/** Once a second: where each player in view is, how they're doing and what they hold. */
 	public static void positions(MinecraftClient client) {
 		if (client.world == null) return;
+		// You too, so the replay map shows where you were.
 		for (PlayerEntity p : client.world.getPlayers()) {
-			if (p == client.player) continue;
 			EventLog.Entry e = at(EventLog.entry(EventLog.Type.POSITION, name(p), "",
 					p.getMainHandStack().isEmpty() ? "" : "holding " + p.getMainHandStack().getName().getString()), client, p.getEntityPos());
 			e.health = p.getHealth();

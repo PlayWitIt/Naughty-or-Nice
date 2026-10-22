@@ -64,20 +64,24 @@ public class NaughtyOrNiceClient implements ClientModInitializer {
 		baritoneKey = KeyBindingHelper.registerKeyBinding(new KeyBinding("key.naughtyornice.baritone", InputUtil.Type.KEYSYM, GLFW.GLFW_KEY_B, category));
 		stopKey = KeyBindingHelper.registerKeyBinding(new KeyBinding("key.naughtyornice.stop", InputUtil.Type.KEYSYM, GLFW.GLFW_KEY_Z, category));
 		HudElementRegistry.addLast(Identifier.of(MOD_ID, "trip"), (context, tickCounter) -> Safe.run("drawing the trip line", () -> SmartTravel.render(context, tickCounter)));
+		HudElementRegistry.addLast(Identifier.of(MOD_ID, "logout_spots"), (context, tickCounter) -> Safe.run("drawing logout spots", () -> LogoutSpots.render(context, tickCounter)));
 		HudElementRegistry.addLast(Identifier.of(MOD_ID, "trail_radar"), (context, tickCounter) -> Safe.run("drawing the trail radar", () -> TrailRadar.render(context, tickCounter)));
 
+		DeathRecap.register();
+		PhoneAlerts.register();
 		ClientCommandRegistrationCallback.EVENT.register((dispatcher, registryAccess) -> Commands.register(dispatcher));
 
 		// These run while the game handles a packet: an error escaping them would disconnect you, so none can.
-		ClientReceiveMessageEvents.CHAT.register((message, signed, sender, params, timestamp) ->
-				Safe.run("reading chat", () -> watcher.onChat(MinecraftClient.getInstance(), sender, signed, params, message)));
+		ClientReceiveMessageEvents.CHAT.register((message, signed, sender, params, timestamp) -> {
+			if (NNConfig.on()) Safe.run("reading chat", () -> watcher.onChat(MinecraftClient.getInstance(), sender, signed, params, message));
+		});
 		ClientReceiveMessageEvents.GAME.register((message, overlay) -> {
-			if (!overlay) Safe.run("reading a server message", () -> watcher.onGameMessage(MinecraftClient.getInstance(), message));
+			if (!overlay && NNConfig.on()) Safe.run("reading a server message", () -> watcher.onGameMessage(MinecraftClient.getInstance(), message));
 		});
 
 		// Your own messages: held back if they'd give your location away (see CoordGuard).
-		ClientSendMessageEvents.ALLOW_CHAT.register(message -> Safe.get("checking your message", () -> CoordGuard.allowChat(message), true));
-		ClientSendMessageEvents.ALLOW_COMMAND.register(command -> Safe.get("checking your message", () -> CoordGuard.allowCommand(command), true));
+		ClientSendMessageEvents.ALLOW_CHAT.register(message -> !NNConfig.on() || Safe.get("checking your message", () -> CoordGuard.allowChat(message), true));
+		ClientSendMessageEvents.ALLOW_COMMAND.register(command -> !NNConfig.on() || Safe.get("checking your message", () -> CoordGuard.allowCommand(command), true));
 
 		ClientTickEvents.END_CLIENT_TICK.register(client -> Safe.run("ticking", () -> tick(client)));
 
@@ -85,6 +89,7 @@ public class NaughtyOrNiceClient implements ClientModInitializer {
 		ClientPlayConnectionEvents.DISCONNECT.register((handler, client) -> client.execute(() -> {
 			HighwayRoam.stop(null);
 			SmartTravel.stop();
+			EventHooks.flush(true);
 			ledger.switchTo(null);
 			watcher.reset();
 		}));
@@ -198,7 +203,7 @@ public class NaughtyOrNiceClient implements ClientModInitializer {
 			int[] end = t.awayEnd();
 			Alerts.chat(Text.literal("Chunk trail found: ").formatted(Formatting.GOLD)
 					.append(Text.literal(say == null ? "" : say[0] + ". " + say[1] + ". ").formatted(Formatting.YELLOW))
-					.append(Text.literal(t.away == 0 ? "" : "The far end (away from spawn) is at " + end[0] + ", " + end[1] + ". ").formatted(Formatting.GRAY))
+					.append(Text.literal(t.away == 0 || ModsPanel.streamSafe() ? "" : "The far end (away from spawn) is at " + end[0] + ", " + end[1] + ". ").formatted(Formatting.GRAY))
 					.append(Text.literal(NNConfig.INSTANCE.trailRadar ? "" : "[Show radar]").styled(st -> st.withColor(Formatting.AQUA).withUnderline(true)
 							.withClickEvent(new ClickEvent.RunCommand("/nn radar")))));
 		}
@@ -254,6 +259,7 @@ public class NaughtyOrNiceClient implements ClientModInitializer {
 
 	private void tick(MinecraftClient client) {
 		UpdateCheck.tick(client);
+		PhoneAlerts.flush(false);
 		if (pendingScreen != null) {
 			client.setScreen(pendingScreen);
 			pendingScreen = null;
@@ -275,11 +281,14 @@ public class NaughtyOrNiceClient implements ClientModInitializer {
 		while (baritoneKey.wasPressed()) {
 			if (client.currentScreen == null) client.setScreen(new BaritoneScreen());
 		}
+		EventHooks.flush(false);
 		if (++roamTimer >= 20) {
 			roamTimer = 0;
 			HighwayRoam.tick(client);
 			SmartTravel.tick(client);
 		}
+		// Off (the Mods panel's first switch): the keys above still work, nothing else runs.
+		if (!NNConfig.on()) return;
 		while (radarKey.wasPressed()) {
 			NNConfig.INSTANCE.trailRadar = !NNConfig.INSTANCE.trailRadar;
 			if (NNConfig.INSTANCE.trailRadar) NNConfig.INSTANCE.chunkTrails = true;
@@ -314,6 +323,8 @@ public class NaughtyOrNiceClient implements ClientModInitializer {
 		String version = net.fabricmc.loader.api.FabricLoader.getInstance().getModContainer(MOD_ID)
 				.map(m -> m.getMetadata().getVersion().getFriendlyString()).orElse("?").replaceAll("\\+.*", "");
 		java.util.List<java.util.Map<String, Object>> switches = java.util.List.of(
+				master(ModsPanel.toggle("Mod enabled", "Turns all of Naughty or Nice on or off. Your lists, notes and recordings are kept either way.",
+						() -> c.enabled, v -> c.enabled = v)),
 				ModsPanel.section("Watching"),
 				ModsPanel.toggle("Remember everyone you see", "Players you see nearby or on the tab list stay in your lists after they log off.",
 						() -> c.rememberEveryone, v -> c.rememberEveryone = v),
@@ -335,6 +346,12 @@ public class NaughtyOrNiceClient implements ClientModInitializer {
 				ModsPanel.toggle("Marks on nametags", "Green ✔, gold ? or red ✖ before listed players' names above their heads.", () -> c.nametagMarks, v -> c.nametagMarks = v),
 				ModsPanel.toggle("Marks in the tab list", "The same marks in the player list (Tab).", () -> c.tabListMarks, v -> c.tabListMarks = v),
 				ModsPanel.toggle("Who's on when you join", "A summary of who's online from your lists when you join a server.", () -> c.joinSummary, v -> c.joinSummary = v),
+				ModsPanel.toggle("Totems popped on names", "\"Steve [3 pops]\": totems a player has popped in front of you since they last died.",
+						() -> c.totemCounter, v -> c.totemCounter = v),
+				ModsPanel.toggle("Logout spots", "A marker where a player logged out while you could see them, until they come back.",
+						() -> c.logoutSpots, v -> c.logoutSpots = v),
+				ModsPanel.toggle("Death recap", "On the death screen: who hit you in your last 30 seconds, with what, and the totems you popped.",
+						() -> c.deathRecap, v -> c.deathRecap = v),
 				ModsPanel.section("Chunk trails"),
 				ModsPanel.toggle("Find chunk trails", "Tells old land from fresh land by how its water and lava flow, and finds the paths players left.",
 						() -> c.chunkTrails, v -> c.chunkTrails = v),
@@ -349,6 +366,12 @@ public class NaughtyOrNiceClient implements ClientModInitializer {
 		return java.util.Map.of("id", MOD_ID, "name", "Naughty or Nice", "version", version, "icon", Identifier.of(MOD_ID, "icon.png"),
 				"settings", (java.util.function.Function<net.minecraft.client.gui.screen.Screen, net.minecraft.client.gui.screen.Screen>)
 						parent -> new ShopScreen(ShopScreen.Tab.SETTINGS, null).withParent(parent),
-				"save", (Runnable) NNConfig::save, "switches", switches);
+				"save", (Runnable) NNConfig::save, "data", java.util.List.of("naughtyornice"), "switches", switches);
+	}
+
+	private static java.util.Map<String, Object> master(java.util.Map<String, Object> toggle) {
+		java.util.Map<String, Object> m = new java.util.HashMap<>(toggle);
+		m.put("master", true);
+		return m;
 	}
 }

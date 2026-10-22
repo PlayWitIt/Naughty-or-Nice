@@ -45,7 +45,7 @@ public final class CloudShare {
 	private static String userAgent() {
 		String version = FabricLoader.getInstance().getModContainer(NaughtyOrNiceClient.MOD_ID)
 				.map(m -> m.getMetadata().getVersion().getFriendlyString()).orElse("dev");
-		return "NaughtyOrNice/" + version + " (Minecraft mod by PlayWit Creation; github.com/PlayWitIt/Naughty-or-Nice)";
+		return "NaughtyOrNice/" + version + " (Minecraft mod by PlayWit Creations; github.com/PlayWitIt/Naughty-or-Nice)";
 	}
 
 	/** A share link found anywhere in some text (a chat line, a pasted message), or null. */

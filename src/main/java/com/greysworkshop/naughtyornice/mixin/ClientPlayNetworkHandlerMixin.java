@@ -36,6 +36,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 public abstract class ClientPlayNetworkHandlerMixin {
 	@Inject(method = "onEntityDamage", at = @At("TAIL"))
 	private void naughtyornice$damage(EntityDamageS2CPacket packet, CallbackInfo ci) {
+		if (!NNConfig.on()) return;
 		MinecraftClient client = MinecraftClient.getInstance();
 		NaughtyOrNiceClient mod = NaughtyOrNiceClient.INSTANCE;
 		if (client.world == null || mod == null) return;
@@ -51,6 +52,7 @@ public abstract class ClientPlayNetworkHandlerMixin {
 
 	@Inject(method = "onEntityStatus", at = @At("TAIL"))
 	private void naughtyornice$status(EntityStatusS2CPacket packet, CallbackInfo ci) {
+		if (!NNConfig.on()) return;
 		MinecraftClient client = MinecraftClient.getInstance();
 		NaughtyOrNiceClient mod = NaughtyOrNiceClient.INSTANCE;
 		if (client.world == null || mod == null) return;
@@ -68,6 +70,7 @@ public abstract class ClientPlayNetworkHandlerMixin {
 
 	@Inject(method = "onDeathMessage", at = @At("TAIL"))
 	private void naughtyornice$myDeath(DeathMessageS2CPacket packet, CallbackInfo ci) {
+		if (!NNConfig.on()) return;
 		MinecraftClient client = MinecraftClient.getInstance();
 		NaughtyOrNiceClient mod = NaughtyOrNiceClient.INSTANCE;
 		if (client.world == null || mod == null) return;
@@ -76,6 +79,7 @@ public abstract class ClientPlayNetworkHandlerMixin {
 
 	@Inject(method = "onChunkData", at = @At("TAIL"))
 	private void naughtyornice$chunk(ChunkDataS2CPacket packet, CallbackInfo ci) {
+		if (!NNConfig.on()) return;
 		MinecraftClient client = MinecraftClient.getInstance();
 		NaughtyOrNiceClient mod = NaughtyOrNiceClient.INSTANCE;
 		if (client.world == null || mod == null) return;
@@ -87,6 +91,7 @@ public abstract class ClientPlayNetworkHandlerMixin {
 
 	@Inject(method = "onUnloadChunk", at = @At("HEAD"))
 	private void naughtyornice$beforeUnload(UnloadChunkS2CPacket packet, CallbackInfo ci) {
+		if (!NNConfig.on()) return;
 		MinecraftClient client = MinecraftClient.getInstance();
 		// The chunk as it is when you leave it (blocks broken or placed since it arrived), for a download.
 		if (client.world != null && WorldDownload.active()) {
@@ -96,12 +101,14 @@ public abstract class ClientPlayNetworkHandlerMixin {
 
 	@Inject(method = "onUnloadChunk", at = @At("TAIL"))
 	private void naughtyornice$unload(UnloadChunkS2CPacket packet, CallbackInfo ci) {
+		if (!NNConfig.on()) return;
 		NaughtyOrNiceClient mod = NaughtyOrNiceClient.INSTANCE;
 		if (mod != null) Safe.run("forgetting a chunk", () -> mod.ledger.chunkTrails.chunkUnloaded(packet.pos().x, packet.pos().z));
 	}
 
 	@Inject(method = "onBlockUpdate", at = @At("TAIL"))
 	private void naughtyornice$block(BlockUpdateS2CPacket packet, CallbackInfo ci) {
+		if (!NNConfig.on()) return;
 		MinecraftClient client = MinecraftClient.getInstance();
 		NaughtyOrNiceClient mod = NaughtyOrNiceClient.INSTANCE;
 		if (client.world == null || mod == null || !NNConfig.INSTANCE.chunkTrails) return;
@@ -111,6 +118,7 @@ public abstract class ClientPlayNetworkHandlerMixin {
 
 	@Inject(method = "onChunkDeltaUpdate", at = @At("TAIL"))
 	private void naughtyornice$blocks(ChunkDeltaUpdateS2CPacket packet, CallbackInfo ci) {
+		if (!NNConfig.on()) return;
 		MinecraftClient client = MinecraftClient.getInstance();
 		NaughtyOrNiceClient mod = NaughtyOrNiceClient.INSTANCE;
 		if (client.world == null || mod == null || !NNConfig.INSTANCE.chunkTrails) return;
@@ -120,6 +128,7 @@ public abstract class ClientPlayNetworkHandlerMixin {
 
 	@Inject(method = "onEntityAnimation", at = @At("TAIL"))
 	private void naughtyornice$swing(EntityAnimationS2CPacket packet, CallbackInfo ci) {
+		if (!NNConfig.on()) return;
 		MinecraftClient client = MinecraftClient.getInstance();
 		if (client.world == null || !NNConfig.INSTANCE.eventLog) return;
 		Safe.run("logging a swing", () -> EventHooks.swing(client, client.world.getEntityById(packet.getEntityId()), packet.getAnimationId()));
@@ -127,6 +136,7 @@ public abstract class ClientPlayNetworkHandlerMixin {
 
 	@Inject(method = "onEntitySpawn", at = @At("TAIL"))
 	private void naughtyornice$spawn(EntitySpawnS2CPacket packet, CallbackInfo ci) {
+		if (!NNConfig.on()) return;
 		MinecraftClient client = MinecraftClient.getInstance();
 		if (client.world == null || !NNConfig.INSTANCE.eventLog) return;
 		Safe.run("logging something appearing", () -> {
@@ -137,6 +147,7 @@ public abstract class ClientPlayNetworkHandlerMixin {
 
 	@Inject(method = "onExplosion", at = @At("TAIL"))
 	private void naughtyornice$explosion(ExplosionS2CPacket packet, CallbackInfo ci) {
+		if (!NNConfig.on()) return;
 		MinecraftClient client = MinecraftClient.getInstance();
 		if (client.world == null || !NNConfig.INSTANCE.eventLog) return;
 		Safe.run("logging an explosion", () -> EventHooks.explosion(client, packet.center(), packet.radius()));
@@ -144,6 +155,7 @@ public abstract class ClientPlayNetworkHandlerMixin {
 
 	@Inject(method = "onEntityEquipmentUpdate", at = @At("TAIL"))
 	private void naughtyornice$gear(EntityEquipmentUpdateS2CPacket packet, CallbackInfo ci) {
+		if (!NNConfig.on()) return;
 		MinecraftClient client = MinecraftClient.getInstance();
 		if (client.world == null || !NNConfig.INSTANCE.eventLog) return;
 		Safe.run("logging gear", () -> EventHooks.gear(client, client.world.getEntityById(packet.getEntityId()), packet.getEquipmentList()));
@@ -151,6 +163,7 @@ public abstract class ClientPlayNetworkHandlerMixin {
 
 	@Inject(method = "onWorldEvent", at = @At("TAIL"))
 	private void naughtyornice$worldEvent(WorldEventS2CPacket packet, CallbackInfo ci) {
+		if (!NNConfig.on()) return;
 		MinecraftClient client = MinecraftClient.getInstance();
 		NaughtyOrNiceClient mod = NaughtyOrNiceClient.INSTANCE;
 		if (client.world == null || mod == null) return;
@@ -159,6 +172,7 @@ public abstract class ClientPlayNetworkHandlerMixin {
 
 	@Inject(method = "onBlockBreakingProgress", at = @At("TAIL"))
 	private void naughtyornice$breaking(BlockBreakingProgressS2CPacket packet, CallbackInfo ci) {
+		if (!NNConfig.on()) return;
 		MinecraftClient client = MinecraftClient.getInstance();
 		NaughtyOrNiceClient mod = NaughtyOrNiceClient.INSTANCE;
 		if (client.world == null || mod == null) return;

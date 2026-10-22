@@ -24,7 +24,7 @@ import java.util.Set;
  * kill and its weapon, a line per player, and a timeline of everything, filtered by player and kind.
  */
 public class EventScreen extends Screen {
-	private enum View { SUMMARY, KILLS, PLAYERS, TIMELINE }
+	private enum View { SUMMARY, KILLS, PLAYERS, TIMELINE, REPLAY }
 
 	private static final DateTimeFormatter CLOCK = DateTimeFormatter.ofPattern("HH:mm:ss", Locale.ROOT);
 	private static View view = View.SUMMARY;
@@ -103,13 +103,14 @@ public class EventScreen extends Screen {
 		// The report's views, a filter, and export.
 		y = 30;
 		int vx = x + 132;
-		int viewW = (span - 132 - 4 * 3 - 70) / 4;
+		int viewW = (span - 132 - 5 * 3 - 40) / 5;
 		for (View v : View.values()) {
 			String label = switch (v) {
 				case SUMMARY -> "Summary";
-				case KILLS -> "Kill feed";
+				case KILLS -> "Kills";
 				case PLAYERS -> "Players";
 				case TIMELINE -> "Timeline";
+				case REPLAY -> "Replay";
 			};
 			ButtonWidget button = ButtonWidget.builder(Text.literal(label), b -> {
 				view = v;
@@ -121,7 +122,7 @@ public class EventScreen extends Screen {
 			addDrawableChild(button);
 			vx += viewW + 3;
 		}
-		addDrawableChild(ButtonWidget.builder(Text.literal("Export CSV"), b -> exportCsv()).dimensions(vx + 1, y, x + span - vx - 1, 18).build());
+		addDrawableChild(ButtonWidget.builder(Text.literal("CSV"), b -> exportCsv()).tooltip(net.minecraft.client.gui.tooltip.Tooltip.of(Text.literal("Export as a spreadsheet (CSV)"))).dimensions(vx + 1, y, x + span - vx - 1, 18).build());
 		if (view == View.TIMELINE) {
 			filterField = new TextFieldWidget(textRenderer, x + 132, y + 22, 150, 16, Text.literal("Player"));
 			filterField.setPlaceholder(Text.literal("Only this player").withColor(0xFF777777));
@@ -178,7 +179,7 @@ public class EventScreen extends Screen {
 		return report;
 	}
 
-	private static String clock(long t) {
+	static String clock(long t) {
 		return Instant.ofEpochMilli(t).atZone(ZoneId.systemDefault()).format(CLOCK);
 	}
 
@@ -203,6 +204,11 @@ public class EventScreen extends Screen {
 		// The report.
 		EventReport r = report();
 		int rx = x + 132, ry = view == View.TIMELINE ? 74 : 54, rw = x + span() - rx;
+		if (view == View.REPLAY) {
+			replay(context, r, rx, ry, rw, height - 16 - ry, mouseX, mouseY);
+			if (!status.isEmpty()) context.drawTextWithShadow(textRenderer, status, x, height - 12, statusColor);
+			return;
+		}
 		context.enableScissor(rx, ry, rx + rw, height - 16);
 		int y = ry - (int) scroll;
 		if (r.entries.isEmpty()) {
@@ -213,6 +219,7 @@ public class EventScreen extends Screen {
 				case KILLS -> kills(context, r, rx, y, rw);
 				case PLAYERS -> playersTable(context, r, rx, y, rw);
 				case TIMELINE -> timeline(context, r, rx, y, rw);
+				case REPLAY -> y;
 			};
 		}
 		context.disableScissor();
@@ -269,7 +276,7 @@ public class EventScreen extends Screen {
 		} else {
 			EventLog.Entry h = r.firstHit;
 			y = line(context, clock(h.t) + ": " + h.actor + " hit " + h.target + (h.detail.isEmpty() ? "" : " (" + h.detail + ")")
-					+ (h.located() ? String.format(Locale.ROOT, " at %d, %d, %d", (int) h.x, (int) h.y, (int) h.z) : ""), x, y, w, 0xFFFFFFFF);
+					+ (h.located() ? " at " + ModsPanel.hide(String.format(Locale.ROOT, "%d, %d, %d", (int) h.x, (int) h.y, (int) h.z)) : ""), x, y, w, 0xFFFFFFFF);
 			y = line(context, "This is the first hit between two players: the server says who damaged whom, so it's certain.", x, y, w, 0xFF888888);
 			List<EventLog.Entry> swings = r.swingsBeforeFirstHit();
 			if (!swings.isEmpty()) {
@@ -343,7 +350,7 @@ public class EventScreen extends Screen {
 				case CRYSTAL_SET_OFF -> (e.actor.isEmpty() ? "Something" : e.actor) + " set off an end crystal";
 				case EXPLOSION -> "Explosion · " + e.detail;
 				case GEAR -> e.actor + " changed gear: " + e.detail;
-				case POSITION -> e.actor + String.format(Locale.ROOT, " at %d, %d, %d", (int) e.x, (int) e.y, (int) e.z) + (e.detail.isEmpty() ? "" : " · " + e.detail);
+				case POSITION -> e.actor + " at " + ModsPanel.hide(String.format(Locale.ROOT, "%d, %d, %d", (int) e.x, (int) e.y, (int) e.z)) + (e.detail.isEmpty() ? "" : " · " + e.detail);
 				case ADVANCEMENT -> e.actor + " made " + e.detail;
 				case NOTE -> e.detail;
 			};
@@ -365,8 +372,68 @@ public class EventScreen extends Screen {
 		return y;
 	}
 
+	private ReplayView replay;
+	private EventReport replayOf;
+
+	/** The replay map, with play, speed and "first hit" above it. */
+	private void replay(DrawContext context, EventReport r, int x, int y, int w, int h, int mouseX, int mouseY) {
+		if (replay == null || replayOf != r) {
+			replay = new ReplayView(r.entries);
+			replayOf = r;
+			replay.toFirstHit(r.firstHit);
+		}
+		if (replay.empty()) {
+			line(context, "No one's position was recorded here, so there's nothing to replay. Positions are logged once a second for "
+					+ "everyone in view (this needs a recording from version 1.12.0 or later to include you).", x, y, w, 0xFFAAAAAA);
+			return;
+		}
+		int bx = x;
+		bx += replayButton(context, mouseX, mouseY, bx, y, replay.playing ? "❚❚ Pause" : "▶ Play", () -> replay.playing = !replay.playing) + 4;
+		bx += replayButton(context, mouseX, mouseY, bx, y, replay.speed + "× speed", replay::faster) + 4;
+		if (r.firstHit != null) bx += replayButton(context, mouseX, mouseY, bx, y, "First hit", () -> replay.toFirstHit(r.firstHit)) + 4;
+		String dim = replay.dimension.replace("minecraft:", "").replace('_', ' ');
+		context.drawText(textRenderer, dim, x + w - textRenderer.getWidth(dim), y + 4, 0xFF888888, false);
+		replay.render(context, textRenderer, x, y + 18, w, h - 18);
+		hits.add(new Object[] {replay.sliderX, replay.sliderY - 4, replay.sliderX + replay.sliderW, replay.sliderY + 12, (Runnable) () -> {
+			replay.playing = false;
+			replay.seek((lastClickX - replay.sliderX) / (double) replay.sliderW);
+		}});
+	}
+
+	private int replayButton(DrawContext context, int mouseX, int mouseY, int x, int y, String label, Runnable run) {
+		int w = textRenderer.getWidth(label) + 12;
+		boolean over = mouseX >= x && mouseX < x + w && mouseY >= y && mouseY < y + 14;
+		context.fill(x, y, x + w, y + 14, over ? 0xFF36414E : 0xFF2A333E);
+		context.drawText(textRenderer, label, x + 6, y + 3, 0xFFE7E9EC, false);
+		hits.add(new Object[] {x, y, x + w, y + 14, run});
+		return w;
+	}
+
+	private double lastClickX;
+
+	/** Shows the replay (at the first hit); returns how many players it has. For the self-test. */
+	int testReplay() {
+		view = View.REPLAY;
+		clearAndInit();
+		replay = new ReplayView(report().entries);
+		replayOf = report();
+		replay.toFirstHit(replayOf.firstHit);
+		return replay.players();
+	}
+
+	@Override
+	public boolean mouseDragged(Click click, double dx, double dy) {
+		if (view == View.REPLAY && replay != null && click.y() >= replay.sliderY - 6 && click.y() < replay.sliderY + 14) {
+			replay.playing = false;
+			replay.seek((click.x() - replay.sliderX) / (double) replay.sliderW);
+			return true;
+		}
+		return super.mouseDragged(click, dx, dy);
+	}
+
 	@Override
 	public boolean mouseClicked(Click click, boolean doubled) {
+		lastClickX = click.x();
 		for (Object[] hit : List.copyOf(hits)) {
 			if (click.x() >= (int) hit[0] && click.x() < (int) hit[2] && click.y() >= (int) hit[1] && click.y() < (int) hit[3]) {
 				((Runnable) hit[4]).run();

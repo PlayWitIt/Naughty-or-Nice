@@ -27,6 +27,7 @@ public final class TrailRadar {
 	private TrailRadar() {}
 
 	public static void render(DrawContext context, RenderTickCounter tickCounter) {
+		if (!NNConfig.on()) return;
 		MinecraftClient client = MinecraftClient.getInstance();
 		NaughtyOrNiceClient mod = NaughtyOrNiceClient.INSTANCE;
 		if (mod == null || !NNConfig.INSTANCE.chunkTrails || !NNConfig.INSTANCE.trailRadar || client.world == null || client.player == null

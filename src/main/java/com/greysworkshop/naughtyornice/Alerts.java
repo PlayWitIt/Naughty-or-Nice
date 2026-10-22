@@ -33,6 +33,7 @@ public final class Alerts {
 		if (client.player == null) return;
 		client.player.sendMessage(prefix().append(message), false);
 		client.player.sendMessage(message, true);
+		PhoneAlerts.send(message.getString());
 		if (NNConfig.INSTANCE.warnSounds) {
 			float pitch = GROUP_PITCH[Math.floorMod(colorIndex, GROUP_PITCH.length)];
 			client.getSoundManager().play(PositionedSoundInstance.ui(SoundEvents.BLOCK_NOTE_BLOCK_BELL, pitch));
@@ -44,6 +45,7 @@ public final class Alerts {
 		MinecraftClient client = MinecraftClient.getInstance();
 		if (client.player == null) return;
 		client.player.sendMessage(prefix().append(message), false);
+		PhoneAlerts.send(message.getString());
 		if (NNConfig.INSTANCE.warnSounds) {
 			client.getSoundManager().play(PositionedSoundInstance.ui(SoundEvents.BLOCK_NOTE_BLOCK_PLING, 1.5f));
 		}
@@ -55,6 +57,7 @@ public final class Alerts {
 		if (client.player == null) return;
 		client.player.sendMessage(prefix().append(message), false);
 		client.player.sendMessage(message, true);
+		PhoneAlerts.send(message.getString());
 		if (NNConfig.INSTANCE.warnSounds) {
 			client.getSoundManager().play(PositionedSoundInstance.ui(SoundEvents.BLOCK_NOTE_BLOCK_BASS, 0.6f));
 		}

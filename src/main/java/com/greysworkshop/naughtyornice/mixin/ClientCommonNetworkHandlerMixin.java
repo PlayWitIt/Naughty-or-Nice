@@ -16,11 +16,13 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 public abstract class ClientCommonNetworkHandlerMixin {
 	@Inject(method = "createDisconnectionInfo", at = @At("HEAD"))
 	private void naughtyornice$error(Text reason, Throwable error, CallbackInfoReturnable<DisconnectionInfo> cir) {
+		if (!com.greysworkshop.naughtyornice.NNConfig.on()) return;
 		if (error != null) Safe.run("noting a disconnect error", () -> Disconnects.packetError(error));
 	}
 
 	@Inject(method = "onDisconnected", at = @At("HEAD"))
 	private void naughtyornice$disconnected(DisconnectionInfo info, CallbackInfo ci) {
+		if (!com.greysworkshop.naughtyornice.NNConfig.on()) return;
 		Safe.run("recording a disconnect", () -> Disconnects.disconnected(info));
 	}
 }
