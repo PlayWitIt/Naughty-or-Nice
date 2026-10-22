@@ -14,6 +14,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 public abstract class ClientConnectionMixin {
 	@Inject(method = "disconnect(Lnet/minecraft/network/DisconnectionInfo;)V", at = @At("HEAD"))
 	private void naughtyornice$closing(DisconnectionInfo info, CallbackInfo ci) {
+		if (!com.greysworkshop.naughtyornice.NNConfig.on()) return;
 		ClientConnection self = (ClientConnection) (Object) this;
 		Safe.run("noting a disconnect", () -> Disconnects.closing(self, info));
 	}

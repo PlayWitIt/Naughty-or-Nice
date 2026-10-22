@@ -10,14 +10,18 @@ import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
-/** Marks listed players' nametags. Client-side copies of players only (not the singleplayer server's). */
+/** Marks listed players' nametags, and the totems they've popped. Client-side copies of players only (not the singleplayer server's). */
 @Mixin(PlayerEntity.class)
 public abstract class PlayerEntityMixin {
 	@Inject(method = "getDisplayName", at = @At("RETURN"), cancellable = true)
 	private void naughtyornice$mark(CallbackInfoReturnable<Text> cir) {
 		PlayerEntity self = (PlayerEntity) (Object) this;
-		if (!NNConfig.INSTANCE.nametagMarks || !self.getEntityWorld().isClient()) return;
+		NNConfig c = NNConfig.INSTANCE;
+		if (!NNConfig.on() || !c.nametagMarks && !c.totemCounter || !self.getEntityWorld().isClient()) return;
 		Text name = cir.getReturnValue();
-		cir.setReturnValue(Safe.get("marking a nametag", () -> Marks.decorate(self.getUuid(), name), name));
+		cir.setReturnValue(Safe.get("marking a nametag", () -> {
+			Text marked = c.nametagMarks ? Marks.decorate(self.getUuid(), name) : name;
+			return c.totemCounter ? Marks.totems(self.getUuid(), marked) : marked;
+		}, name));
 	}
 }

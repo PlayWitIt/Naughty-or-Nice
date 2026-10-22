@@ -167,6 +167,11 @@ public final class PlayerStats {
 		}
 
 		public String coords() {
+			return ModsPanel.hide(rawCoords());
+		}
+
+		/** The coordinates even in stream-safe mode (for the clipboard, which nobody watching sees). */
+		public String rawCoords() {
 			return hasY() ? x + ", " + y + ", " + z : x + ", " + z;
 		}
 	}

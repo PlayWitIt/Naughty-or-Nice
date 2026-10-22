@@ -16,7 +16,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 public abstract class PlayerListHudMixin {
 	@Inject(method = "getPlayerName", at = @At("RETURN"), cancellable = true)
 	private void naughtyornice$mark(PlayerListEntry entry, CallbackInfoReturnable<Text> cir) {
-		if (!NNConfig.INSTANCE.tabListMarks) return;
+		if (!NNConfig.on() || !NNConfig.INSTANCE.tabListMarks) return;
 		Text name = cir.getReturnValue();
 		cir.setReturnValue(Safe.get("marking the tab list", () -> Marks.decorate(entry.getProfile().id(), name), name));
 	}

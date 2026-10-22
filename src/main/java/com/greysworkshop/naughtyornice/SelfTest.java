@@ -196,6 +196,7 @@ public final class SelfTest {
 				check("hits seen through the damage packet (" + (gary == null ? 0 : gary.count(Profile.Kind.HIT_YOU)) + ")",
 						gary != null && gary.count(Profile.Kind.HIT_YOU) == 3);
 				check("hits folded into one activity entry", gary != null && gary.actions.stream().filter(a -> a.kind == Profile.Kind.HIT_YOU).count() == 1);
+				DeathRecap.testOpen = true;
 				log("Griefer kills the player");
 				hitMe(client, 1000f);
 			}
@@ -203,6 +204,20 @@ public final class SelfTest {
 				Profile gary = ledger.get(id(GRIEFER));
 				check("kill recorded once (" + (gary == null ? 0 : gary.count(Profile.Kind.KILLED_YOU)) + ")", gary != null && gary.count(Profile.Kind.KILLED_YOU) == 1);
 				check("killer put on the Naughty list automatically", gary != null && gary.verdict == Profile.Verdict.NAUGHTY && gary.autoListed);
+				EventHooks.flush(true);
+				String meName = client.player.getGameProfile().name();
+				List<Float> health = EventLog.since(System.currentTimeMillis() - 120_000).stream()
+						.filter(e -> e.type == EventLog.Type.HIT && e.target.equals(meName)).map(e -> e.health).toList();
+				// Creative mode: the small hits leave you at 20. The killing hit shows 0, which it only can if the health is read after the
+				// server's health update (read straight away, it was still 20).
+				check("each hit logs the health left after it (" + health + ")", health.size() == 4 && health.get(3) == 0f);
+				long now = System.currentTimeMillis();
+				long inWindow = EventLog.since(now - DeathRecap.WINDOW_MS).stream().filter(e -> e.type == EventLog.Type.HIT && e.target.equals(meName)).count();
+				DeathRecap.Recap recap = DeathRecap.build(meName, now);
+				check("death recap: every hit in the last 30 s, all from the griefer (" + recap.hits() + " of " + inWindow + ", " + recap.sources() + ")",
+						inWindow >= 1 && recap.hits() == inWindow && recap.sources().size() == 1 && recap.sources().get(0).name().equals(GRIEFER));
+				check("death screen has the recap's save button", client.currentScreen instanceof net.minecraft.client.gui.screen.DeathScreen
+						&& net.fabricmc.fabric.api.client.screen.v1.Screens.getButtons(client.currentScreen).stream().anyMatch(b -> b.getMessage().getString().equals("Save this fight")));
 				screenshot(client, "0_death_message");
 				client.player.requestRespawn();
 				client.setScreen(null);
@@ -229,7 +244,10 @@ public final class SelfTest {
 			case 290 -> check("one click puts Hana on the Nice list", screen(client).testClick("nice:Helpful_Hana")
 					&& ledger.get(id("Helpful_Hana")).verdict == Profile.Verdict.NICE);
 			case 300 -> screenshot(client, "3_added_banner");
-			case 303 -> check("clicking again takes her off", screen(client).testClick("nice:Helpful_Hana")
+			case 303 -> check("taking someone off a list asks first", screen(client).testClick("nice:Helpful_Hana")
+					&& ledger.get(id("Helpful_Hana")).verdict == Profile.Verdict.NICE);
+			case 306 -> screenshot(client, "3b_confirm_move");
+			case 309 -> check("clicking again takes her off", screen(client).testClick("nice:Helpful_Hana")
 					&& ledger.get(id("Helpful_Hana")).verdict == Profile.Verdict.NONE);
 			case 312 -> check("undo puts her back", screen(client).testClick("undo") && ledger.get(id("Helpful_Hana")).verdict == Profile.Verdict.NICE);
 			case 318 -> check("card opens the player page", screen(client).testClick("card:" + GRIEFER)
@@ -560,7 +578,11 @@ public final class SelfTest {
 				client.setScreen(new ShopScreen(ShopScreen.Tab.ALL, null));
 			}
 			// ---- Look Into ----
-			case 814 -> check("cards have a Look Into button", screen(client).testClick("look:RandomRick"));
+			case 814 -> {
+				// Rick is on another list already, so the first click asks and the second moves him.
+				check("cards have a Look Into button", screen(client).testClick("look:RandomRick"));
+				if (ledger.byName("RandomRick").verdict != Profile.Verdict.LOOK) screen(client).testClick("look:RandomRick");
+			}
 			case 817 -> {
 				Profile rick = ledger.byName("RandomRick");
 				check("Look Into puts them on the Look Into list", rick.verdict == Profile.Verdict.LOOK);
@@ -573,9 +595,16 @@ public final class SelfTest {
 				screenshot(client, "25_look_into");
 				client.setScreen(new ShopScreen(null, ledger.byName("RandomRick")));
 			}
-			case 823 -> check("the player page has a Look Into button that toggles", screen(client).testClick("page-look")
-					&& ledger.byName("RandomRick").verdict == Profile.Verdict.NONE);
-			case 826 -> {
+			case 823 -> check("moving them asks first: clicking Naughty leaves them on Look Into", screen(client).testClick("page-naughty")
+					&& ledger.byName("RandomRick").verdict == Profile.Verdict.LOOK);
+			case 824 -> check("and Yes moves them", screen(client).testClick("confirm") && ledger.byName("RandomRick").verdict == Profile.Verdict.NAUGHTY);
+			case 825 -> {
+				check("undo puts them back on Look Into", screen(client).testClick("undo") && ledger.byName("RandomRick").verdict == Profile.Verdict.LOOK);
+				screen(client).testClick("page-look");
+				check("the player page has a Look Into button that toggles", screen(client).testClick("page-look")
+						&& ledger.byName("RandomRick").verdict == Profile.Verdict.NONE);
+			}
+			case 827 -> {
 				screen(client).testClick("page-look");
 				check("and back on", ledger.byName("RandomRick").verdict == Profile.Verdict.LOOK);
 			}
@@ -905,7 +934,11 @@ public final class SelfTest {
 			case 965 -> screen(client).testSearch("Helpful_Hana");
 			case 966 -> {
 				Profile hana = ledger.byName("Helpful_Hana");
-				check("the star on a card makes them a friend", screen(client).testClick("star:Helpful_Hana")
+				// She's on the Nice list: moving her asks first.
+				boolean clicked = screen(client).testClick("star:Helpful_Hana");
+				check("moving her to Friends asks first", clicked && hana.verdict == Profile.Verdict.NICE);
+				screen(client).testClick("star:Helpful_Hana");
+				check("the star on a card makes them a friend", clicked
 						&& hana.verdict == Profile.Verdict.FRIEND && Friends.of(hana) == Friends.circles().get(0));
 				check("friends get a star on their nametag", Marks.decorate(hana.id, Text.literal("Helpful_Hana")).getString().startsWith("★ "));
 			}
@@ -929,8 +962,12 @@ public final class SelfTest {
 				screenshot(client, "46_friends_tab");
 				client.setScreen(new ShopScreen(null, ledger.byName("Helpful_Hana")));
 			}
-			case 980 -> check("the player page picks their circle", screen(client).testClick("page-circle:Allies")
-					&& Friends.circleName(ledger.byName("Helpful_Hana")).equals("Allies"));
+			case 980 -> {
+				// From another list it asks first, so this is two clicks.
+				screen(client).testClick("page-circle:Allies");
+				if (ledger.byName("Helpful_Hana").verdict != Profile.Verdict.FRIEND) screen(client).testClick("page-circle:Allies");
+				check("the player page picks their circle", Friends.circleName(ledger.byName("Helpful_Hana")).equals("Allies"));
+			}
 			case 982 -> {
 				screenshot(client, "47_friend_page");
 				client.setScreen(new ShopScreen().withAddPanel(Profile.Verdict.FRIEND));
@@ -1017,6 +1054,8 @@ public final class SelfTest {
 				}
 			}
 			case 1025 -> {
+				// A slow connection can finish just after the last wait.
+				if (shareLink == null) shareLink = screen(client).testShareLink();
 				check("a share link was made (" + shareLink + " / " + screen(client).testShareStatus() + ")", shareLink != null && shareLink.startsWith("NN2:"));
 				check("...and copied", shareLink != null && shareLink.equals(client.keyboard.getClipboard()));
 				screenshot(client, "50_share_link");
@@ -1106,6 +1145,9 @@ public final class SelfTest {
 			case 1064 -> {
 				Profile gary = ledger.get(id(GRIEFER));
 				check("totem pop counted (" + gary.stats.totemPops + ")", gary.stats.totemPops == 1);
+				PlayerEntity popped = client.world.getPlayerByUuid(id(GRIEFER));
+				check("totems popped shown on the nametag (" + (popped == null ? "not seen" : popped.getDisplayName().getString()) + ")",
+						TotemCounter.pops(id(GRIEFER)) == 1 && popped != null && popped.getDisplayName().getString().endsWith("[1 pop]"));
 				Profile rick = ledger.byName("RandomRick");
 				mod.watcher.onGameMessage(client, Text.literal("<RandomRick> hey " + GRIEFER + " meet me at 1200 -3400, join discord.gg/abc123 ?"));
 				check("who they talk to (" + rick.stats.mentions + ")", rick.stats.mentions.getOrDefault(GRIEFER, 0) == 1 && gary.stats.mentionedBy.getOrDefault("RandomRick", 0) == 1);
@@ -1198,12 +1240,21 @@ public final class SelfTest {
 				log("Griefer logs out in front of the player");
 				IntegratedServer server = client.getServer();
 				server.execute(() -> server.getPlayerManager().sendToAll(new net.minecraft.network.packet.s2c.play.PlayerRemoveS2CPacket(List.of(id(GRIEFER)))));
+				loggedOutAt = System.currentTimeMillis();
 			}
 			case 1214 -> {
 				Profile gary = ledger.get(id(GRIEFER));
 				PlayerStats.Place last = gary.stats.places.isEmpty() ? null : gary.stats.places.get(gary.stats.places.size() - 1);
+				// Logouts are noticed when the tab list is next looked at (about once a second): wait for it, up to 5 s.
+				if ((last == null || !last.how.equals("logout")) && System.currentTimeMillis() - loggedOutAt < 5000) {
+					tick--;
+					return;
+				}
 				check("where they logged out in view is kept (" + (last == null ? "none" : last.how + " " + last.coords()) + ")",
 						last != null && last.how.equals("logout") && Math.abs(last.x - (int) Math.floor(griefer.getX())) <= 2);
+				check("a logout spot is shown where they went", LogoutSpots.spots().stream().anyMatch(sp -> sp.name().equals(GRIEFER)
+						&& Math.abs(sp.x() - griefer.getX()) <= 2));
+				screenshot(client, "57b_logout_spot");
 				client.setScreen(new ShopScreen(ShopScreen.Tab.SETTINGS, null));
 			}
 			case 1216 -> screen(client).testScroll(1_000_000);
@@ -1361,8 +1412,10 @@ public final class SelfTest {
 				client.setScreen(new EventScreen());
 			}
 			case 1392 -> screenshot(client, "65_events");
-			case 1394 -> client.setScreen(null);
-			case 1395 -> {
+			case 1393 -> check("the replay map has the fight's players", client.currentScreen instanceof EventScreen es && es.testReplay() >= 2);
+			case 1396 -> screenshot(client, "66_replay");
+			case 1397 -> client.setScreen(null);
+			case 1398 -> {
 				log("Disconnecting on purpose");
 				disconnectedAt = System.currentTimeMillis();
 				client.getNetworkHandler().getConnection().disconnect(Text.literal("[AutoLog] " + GRIEFER + " came near"));
@@ -1461,6 +1514,7 @@ public final class SelfTest {
 	/** Server ticks the fake griefer has left to walk (a quarter block each, east). */
 	private static int walkTicks;
 	private static long disconnectedAt;
+	private static long loggedOutAt;
 
 	/** After the test's own disconnect: check it was recorded, then finish. */
 	private static void afterDisconnect(MinecraftClient client) {

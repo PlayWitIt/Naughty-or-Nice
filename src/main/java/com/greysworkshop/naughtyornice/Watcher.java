@@ -80,6 +80,8 @@ public final class Watcher {
 	public void reset() {
 		lastHurt.clear();
 		recentKills.clear();
+		TotemCounter.clear();
+		LogoutSpots.clear();
 		lastVisible.clear();
 		lastBaseVisit.clear();
 		online = new HashSet<>();
@@ -148,6 +150,7 @@ public final class Watcher {
 	/** A living entity died in view (including you). */
 	public void onDeath(MinecraftClient client, Entity victim) {
 		if (victim == null) return;
+		if (victim instanceof PlayerEntity p) TotemCounter.died(p.getUuid());
 		Hurt hurt = lastHurt.remove(victim.getId());
 		if (hurt == null || System.currentTimeMillis() - hurt.time > KILL_WINDOW) return;
 		if (isMe(client, victim)) {
@@ -172,6 +175,7 @@ public final class Watcher {
 		if (seenKill("me", killerName)) return;
 		Profile profile = ledger.getOrCreate(killer, killerName);
 		record(profile, Profile.Kind.KILLED_YOU, "");
+		PhoneAlerts.send(profile.name + " killed you.");
 		EvidenceShots.take(MinecraftClient.getInstance(), profile, "Killed you");
 		if (NNConfig.INSTANCE.autoNaughtyKillers && profile.verdict == Profile.Verdict.NONE) {
 			ledger.setVerdict(profile, Profile.Verdict.NAUGHTY, true, "killed you");
@@ -212,6 +216,7 @@ public final class Watcher {
 		}
 		if (victim == null || victim.equalsIgnoreCase(client.player.getGameProfile().name())) return;
 		UUID id = playerId(client, victim);
+		TotemCounter.died(id);
 		long now = System.currentTimeMillis();
 		if (id != null) {
 			PlayerStats st = ledger.getOrCreate(id, victim).stats;
@@ -235,18 +240,21 @@ public final class Watcher {
 
 	/** Another player used up a Totem of Undying in view. */
 	public void onTotem(MinecraftClient client, Entity entity) {
-		PlayerEntity player = otherPlayer(client, entity);
-		if (player == null) return;
-		PlayerStats st = profile(player).stats;
-		st.totemPops++;
-		st.lastTotemPop = System.currentTimeMillis();
-		ledger.markDirty();
-		EventLog.Entry e = EventLog.entry(EventLog.Type.TOTEM, player.getGameProfile().name(), "", "health after: " + player.getHealth());
+		if (!(entity instanceof PlayerEntity player)) return;
+		if (!isMe(client, player)) {
+			PlayerStats st = profile(player).stats;
+			st.totemPops++;
+			st.lastTotemPop = System.currentTimeMillis();
+			ledger.markDirty();
+			TotemCounter.popped(player.getUuid());
+		}
+		// Yours too, for the death recap.
+		EventLog.Entry e = EventLog.entry(EventLog.Type.TOTEM, player.getGameProfile().name(), "", "");
 		e.dim = client.world.getRegistryKey().getValue().toString();
 		e.x = player.getX();
 		e.y = player.getY();
 		e.z = player.getZ();
-		EventLog.add(e);
+		EventHooks.afterHealthArrives(e, player);
 	}
 
 	private boolean seenKill(String victim, String killer) {
@@ -309,7 +317,7 @@ public final class Watcher {
 		if (client.player == null) return;
 		String raw = message.getString();
 		// Messages from this mod and its companions, shown only to you.
-		if (raw.startsWith("[Naughty/Nice] ") || raw.contains("[Base Insurance] ") || raw.contains("[Container Peek] ")) return;
+		if (raw.startsWith("[Naughty/Nice] ") || raw.contains("[Base Insurance] ") || raw.contains("[Hoard Eye] ")) return;
 		if (message.getContent() instanceof TranslatableTextContent t) {
 			String key = t.getKey();
 			Object[] args = t.getArgs();
@@ -894,6 +902,7 @@ public final class Watcher {
 				}
 			}
 			if (!onlineKnown || online.contains(id) || me) continue;
+			LogoutSpots.back(id);
 			chatLogger.feedSystem(entry.getProfile().name(), "joined", now);
 			EventLog.add(EventLog.entry(EventLog.Type.JOIN, entry.getProfile().name(), "", ""));
 			if (config.trackLinks) ledger.links.joined(id, now);
@@ -954,6 +963,7 @@ public final class Watcher {
 					Profile.Sighting sg = gone.lastSighting();
 					if (sg != null && now - sg.until <= 3_000) {
 						st.addPlace(sg.lastX, sg.lastY, sg.lastZ, sg.dimension, "logout", "Logged out here while you could see them", now);
+						LogoutSpots.add(id, gone.name, sg.dimension, sg.lastX, sg.lastY, sg.lastZ, now);
 					}
 					chatLogger.feedSystem(gone.name, "left", now);
 					EventLog.add(EventLog.entry(EventLog.Type.LEAVE, gone.name, "", ""));

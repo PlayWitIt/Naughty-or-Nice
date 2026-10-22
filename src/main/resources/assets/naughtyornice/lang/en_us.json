@@ -3,5 +3,7 @@
 	"key.naughtyornice.open": "Open Naughty or Nice (look at a player for theirs)",
 	"key.naughtyornice.radar": "Chunk trail radar (show or hide)",
 	"key.naughtyornice.baritone": "Baritone panel",
-	"key.naughtyornice.stop": "Stop Baritone (trip, roam, everything)"
+	"key.naughtyornice.stop": "Stop Baritone (trip, roam, everything)",
+	"key.playwit.stream_safe": "Stream-safe mode (hide coordinates)",
+	"key.category.playwit.mods": "PlayWit mods"
 }

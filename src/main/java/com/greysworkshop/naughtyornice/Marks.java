@@ -16,6 +16,13 @@ public final class Marks {
 	/** Group colours for text over the world: bright enough to read on nametags. Same order as the screen's palette. */
 	static final int[] GROUP_TEXT = {0x5BC0FF, 0xFF9F43, 0xB388FF, 0x4DD0A1, 0xFF6FA8, 0xFFD54F, 0x80DEEA, 0xC5E1A5, 0xFF8A65, 0xB0BEC5};
 
+	/** "Steve [3 pops]": totems popped since they last died, if any. */
+	public static Text totems(UUID id, Text name) {
+		int n = id == null ? 0 : TotemCounter.pops(id);
+		if (n == 0 || name == null) return name;
+		return Text.empty().append(name).append(Text.literal(" [" + n + (n == 1 ? " pop]" : " pops]")).formatted(Formatting.GOLD));
+	}
+
 	public static Text decorate(UUID id, Text name) {
 		NaughtyOrNiceClient mod = NaughtyOrNiceClient.INSTANCE;
 		if (mod == null || id == null || name == null) return name;

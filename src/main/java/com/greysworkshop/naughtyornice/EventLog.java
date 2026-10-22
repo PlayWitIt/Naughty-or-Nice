@@ -78,7 +78,7 @@ public final class EventLog {
 
 	/** Keeps an entry: in the black box, and in the recording if one is running. */
 	public static void add(Entry e) {
-		if (!NNConfig.INSTANCE.eventLog) return;
+		if (!NNConfig.INSTANCE.eventLog || !NNConfig.on()) return;
 		blackBox.addLast(e);
 		while (blackBox.size() > BLACK_BOX_MAX || !blackBox.isEmpty() && e.t - blackBox.peekFirst().t > BLACK_BOX_MS) blackBox.removeFirst();
 		if (recording != null) {
@@ -217,6 +217,19 @@ public final class EventLog {
 				}
 			}
 		}
+		return list;
+	}
+
+	/** The black box's entries from {@code since} on, oldest first (cheap: reads back from the newest). */
+	public static List<Entry> since(long since) {
+		List<Entry> list = new ArrayList<>();
+		var it = blackBox.descendingIterator();
+		while (it.hasNext()) {
+			Entry e = it.next();
+			if (e.t < since) break;
+			list.add(e);
+		}
+		java.util.Collections.reverse(list);
 		return list;
 	}
 

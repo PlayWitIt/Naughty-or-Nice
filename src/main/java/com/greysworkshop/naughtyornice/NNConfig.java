@@ -16,6 +16,14 @@ public final class NNConfig {
 
 	public static NNConfig INSTANCE = new NNConfig();
 
+	/** The whole mod on or off (the Mods panel's first switch). Off: it watches, records and shows nothing; your lists are kept. */
+	public boolean enabled = true;
+
+	/** Whether the mod is on (see {@link #enabled}). */
+	public static boolean on() {
+		return INSTANCE.enabled;
+	}
+
 	// ---- Looks ----
 	/** Dark theme for the lists screen. */
 	public boolean darkMode = true;
@@ -100,6 +108,12 @@ public final class NNConfig {
 	public int tripStopHealth = 8;
 	/** Keep a log of everything around you (the last 30 minutes always; recordings when you start one). */
 	public boolean eventLog = true;
+	/** Totems players have popped since they last died, after their name. */
+	public boolean totemCounter = true;
+	/** A marker where players logged out while you could see them. */
+	public boolean logoutSpots = true;
+	/** What hit you in your last 30 seconds, on the death screen. */
+	public boolean deathRecap = true;
 	/** A summary of who's online from your lists when you join a server. */
 	public boolean joinSummary = true;
 
@@ -124,6 +138,12 @@ public final class NNConfig {
 	public String whisperCommand = "msg";
 	/** Offer to open share links friends send you in chat. */
 	public boolean openSharedLinks = true;
+
+	// ---- Phone alerts ----
+	/** A Discord webhook link: warnings and pings are posted there too, so they reach your phone. Empty: nothing is sent. */
+	public String phoneWebhook = "";
+	/** Only send them while the game isn't the window you're using. */
+	public boolean phoneOnlyAway = true;
 
 	// ---- Updates ----
 	/** Say when a newer version is out on GitHub (once per game session). */

@@ -3,7 +3,7 @@
 A client-side Fabric mod for Minecraft 1.21.11 that keeps your **Friends** (each with a friend type you name) and a **Nice list**, a
 **Look Into list** and a **Naughty list** of players, with a store-style screen where one click puts someone on a list.
 
-By **PlayWit Creation**.
+By **PlayWit Creations**.
 
 ## Installing
 1. Install [Fabric Loader](https://fabricmc.net/use/) for Minecraft **1.21.11**, plus
@@ -17,13 +17,24 @@ features. To share lists with a friend who has the mod, use **⇄ Share** in the
 
 **Mods panel:** press **Right Shift** on the title screen, the server or world list, or the pause menu, or click
 **Mods panel** at the top left of the title screen. It shows the main switches of every PlayWit mod you have (Naughty or Nice,
-Base Insurance, Container Peek), so you can turn something off before you join a world, and opens each one's full settings.
+Base Insurance, Hoard Eye), so you can turn something off before you join a world, and opens each one's full settings.
+It also has:
+- **Profiles:** save how your switches are set under a name ("Anarchy", "SMP") and pick the servers it's for. Joining one
+  of them sets the switches for you.
+- **Backups:** one click saves everything the mods keep (lists, notes, chat logs, recordings, bases, maps, containers,
+  settings) to config/playwit/backups. Restoring happens the next time you start the game, after what you have now is
+  backed up too.
+- **Stream-safe mode** (**F7** in game, or the switch in the panel): hides coordinates everywhere in the mods, Base
+  Insurance's minimap and map, and the coordinates in F3, while you record or stream.
 
 ## How to use it
 - Press **N** to open it. If you're looking at a player, it opens their page. Press **J** for the chunk trail radar, **B** for Baritone, **Z** to stop Baritone.
 - Every player is shown as a card with their face, a star rating, a **☆** in the corner to make them a friend, and three buttons: **✔ Nice**, **? Look Into** (not
-  sure yet, keep an eye on them) and **✖ Naughty**. Click again to take them off. Every change can be undone from the
-  banner at the top.
+  sure yet, keep an eye on them) and **✖ Naughty**. Click again to take them off. Moving someone who's already on a list
+  (or taking them off) asks first: the button says **Sure?** and the banner asks with a **Yes**, so a slip of the mouse
+  doesn't do it. Every change can be undone from the banner at the top.
+- **Naughty or Nice on/off:** the first switch in Settings (and in the Mods panel) turns the whole mod off. Your lists
+  are kept.
 - **+ Add players** opens a panel where you type one or more names (spaces or commas between them), pick from
   suggestions, add an optional detail and group, and press **Nice list**, **Look Into** or **Naughty list**. Works for
   offline players too.
@@ -234,6 +245,11 @@ happened. `/nn events` opens it.
   landed on another, which the server reports exactly, and the swings just before it); a **Kill feed** with weapons;
   **Players** (kills, deaths, hits dealt and taken, totems, crystals, shots, chat, who they hit most and with what);
   and a **Timeline** of everything, filtered by player or kind.
+- **Replay**: a map of the fight from above. Everyone's position moves along a time slider (or press Play, at up to
+  32× speed). Each hit is drawn as a line from who hit to who was hit, and deaths, totem pops and explosions are marked
+  where they happened. **First hit** jumps to where the fighting started. It shows no coordinates, only a scale.
+- **Death recap**: when you die, the death screen shows who hit you in your last 30 seconds, how often and with what,
+  the totems you popped, and your last hits with the health you had left after each, plus **Save this fight**.
 - **Export CSV** opens in any spreadsheet. Recordings are kept in config/naughtyornice/recordings/&lt;server&gt;/, one line per
   entry (JSON Lines).
 
@@ -340,6 +356,13 @@ sorted by **Most time online** and **Most kills**.
   listed on their page (saved in `screenshots/naughtyornice`).
 
 ## Alerts
+- **Totems popped:** "Steve [3 pops]" on nametags and the tab list: the totems they've popped in front of you since they
+  last died (the server's own totem signal, so every count is real).
+- **Logout spots:** where a player logged out while you could see them, marked on screen until they come back.
+- **Phone alerts:** paste a Discord webhook link in Settings (channel settings, Integrations, Webhooks) and warnings and
+  pings (a naughty player joins or comes near, a threat, someone kills you, Base Insurance damage, theft or a player at
+  your base) are posted there too, so Discord on your phone tells you. By default only while you're away from the
+  game. Messages can't ping anyone, and repeats are held back.
 - **Join summary:** who's online from your lists and groups, once, when you join.
 - **Group alerts:** turn on ♪ on a group's page and you hear that group's own bell when one of them joins or comes
   near.
@@ -376,6 +399,7 @@ is also written to a text file a day in `config/naughtyornice/chatlogs/<server>/
 
 ## Building
 Requires JDK 21. Run `./gradlew build`; the jar goes to `build/libs/`.
+`./gradlew runPanelTest` tests the Mods panel with Base Insurance and Hoard Eye beside it (their jars in run-panel/mods).
 `./gradlew testIntel` checks the chat detectors (coordinates, topics, trash talk) against 146 lines in a few seconds.
-`./gradlew runSelfTest` runs a scripted in-game test (229 checks) that spawns a fake griefer and saves screenshots to
+`./gradlew runSelfTest` runs a scripted in-game test (about 240 checks) that spawns a fake griefer and saves screenshots to
 `run/screenshots/`.

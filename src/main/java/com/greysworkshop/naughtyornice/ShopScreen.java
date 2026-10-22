@@ -219,6 +219,10 @@ public class ShopScreen extends Screen {
 	/** Settings: the words to be alerted about. */
 	private TextFieldWidget alertField;
 	private int alertFieldTop = -1000;
+	/** The Discord webhook link for phone alerts (Settings). */
+	private TextFieldWidget phoneField;
+	private int phoneFieldTop = -1000;
+	private String phoneStatus;
 	/** The Chat check panel is open. */
 	private boolean checking;
 	private double checkScroll;
@@ -229,6 +233,14 @@ public class ShopScreen extends Screen {
 	private String banner;
 	private int bannerColor;
 	private Runnable bannerUndo;
+	/** The banner's link: "Undo", or "Yes" while it's asking to confirm a move. */
+	private String bannerAction = "Undo";
+	/**
+	 * A move between lists waiting for a second click ("player id>NAUGHTY"): moving someone already on a list, or
+	 * taking them off, asks first, so a slip of the mouse doesn't do it.
+	 */
+	private String pendingMove;
+	private long pendingMoveUntil;
 	private long bannerUntil;
 	private boolean confirmForget;
 	private List<Profile> cachedResults;
@@ -529,6 +541,20 @@ public class ShopScreen extends Screen {
 		});
 		addDrawableChild(alertField);
 
+		phoneField = new Box(textRenderer, 0, -100, 100, 10, Text.literal("Discord webhook"));
+		phoneField.setDrawsBackground(false);
+		phoneField.setEditableColor(TEXT);
+		phoneField.setTextShadow(false);
+		phoneField.setMaxLength(200);
+		phoneField.setPlaceholder(Text.literal("https://discord.com/api/webhooks/…").withColor(MUTED));
+		phoneField.setText(NNConfig.INSTANCE.phoneWebhook);
+		phoneField.setChangedListener(text -> {
+			NNConfig.INSTANCE.phoneWebhook = text.strip();
+			NNConfig.save();
+			phoneStatus = text.isBlank() ? null : PhoneAlerts.validUrl(text) ? "Looks right. Send a test to be sure." : "That isn't a Discord webhook link yet.";
+		});
+		addDrawableChild(phoneField);
+
 		String typedCircle = circleField == null ? "" : circleField.getText();
 		circleField = new Box(textRenderer, 0, -100, 100, 10, Text.literal("Circle"));
 		circleField.setDrawsBackground(false);
@@ -732,10 +758,35 @@ public class ShopScreen extends Screen {
 
 	// ---- Actions ----
 
+	/** Whether {@code p}'s button for {@code v} has been clicked once and is waiting to be clicked again. */
+	private boolean confirming(Profile p, Profile.Verdict v) {
+		return p != null && (p.id + ">" + v).equals(pendingMove) && System.currentTimeMillis() < pendingMoveUntil;
+	}
+
+	/**
+	 * True if the move can go ahead now. Someone already on a list (moved to another, or taken off) needs a second
+	 * click: the first one asks, in the banner, with a Yes.
+	 */
+	private boolean confirmed(Profile p, Profile.Verdict buttonOf, String question, Runnable doIt) {
+		if (p.verdict == Profile.Verdict.NONE || confirming(p, buttonOf)) {
+			pendingMove = null;
+			return true;
+		}
+		pendingMove = p.id + ">" + buttonOf;
+		pendingMoveUntil = System.currentTimeMillis() + 6000;
+		// Yes runs the move again with it still pending, so it goes through.
+		flash(question, p.verdict == Profile.Verdict.FRIEND ? FRIEND : verdictColor(p.verdict), doIt);
+		bannerAction = "Yes";
+		return false;
+	}
+
 	private void setVerdict(Profile profile, Profile.Verdict verdict) {
 		Profile.Verdict before = profile.verdict;
 		boolean wasAuto = profile.autoListed;
 		Profile.Verdict target = before == verdict ? Profile.Verdict.NONE : verdict;
+		String question = target == Profile.Verdict.NONE ? "Take " + profile.name + " off your " + verdictWord(before) + " list?"
+				: "Move " + profile.name + " from your " + verdictWord(before) + " list to " + verdictWord(target) + "?";
+		if (!confirmed(profile, verdict, question, () -> setVerdict(profile, verdict))) return;
 		mod.ledger.setVerdict(profile, target, false, null);
 		mod.ledger.save(false);
 		cachedResults = null;
@@ -750,10 +801,22 @@ public class ShopScreen extends Screen {
 		});
 	}
 
+	private String pendingMoveName() {
+		if (pendingMove == null) return "";
+		Profile p = mod.ledger.get(java.util.UUID.fromString(pendingMove.substring(0, pendingMove.indexOf('>'))));
+		return p == null ? "" : p.name;
+	}
+
+	private void cancelMove() {
+		pendingMove = null;
+		if ("Yes".equals(bannerAction)) banner = null;
+	}
+
 	private void flash(String message, int color, Runnable undo) {
 		banner = message;
 		bannerColor = color;
 		bannerUndo = undo;
+		bannerAction = "Undo";
 		bannerUntil = System.currentTimeMillis() + 6000;
 	}
 
@@ -980,7 +1043,7 @@ public class ShopScreen extends Screen {
 		if (speed < 1.5) return "";
 		String[] names = {"S", "SW", "W", "NW", "N", "NE", "E", "SE"};
 		String dir = names[(int) Math.floorMod(Math.round(Math.toDegrees(Math.atan2(-sg.vx, sg.vz)) / 45), 8)];
-		return String.format(Locale.ROOT, "%s at %.0f blocks/s from %d, %d (%s), %s", dir, speed, sg.lastX, sg.lastZ, dimensionName(sg.dimension), ago(sg.until));
+		return String.format(Locale.ROOT, "%s at %.0f blocks/s from %s (%s), %s", dir, speed, ModsPanel.hide(sg.lastX + ", " + sg.lastZ), dimensionName(sg.dimension), ago(sg.until));
 	}
 
 	/** "gg ×12, base ×4, spawn ×3": the biggest few of a count map. */
@@ -1110,6 +1173,8 @@ public class ShopScreen extends Screen {
 				&& detailFieldTop >= BODY && detailFieldTop + 16 <= height);
 		chatField.setVisible(selected == null && tab == Tab.CHAT);
 		alertField.setVisible(tab == Tab.SETTINGS && alertFieldTop >= BODY && alertFieldTop + 16 <= height);
+		// The link is a key to post in your channel: not shown on a stream.
+		phoneField.setVisible(tab == Tab.SETTINGS && phoneFieldTop >= BODY && phoneFieldTop + 16 <= height && !ModsPanel.streamSafe());
 		circleField.setVisible(tab == Tab.SETTINGS && circleFieldTop >= BODY && circleFieldTop + 16 <= height);
 		boolean modal = modal();
 		super.render(context, modal ? -1000 : mouseX, modal ? -1000 : mouseY, delta);
@@ -1254,7 +1319,7 @@ public class ShopScreen extends Screen {
 
 	private void renderBanner(DrawContext context, int mouseX, int mouseY) {
 		if (banner == null || System.currentTimeMillis() > bannerUntil) return;
-		String undo = bannerUndo != null ? "Undo" : null;
+		String undo = bannerUndo != null ? bannerAction : null;
 		String icon = bannerColor == NAUGHTY ? "✖ " : bannerColor == LOOK ? "? " : "✔ ";
 		int extra = (undo != null ? textRenderer.getWidth(undo) + 16 : 0) + 16;
 		String shown = fit(icon + banner, width - 16 - extra);
@@ -1269,7 +1334,7 @@ public class ShopScreen extends Screen {
 			boolean hover = over(mouseX, mouseY, ux - 2, y, textRenderer.getWidth(undo) + 4, 16);
 			context.drawText(textRenderer, Text.literal(undo).styled(s -> s.withUnderline(hover)), ux, y + 4, LINK, false);
 			Runnable run = bannerUndo;
-			hits.add(new Hit(ux - 2, y, ux + textRenderer.getWidth(undo) + 2, y + 16, "undo", () -> {
+			hits.add(new Hit(ux - 2, y, ux + textRenderer.getWidth(undo) + 2, y + 16, undo.equals("Yes") ? "confirm" : "undo", () -> {
 				banner = null;
 				run.run();
 			}));
@@ -1701,6 +1766,8 @@ public class ShopScreen extends Screen {
 
 	/** Puts them in a circle, with undo; the banner offers to pick another circle. */
 	private void makeFriend(Profile p, Friends.Circle circle) {
+		if (p.verdict != Profile.Verdict.FRIEND && !confirmed(p, Profile.Verdict.FRIEND, "Move " + p.name + " from your " + verdictWord(p.verdict)
+				+ " list to Friends?", () -> makeFriend(p, circle))) return;
 		Profile.Verdict before = p.verdict;
 		String beforeCircle = p.circle;
 		boolean wasAuto = p.autoListed;
@@ -1856,7 +1923,9 @@ public class ShopScreen extends Screen {
 		} + p.name;
 		int room = w - 6;
 		Runnable run = () -> setVerdict(p, v);
-		if (p.verdict == v) {
+		if (confirming(p, v)) {
+			pill(context, mouseX, mouseY, x, y, w, 14, firstFit(room, "Sure? Click", "Sure?", "Sure"), verdictColor(v), verdictColor(v), CARD, id, run);
+		} else if (p.verdict == v) {
 			// On this list: an outlined button in the list's colour; clicking takes them off.
 			String label = switch (v) {
 				case NICE -> firstFit(room, "✔ On Nice list", "✔ On Nice", "✔ Nice");
@@ -2341,7 +2410,7 @@ public class ShopScreen extends Screen {
 			roundedBorder(context, x, y, w, h, hover ? HOVER_BG : CARD, hover ? HOVER_BORDER : BORDER);
 			long stayed = Math.max(0, sg.until - sg.time) / 1000;
 			String when = day(sg.time) + ", " + clock(sg.time) + (stayed >= 60 ? " for " + duration((int) stayed) : "");
-			String where = dimensionName(sg.dimension) + " " + sg.x + ", " + sg.y + ", " + sg.z;
+			String where = dimensionName(sg.dimension) + " " + ModsPanel.hide(sg.x + ", " + sg.y + ", " + sg.z);
 			if (Math.abs(sg.lastX - sg.x) + Math.abs(sg.lastZ - sg.z) > 16) where += " → " + sg.lastX + ", " + sg.lastZ;
 			context.drawText(textRenderer, Text.literal(when).styled(s -> s.withBold(true)), x + 6, y + 4, TEXT, false);
 			String copy = "Copy";
@@ -2915,17 +2984,17 @@ public class ShopScreen extends Screen {
 		boolean nice = p.verdict == Profile.Verdict.NICE;
 		boolean look = p.verdict == Profile.Verdict.LOOK;
 		boolean naughty = p.verdict == Profile.Verdict.NAUGHTY;
-		pill(context, mouseX, mouseY, ix, ty, iw, 16, nice ? "✔ On Nice List" : "✔ Add to Nice List",
+		pill(context, mouseX, mouseY, ix, ty, iw, 16, confirming(p, Profile.Verdict.NICE) ? (nice ? "Sure? Take off Nice" : "Sure? Move to Nice") : nice ? "✔ On Nice List" : "✔ Add to Nice List",
 				nice ? CARD : YELLOW, nice ? NICE : YELLOW_EDGE, nice ? NICE : BUTTON_TEXT, "page-nice", () -> setVerdict(p, Profile.Verdict.NICE));
 		ty += 20;
-		pill(context, mouseX, mouseY, ix, ty, iw, 16, look ? "? On Look Into List" : "? Look Into",
+		pill(context, mouseX, mouseY, ix, ty, iw, 16, confirming(p, Profile.Verdict.LOOK) ? (look ? "Sure? Take off Look Into" : "Sure? Move to Look Into") : look ? "? On Look Into List" : "? Look Into",
 				look ? LOOK_BG : SOFT, LOOK, look ? LOOK : TEXT, "page-look", () -> setVerdict(p, Profile.Verdict.LOOK));
 		ty += 20;
-		pill(context, mouseX, mouseY, ix, ty, iw, 16, naughty ? "✖ On Naughty List" : "✖ Add to Naughty List",
+		pill(context, mouseX, mouseY, ix, ty, iw, 16, confirming(p, Profile.Verdict.NAUGHTY) ? (naughty ? "Sure? Take off Naughty" : "Sure? Move to Naughty") : naughty ? "✖ On Naughty List" : "✖ Add to Naughty List",
 				naughty ? CARD : ORANGE, naughty ? NAUGHTY : ORANGE_EDGE, naughty ? NAUGHTY : BUTTON_TEXT, "page-naughty", () -> setVerdict(p, Profile.Verdict.NAUGHTY));
 		ty += 20;
 		if (p.verdict != Profile.Verdict.NONE) {
-			pill(context, mouseX, mouseY, ix, ty, iw, 14, friend ? "No longer a friend" : "Take off lists", CARD, BORDER, TEXT, "page-unsort", () -> setVerdict(p, p.verdict));
+			pill(context, mouseX, mouseY, ix, ty, iw, 14, confirming(p, p.verdict) ? "Sure? Click again" : friend ? "No longer a friend" : "Take off lists", CARD, BORDER, TEXT, "page-unsort", () -> setVerdict(p, p.verdict));
 		}
 		ty += 22;
 
@@ -4004,6 +4073,8 @@ public class ShopScreen extends Screen {
 			applyTheme(v);
 			client.execute(this::clearAndInit);
 		}));
+		options.add(new Option("Naughty or Nice on", "Off: the mod watches, records and shows nothing (your lists, notes and recordings are kept). "
+				+ "Also in the Mods panel: Right Shift on the title screen.", () -> c.enabled, v -> c.enabled = v));
 		options.add(new Option("Remember everyone you see", "Players you see nearby or on the tab list stay in your lists (Offline tab) after they log off.",
 				() -> c.rememberEveryone, v -> c.rememberEveryone = v));
 		options.add(new Option("Marks on nametags", "Green ✔, gold ? or red ✖ before listed players' names above their heads.", () -> c.nametagMarks, v -> c.nametagMarks = v));
@@ -4021,6 +4092,12 @@ public class ShopScreen extends Screen {
 				+ "x or z, with [Send anyway] and [Edit].", () -> c.guardMyCoords, v -> c.guardMyCoords = v));
 		options.add(new Option("Alert on threats against you", "A ping when someone threatens you or your base in chat (\"gonna grief your base\", "
 				+ "\"found your stash\") or whispers you a threat.", () -> c.alertThreats, v -> c.alertThreats = v));
+		options.add(new Option("Totems popped on names", "\"Steve [3 pops]\" on nametags and the tab list: totems they've popped in front of you since they last died.",
+				() -> c.totemCounter, v -> c.totemCounter = v));
+		options.add(new Option("Logout spots", "A marker where a player logged out while you could see them (often at or near their base), until they come back online.",
+				() -> c.logoutSpots, v -> c.logoutSpots = v));
+		options.add(new Option("Death recap", "On the death screen: who hit you in your last 30 seconds, with what, the totems you popped and your last few hits, "
+				+ "with a button to save the fight.", () -> c.deathRecap, v -> c.deathRecap = v));
 		options.add(new Option("Find chunk trails", "Tells old land (someone was there) from fresh land by how its water and lava flow, and finds "
 				+ "the paths players left through fresh land. Press J for the radar.", () -> c.chunkTrails, v -> c.chunkTrails = v));
 		options.add(new Option("Chunk trail radar", "A small map on the right that turns with you: fresh land blue, old land grey, trails amber with "
@@ -4129,7 +4206,9 @@ public class ShopScreen extends Screen {
 	}
 
 	private void renderSettings(DrawContext context, int mouseX, int mouseY) {
-		int w = Math.min(380, width - 16);
+		// The whole width, in two columns when there's room for them.
+		int w = Math.min(860, width - 16);
+		boolean wide = w >= 600;
 		int x = (width - w) / 2;
 		int y0 = BODY + 8 - (int) scroll;
 		int y = y0;
@@ -4139,6 +4218,15 @@ public class ShopScreen extends Screen {
 		// Chat check: how well this server's chat is understood.
 		Diagnostics d = mod.diagnostics;
 		int ch = 62;
+		int fullW = w, disconnectsAt = y, rowEnd = -1;
+		if (wide) {
+			// Chat check and Disconnects side by side.
+			int half = (fullW - 10) / 2;
+			rowEnd = disconnectsCard(context, mouseX, mouseY, x + half + 10, y, fullW - half - 10);
+			// Phone alerts go under the chat check, beside Disconnects.
+			rowEnd = Math.max(rowEnd, phoneCard(context, mouseX, mouseY, x, y + ch + 10, half));
+			w = half;
+		}
 		roundedBorder(context, x, y, w, ch, CARD, d.count(Diagnostics.Kind.UNKNOWN) > 0 ? LOOK : BORDER);
 		context.drawText(textRenderer, Text.literal("Chat check").styled(s -> s.withBold(true)), x + 10, y + 7, TEXT, false);
 		String counts = d.total() == 0 ? "No chat seen yet since the game started."
@@ -4156,9 +4244,12 @@ public class ShopScreen extends Screen {
 		String copy = "Copy report";
 		int cw2 = textRenderer.getWidth(copy) + 14;
 		pill(context, mouseX, mouseY, bx, y + 43, cw2, 14, copy, SOFT, BORDER, TEXT, "check-copy-settings", this::copyCheckReport);
-		y += ch + 10;
-		int disconnectsAt = y;
-		y = disconnectsCard(context, mouseX, mouseY, x, y, w) + 10;
+		y = wide ? rowEnd + 10 : y + ch + 10;
+		w = fullW;
+		if (!wide) {
+			disconnectsAt = y;
+			y = disconnectsCard(context, mouseX, mouseY, x, y, w) + 10;
+		}
 		if (scrollToDisconnects) {
 			scrollToDisconnects = false;
 			scroll = Math.max(0, disconnectsAt - y0 - 4);
@@ -4170,35 +4261,66 @@ public class ShopScreen extends Screen {
 			scroll = Math.max(0, circlesAt - y0 - 4);
 		}
 		List<Option> options = options();
-		int boxH = 14 + 20;
-		for (Option o : options) boxH += 12 + textRenderer.wrapLines(Text.literal(o.help), w - 34).size() * 10 + 6;
+		// The switches: in two columns when wide, the first column taking the first half by height.
+		int cols = wide ? 2 : 1, colW = (w - (cols - 1) * 10) / cols;
+		int[] rowHs = new int[options.size()];
+		int total = 0;
+		for (int i = 0; i < options.size(); i++) {
+			rowHs[i] = 12 + textRenderer.wrapLines(Text.literal(options.get(i).help), colW - 34).size() * 10 + 6;
+			total += rowHs[i];
+		}
+		int split = options.size(), acc = 0;
+		if (cols == 2) {
+			for (int i = 0; i < options.size(); i++) {
+				if (acc + rowHs[i] / 2 > total / 2) {
+					split = i;
+					break;
+				}
+				acc += rowHs[i];
+			}
+		}
+		int colH = 0, h0 = 0;
+		for (int i = 0; i < options.size(); i++) {
+			if (i == split) {
+				colH = Math.max(colH, h0);
+				h0 = 0;
+			}
+			h0 += rowHs[i];
+		}
+		colH = Math.max(colH, h0);
+		int boxH = 14 + 20 + colH;
 		boxH += steppers().size() * 18 + 8;
 		boxH += 46;
 		roundedBorder(context, x, y, w, boxH, CARD, BORDER);
 		int ty = y + 10;
 		stepper(context, mouseX, mouseY, x + 26, ty - 2, sizeStepper());
 		ty += 20;
-		for (Option o : options) {
+		int colTop = ty;
+		for (int i = 0; i < options.size(); i++) {
+			Option o = options.get(i);
+			if (i == split) ty = colTop;
+			int ox = i < split ? x : x + colW + 10;
 			boolean on = o.get.getAsBoolean();
 			int rowY = ty;
-			int helpLines = textRenderer.wrapLines(Text.literal(o.help), w - 34).size();
-			int rowH = 12 + helpLines * 10;
-			boolean hover = over(mouseX, mouseY, x + 4, rowY - 2, w - 8, rowH + 2);
-			if (hover) context.fill(x + 4, rowY - 3, x + w - 4, rowY + rowH + 1, HOVER_BG);
-			roundedBorder(context, x + 10, rowY, 10, 10, on ? LINK : FIELD, on ? LINK : INPUT_BORDER);
-			if (on) text(context, "✔", x + 11, rowY + 1, CARD);
-			context.drawText(textRenderer, Text.literal(o.label).styled(s -> s.withBold(true)), x + 26, rowY + 1, TEXT, false);
+			List<net.minecraft.text.OrderedText> help = textRenderer.wrapLines(Text.literal(o.help), colW - 34);
+			int rowH = 12 + help.size() * 10;
+			boolean hover = over(mouseX, mouseY, ox + 4, rowY - 2, colW - 8, rowH + 2);
+			if (hover) context.fill(ox + 4, rowY - 3, ox + colW - 4, rowY + rowH + 1, HOVER_BG);
+			roundedBorder(context, ox + 10, rowY, 10, 10, on ? LINK : FIELD, on ? LINK : INPUT_BORDER);
+			if (on) text(context, "✔", ox + 11, rowY + 1, CARD);
+			context.drawText(textRenderer, Text.literal(o.label).styled(s -> s.withBold(true)), ox + 26, rowY + 1, TEXT, false);
 			int hy = rowY + 12;
-			for (var line : textRenderer.wrapLines(Text.literal(o.help), w - 34)) {
-				context.drawText(textRenderer, line, x + 26, hy, MUTED, false);
+			for (var line : help) {
+				context.drawText(textRenderer, line, ox + 26, hy, MUTED, false);
 				hy += 10;
 			}
-			hit(x + 4, rowY - 2, w - 8, rowH + 2, "option:" + o.label, () -> {
+			hit(ox + 4, rowY - 2, colW - 8, rowH + 2, "option:" + o.label, () -> {
 				o.set.accept(!on);
 				NNConfig.save();
 			});
 			ty += rowH + 6;
 		}
+		ty = colTop + colH;
 		for (Stepper stepper : steppers()) {
 			stepper(context, mouseX, mouseY, x + 26, ty, stepper);
 			ty += 18;
@@ -4216,6 +4338,9 @@ public class ShopScreen extends Screen {
 		int fieldY = ty;
 		hit(x + 26, fieldY, w - 36, 16, "alert-words", () -> setFocused(alertField));
 		y += boxH + 10;
+
+		// Phone alerts: the same warnings, posted to your own Discord channel.
+		if (!wide) y = phoneCard(context, mouseX, mouseY, x, y, w) + 10;
 
 		// Where things are kept, and every command.
 		link(context, mouseX, mouseY, x, y, "Open the mod's folder", "open-mod-folder", () -> {
@@ -4339,8 +4464,8 @@ public class ShopScreen extends Screen {
 		}
 		for (ChunkTrails.Trail t : mod.ledger.chunkTrails.trails) {
 			String runs = ChunkTrails.compass(t.x2 - t.x1, t.z2 - t.z1) + "–" + ChunkTrails.compass(t.x1 - t.x2, t.z1 - t.z2);
-			rows.add(new IntelRow(t.lastSeen, null, "", String.format(Locale.ROOT, "%,d blocks long, runs %s, %d chunks wide. Ends at %d, %d and %d, %d.",
-					t.length(), runs, t.width, t.x1, t.z1, t.x2, t.z2), java.util.Set.of(), null, null, t));
+			rows.add(new IntelRow(t.lastSeen, null, "", String.format(Locale.ROOT, "%,d blocks long, runs %s, %d chunks wide. Ends at %s and %s.",
+					t.length(), runs, t.width, ModsPanel.hide(t.x1 + ", " + t.z1), ModsPanel.hide(t.x2 + ", " + t.z2)), java.util.Set.of(), null, null, t));
 		}
 		// A line that gave a place and is about something too is one row, with both.
 		Map<String, Integer> placeRows = new HashMap<>();
@@ -4666,7 +4791,7 @@ public class ShopScreen extends Screen {
 					case "end_portal" -> "An end portal was lit";
 					default -> "The dragon died";
 				};
-				tip = List.of(what + (e.who.isEmpty() ? "" : " (" + e.who + ")"), e.x + ", " + e.y + ", " + e.z, ago(e.time) + " · click to copy");
+				tip = List.of(what + (e.who.isEmpty() ? "" : " (" + e.who + ")"), ModsPanel.hide(e.x + ", " + e.y + ", " + e.z), ago(e.time) + " · click to copy");
 				hit(px - 4, pz - 4, 8, 8, "map-event", () -> {
 					client.keyboard.setClipboard(e.x + " " + e.y + " " + e.z);
 					flash("Copied " + e.x + " " + e.y + " " + e.z, NICE, null);
@@ -4683,7 +4808,7 @@ public class ShopScreen extends Screen {
 					tip = List.of(p.name + ": " + howLabel(pl.how).toLowerCase(Locale.ROOT), pl.coords() + " · " + ago(pl.time),
 							pl.how.equals("said") || pl.how.equals("highway") ? "\"" + fit(pl.text, 220) + "\"" : pl.text, "Click to copy");
 					hit(px - 4, pz - 4, 8, 8, "map-place:" + p.name, () -> {
-						client.keyboard.setClipboard(pl.coords().replace(",", ""));
+						client.keyboard.setClipboard(pl.rawCoords().replace(",", ""));
 						flash("Copied " + pl.coords(), NICE, null);
 					});
 				}
@@ -4724,7 +4849,7 @@ public class ShopScreen extends Screen {
 			byte st = mod.ledger.chunkTrails.state(mapDim, bxm >> 4, bzm >> 4);
 			String land = st == ChunkTrails.OLD ? "loaded before you (someone was here)" : st == ChunkTrails.NEW ? "new: first loaded by you"
 					: "can't tell (no water or lava here, or not seen)";
-			String where = String.format(Locale.ROOT, "%d, %d · %s", bxm, bzm, land);
+			String where = ModsPanel.hide(bxm + ", " + bzm) + " · " + land;
 			text(context, where, x + w - 6 - textRenderer.getWidth(where), y + h - 11, 0xFFDDDDDD);
 			if (tip != null) tooltip(mouseX, mouseY, tip.toArray(new String[0]));
 		}
@@ -4841,7 +4966,7 @@ public class ShopScreen extends Screen {
 			String dim = trail != null ? trail.dimension : r.place() != null ? r.place().dimension : r.event().dimension;
 			int px = trail != null ? far[0] : r.place() != null ? r.place().x : r.event().x;
 			int pz = trail != null ? far[1] : r.place() != null ? r.place().z : r.event().z;
-			String coords = trail != null ? px + ", " + pz : r.place() != null ? r.place().coords() : r.event().x + ", " + r.event().y + ", " + r.event().z;
+			String coords = ModsPanel.hide(trail != null ? px + ", " + pz : r.place() != null ? r.place().coords() : r.event().x + ", " + r.event().y + ", " + r.event().z);
 			String where = (trail == null ? "" : trail.away == 0 ? "End: " : "Far end (away from spawn): ") + coords
 					+ (dim.isEmpty() ? " (dimension not said)" : " (" + dimensionName(dim) + ")");
 			context.drawText(textRenderer, Text.literal(where).styled(st -> st.withBold(true)), x + 6, ty, TEXT, false);
@@ -5345,6 +5470,59 @@ public class ShopScreen extends Screen {
 		return y;
 	}
 
+	/** Settings card for phone alerts (a Discord webhook). Returns the y after it. */
+	private int phoneCard(DrawContext context, int mouseX, int mouseY, int x, int y, int w) {
+		NNConfig c = NNConfig.INSTANCE;
+		String help = "Warnings and pings (a naughty player joins or comes near, a threat, someone kills you, Base Insurance damage, theft or "
+				+ "a player at your base) are also posted to a channel in your own Discord server, so your phone tells you. To set it up: "
+				+ "channel settings, Integrations, Webhooks, New Webhook, Copy Webhook URL, and paste it below.";
+		List<net.minecraft.text.OrderedText> lines = textRenderer.wrapLines(Text.literal(help), w - 20);
+		int h = 22 + lines.size() * 10 + 4 + 20 + 22 + (phoneStatus == null ? 0 : 12) + 4;
+		roundedBorder(context, x, y, w, h, CARD, BORDER);
+		boolean set = PhoneAlerts.validUrl(c.phoneWebhook);
+		context.drawText(textRenderer, Text.literal("Phone alerts").styled(st -> st.withBold(true)), x + 10, y + 7, TEXT, false);
+		String state = set ? "On" : "Off: no webhook yet";
+		text(context, state, x + w - 10 - textRenderer.getWidth(state), y + 7, set ? NICE : MUTED);
+		int ty = y + 20;
+		for (var line : lines) {
+			context.drawText(textRenderer, line, x + 10, ty, MUTED, false);
+			ty += 10;
+		}
+		ty += 4;
+		roundedBorder(context, x + 10, ty, w - 20, 16, FIELD, phoneField.isFocused() ? 0xFFE77600 : INPUT_BORDER);
+		if (ModsPanel.streamSafe()) {
+			text(context, set ? "Hidden while stream-safe mode is on" : "", x + 14, ty + 4, MUTED);
+			phoneFieldTop = -1000;
+		} else {
+			phoneField.setX(x + 14);
+			phoneField.setY(ty + 4);
+			phoneField.setWidth(w - 28);
+			phoneFieldTop = ty;
+			int fy = ty;
+			hit(x + 10, fy, w - 20, 16, "phone-field", () -> setFocused(phoneField));
+		}
+		ty += 22;
+		boolean away = c.phoneOnlyAway;
+		boolean hover = over(mouseX, mouseY, x + 8, ty - 2, 260, 14);
+		roundedBorder(context, x + 10, ty, 10, 10, away ? LINK : FIELD, away ? LINK : INPUT_BORDER);
+		if (away) text(context, "✔", x + 11, ty + 1, CARD);
+		String awayLabel = "Only while I'm away from the game";
+		text(context, awayLabel, x + 26, ty + 1, hover ? LINK : TEXT);
+		hit(x + 8, ty - 2, textRenderer.getWidth(awayLabel) + 22, 14, "phone-away", () -> {
+			c.phoneOnlyAway = !c.phoneOnlyAway;
+			NNConfig.save();
+		});
+		String test = "Send a test";
+		int tw = textRenderer.getWidth(test) + 14;
+		pill(context, mouseX, mouseY, x + w - 10 - tw, ty - 2, tw, 14, test, SOFT, BORDER, TEXT, "phone-test", () -> {
+			phoneStatus = "Sending…";
+			PhoneAlerts.test(c.phoneWebhook, result -> phoneStatus = result);
+		});
+		ty += 16;
+		if (phoneStatus != null) textTrim(context, phoneStatus, x + 10, ty + 2, w - 20, phoneStatus.startsWith("Sent") || phoneStatus.startsWith("Looks") ? NICE : MUTED);
+		return y + h;
+	}
+
 	// ---- Friend circles ----
 
 	/**
@@ -5639,6 +5817,8 @@ public class ShopScreen extends Screen {
 			if (click.x() >= hit.x0 && click.x() < hit.x1 && click.y() >= hit.y0 && click.y() < hit.y1) {
 				if (!"search".equals(hit.label)) setFocused(null);
 				if (!"forget".equals(hit.label)) confirmForget = false;
+				// Anything but the same button again (or Yes) cancels a move waiting to be confirmed.
+				if (pendingMove != null && !"confirm".equals(hit.label) && !hit.label.endsWith(":" + pendingMoveName()) && !hit.label.startsWith("page-")) cancelMove();
 				if (!"group-delete".equals(hit.label)) confirmDeleteGroup = false;
 				hit.run.run();
 				return true;

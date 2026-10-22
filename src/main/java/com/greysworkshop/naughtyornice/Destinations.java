@@ -40,7 +40,7 @@ public final class Destinations {
 		}
 
 		public String coords() {
-			return hasY() ? x + ", " + y + ", " + z : x + ", " + z;
+			return ModsPanel.hide(hasY() ? x + ", " + y + ", " + z : x + ", " + z);
 		}
 	}
 
