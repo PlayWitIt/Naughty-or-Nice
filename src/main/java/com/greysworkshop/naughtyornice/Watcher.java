@@ -194,6 +194,22 @@ public final class Watcher {
 	 * and who killed them with what. {@code killer} is null when no player did it.
 	 */
 	private void died(MinecraftClient client, String victim, String killer, String weapon, String message, String cause) {
+		if (victim != null) {
+			// Where it happened, if the victim was in view.
+			EventLog.Entry death = EventLog.entry(EventLog.Type.DEATH, killer == null ? "" : killer, victim,
+					(weapon == null || weapon.isBlank() ? "" : "with " + weapon.replaceAll("^\\[(.*)]$", "$1") + " · ") + message);
+			death.dim = client.world.getRegistryKey().getValue().toString();
+			PlayerEntity seen = null;
+			for (PlayerEntity p : client.world.getPlayers()) {
+				if (p.getGameProfile().name().equalsIgnoreCase(victim)) seen = p;
+			}
+			if (seen != null) {
+				death.x = seen.getX();
+				death.y = seen.getY();
+				death.z = seen.getZ();
+			}
+			EventLog.add(death);
+		}
 		if (victim == null || victim.equalsIgnoreCase(client.player.getGameProfile().name())) return;
 		UUID id = playerId(client, victim);
 		long now = System.currentTimeMillis();
@@ -225,6 +241,12 @@ public final class Watcher {
 		st.totemPops++;
 		st.lastTotemPop = System.currentTimeMillis();
 		ledger.markDirty();
+		EventLog.Entry e = EventLog.entry(EventLog.Type.TOTEM, player.getGameProfile().name(), "", "health after: " + player.getHealth());
+		e.dim = client.world.getRegistryKey().getValue().toString();
+		e.x = player.getX();
+		e.y = player.getY();
+		e.z = player.getZ();
+		EventLog.add(e);
 	}
 
 	private boolean seenKill(String victim, String killer) {
@@ -350,6 +372,7 @@ public final class Watcher {
 				if (id != null && !id.equals(client.player.getUuid())) {
 					Profile p = ledger.getOrCreate(id, who);
 					PlayerStats.note(p.stats.advancements, what, 80);
+					EventLog.add(EventLog.entry(EventLog.Type.ADVANCEMENT, p.name, "", what));
 					if (hasKey(args[1], "advancements.nether.summon_wither.title") || what.equalsIgnoreCase("Withering Heights")) summonedWither(p, System.currentTimeMillis());
 					ledger.markDirty();
 				}
@@ -488,6 +511,7 @@ public final class Watcher {
 	 */
 	private void chatLine(MinecraftClient client, UUID senderId, String sender, String text, boolean whisper, String whisperTarget) {
 		long now = System.currentTimeMillis();
+		EventLog.add(EventLog.entry(whisper ? EventLog.Type.WHISPER : EventLog.Type.CHAT, sender, whisperTarget == null ? "" : whisperTarget, text));
 		boolean me = (senderId != null && senderId.equals(client.player.getUuid()))
 				|| sender.equalsIgnoreCase(client.player.getGameProfile().name());
 		if (me) {
@@ -778,6 +802,7 @@ public final class Watcher {
 		long dt = lastSecond == 0 ? 1000 : Math.max(0, Math.min(3000, now - lastSecond));
 		lastSecond = now;
 		ledger.activity.addMyTime(dt);
+		if (NNConfig.INSTANCE.eventLog) EventHooks.positions(client);
 		chatLogger.tick(now);
 		NNConfig config = NNConfig.INSTANCE;
 		String dimension = world.getRegistryKey().getValue().toString();
@@ -870,6 +895,7 @@ public final class Watcher {
 			}
 			if (!onlineKnown || online.contains(id) || me) continue;
 			chatLogger.feedSystem(entry.getProfile().name(), "joined", now);
+			EventLog.add(EventLog.entry(EventLog.Type.JOIN, entry.getProfile().name(), "", ""));
 			if (config.trackLinks) ledger.links.joined(id, now);
 			Profile profile = ledger.get(id);
 			if (profile == null) continue;
@@ -930,6 +956,7 @@ public final class Watcher {
 						st.addPlace(sg.lastX, sg.lastY, sg.lastZ, sg.dimension, "logout", "Logged out here while you could see them", now);
 					}
 					chatLogger.feedSystem(gone.name, "left", now);
+					EventLog.add(EventLog.entry(EventLog.Type.LEAVE, gone.name, "", ""));
 				}
 				if (gone != null && gone.notifyJoin) {
 					Alerts.chat(Text.literal(gone.name).formatted(verdictFormat(gone), Formatting.BOLD)

@@ -74,6 +74,44 @@ public final class Commands {
 					if (!CoordGuard.sendHeld()) c.getSource().sendError(Text.literal("No message is being held."));
 					return 1;
 				}))
+				.then(literal("events").executes(c -> {
+					NaughtyOrNiceClient.INSTANCE.openLater(new EventScreen());
+					return 1;
+				}))
+				.then(literal("baritone").executes(c -> {
+					NaughtyOrNiceClient.INSTANCE.openLater(new BaritoneScreen());
+					return 1;
+				}))
+				.then(literal("download")
+						.then(literal("start").executes(c -> {
+							String why = WorldDownload.start(MinecraftClient.getInstance());
+							if (why != null) c.getSource().sendError(Text.literal(why));
+							return 1;
+						}))
+						.then(literal("stop").executes(c -> {
+							WorldDownload.stop(MinecraftClient.getInstance());
+							return 1;
+						})))
+				.then(literal("trip").then(literal("stop").executes(c -> {
+					SmartTravel.stop();
+					c.getSource().sendFeedback(Alerts.prefix().append(Text.literal("Stopped.").formatted(Formatting.GRAY)));
+					return 1;
+				})))
+				.then(literal("roam")
+						.then(literal("stop").executes(c -> {
+							HighwayRoam.stop("you stopped it");
+							return 1;
+						}))
+						.then(literal("resume").executes(c -> {
+							HighwayRoam.resume();
+							return 1;
+						}))
+						.then(literal("follow").then(argument("x", com.mojang.brigadier.arguments.IntegerArgumentType.integer())
+								.then(argument("z", com.mojang.brigadier.arguments.IntegerArgumentType.integer()).executes(c -> {
+									HighwayRoam.follow(com.mojang.brigadier.arguments.IntegerArgumentType.getInteger(c, "x"),
+											com.mojang.brigadier.arguments.IntegerArgumentType.getInteger(c, "z"));
+									return 1;
+								})))))
 				.then(literal("radar").executes(c -> {
 					NNConfig.INSTANCE.trailRadar = !NNConfig.INSTANCE.trailRadar;
 					if (NNConfig.INSTANCE.trailRadar) NNConfig.INSTANCE.chunkTrails = true;

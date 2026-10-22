@@ -103,8 +103,12 @@ public final class ChunkTrails {
 	}
 
 	/** A chunk arrived. Flowing liquid already in it means it's old land (unless you generated it yourself). */
+	/** For the self-test: one chunk whose every reading is written to the log. */
+	static long debugKey = Long.MIN_VALUE;
+
 	public void chunkLoaded(String dimension, WorldChunk chunk) {
 		long key = chunk.getPos().toLong();
+		if (key == debugKey) NaughtyOrNiceClient.LOGGER.info("[SELFTEST] chunk {} arrived, flowing liquid in it: {}", chunk.getPos(), hasFlowing(chunk));
 		if (hasFlowing(chunk)) {
 			pristine.remove(key);
 			if (!mine(dimension).contains(key) && states(dimension).get(key) != NEW && states(dimension).put(key, OLD) != OLD) {
@@ -124,6 +128,11 @@ public final class ChunkTrails {
 		return false;
 	}
 
+	/** Whether a loaded chunk arrived with no flowing liquid, so liquid starting to flow there would show it fresh. */
+	boolean watching(int x, int z) {
+		return pristine.contains(ChunkPos.toLong(x, z));
+	}
+
 	public void chunkUnloaded(int x, int z) {
 		pristine.remove(ChunkPos.toLong(x, z));
 	}
@@ -135,6 +144,7 @@ public final class ChunkTrails {
 	public void blockChanged(MinecraftClient client, String dimension, BlockPos pos, BlockState state) {
 		if (!FLOWING.test(state)) return;
 		long key = ChunkPos.toLong(pos.getX() >> 4, pos.getZ() >> 4);
+		if (key == debugKey) NaughtyOrNiceClient.LOGGER.info("[SELFTEST] flowing update at {}, chunk watched: {}", pos.toShortString(), pristine.contains(key));
 		if (!pristine.contains(key) || client.world == null) return;
 		for (PlayerEntity player : client.world.getPlayers()) {
 			if (Math.abs(player.getBlockX() - pos.getX()) <= 24 && Math.abs(player.getBlockZ() - pos.getZ()) <= 24) return;
@@ -508,7 +518,8 @@ public final class ChunkTrails {
 	public void clear() {
 		states.clear();
 		mine.clear();
-		pristine.clear();
+		// Not the chunks watched for flowing: that's about what's loaded right now, not saved data, and every chunk
+		// that arrives sets its own entry anyway.
 		trails = new ArrayList<>();
 		newTrails.clear();
 		dirty = mineDirty = false;

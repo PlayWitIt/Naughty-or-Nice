@@ -1,6 +1,5 @@
 package com.greysworkshop.naughtyornice;
 
-import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.text.ClickEvent;
 import net.minecraft.text.Text;
@@ -33,7 +32,7 @@ public final class CoordGuard {
 
 	public static boolean allowChat(String message) {
 		// Baritone reads "#goto 1200 -3400" itself and never sends it, when it's installed.
-		if (message.startsWith("#") && FabricLoader.getInstance().isModLoaded("baritone")) return true;
+		if (message.startsWith("#") && BaritoneBridge.present()) return true;
 		return allow(message, message);
 	}
 

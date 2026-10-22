@@ -87,6 +87,7 @@ public final class SelfTest {
 
 	private static void tick(MinecraftClient client) {
 		afterDisconnect(client);
+		if (downloadCheck(client)) return;
 		if (client.player == null || client.world == null || client.getServer() == null) return;
 		if (frames == framesAtLastStep) return;
 		framesAtLastStep = frames;
@@ -94,6 +95,11 @@ public final class SelfTest {
 		NaughtyOrNiceClient mod = NaughtyOrNiceClient.INSTANCE;
 		Ledger ledger = mod.ledger;
 		switch (tick) {
+			case 58 -> {
+				// The same starting spot every run (the test world remembers where the player last was).
+				IntegratedServer server = client.getServer();
+				server.execute(() -> server.getCommandManager().parseAndExecute(server.getCommandSource(), "tp @a 0.5 -60 0.5 -90 0"));
+			}
 			case 60 -> {
 				log("Clearing old lists and seeding players");
 				for (Profile p : List.copyOf(ledger.all())) ledger.forget(p);
@@ -1210,10 +1216,22 @@ public final class SelfTest {
 				check("a corridor of old land through fresh land is a trail", trailTests());
 				log("Pouring water 4 chunks away, in land that had none");
 				IntegratedServer server = client.getServer();
-				BlockPos at = client.player.getBlockPos().add(64, 0, 0);
+				// A chunk 4 away with no liquid in it yet (earlier runs left their water in the saved world).
+				BlockPos at = null;
+				for (int k = 0; k < 64 && at == null; k++) {
+					double angle = k * Math.PI / 32;
+					BlockPos p = client.player.getBlockPos().add((int) (Math.cos(angle) * 64), 0, (int) (Math.sin(angle) * 64));
+					var chunk = client.world.getChunkManager().getWorldChunk(p.getX() >> 4, p.getZ() >> 4);
+					if (chunk != null && ledger.chunkTrails.watching(p.getX() >> 4, p.getZ() >> 4) && chunk.getFluidState(p).isEmpty()
+							&& ledger.chunkTrails.state(client.world.getRegistryKey().getValue().toString(), p.getX() >> 4, p.getZ() >> 4) == 0) at = p;
+				}
+				if (at == null) at = client.player.getBlockPos().add(64, 0, 0);
+				log("Pouring at " + at.toShortString() + " (chunk " + (at.getX() >> 4) + ", " + (at.getZ() >> 4) + ")");
+				ChunkTrails.debugKey = net.minecraft.util.math.ChunkPos.toLong(at.getX() >> 4, at.getZ() >> 4);
 				waterAt = at;
+				BlockPos pour = at;
 				server.execute(() -> server.getPlayerManager().getPlayerList().get(0).getEntityWorld()
-						.setBlockState(at, net.minecraft.block.Blocks.WATER.getDefaultState()));
+						.setBlockState(pour, net.minecraft.block.Blocks.WATER.getDefaultState()));
 			}
 			case 1250 -> {
 				String dim = client.world.getRegistryKey().getValue().toString();
@@ -1246,12 +1264,105 @@ public final class SelfTest {
 			}
 			case 1326 -> check("the Intel map opens", screen(client).testClick("intel-view:Map"));
 			case 1332 -> screenshot(client, "60_intel_map");
-			case 1335 -> {
+			case 1333 -> check("the map switches to heat", screen(client).testClick("map-heat"));
+			case 1337 -> screenshot(client, "61_heat_map");
+			case 1339 -> {
 				client.setScreen(null);
 				ledger.chunkTrails.clear();
+				// ---- World download: a gold block and a sign beside you, saved, then opened again later ----
+				IntegratedServer server = client.getServer();
+				BlockPos gold = client.player.getBlockPos().add(2, 0, 0);
+				BlockPos sign = client.player.getBlockPos().add(2, 0, 1);
+				downloadGold = gold;
+				downloadSign = sign;
+				server.execute(() -> {
+					var world = server.getPlayerManager().getPlayerList().get(0).getEntityWorld();
+					world.setBlockState(gold, net.minecraft.block.Blocks.GOLD_BLOCK.getDefaultState());
+					world.setBlockState(sign, net.minecraft.block.Blocks.OAK_SIGN.getDefaultState());
+					if (world.getBlockEntity(sign) instanceof net.minecraft.block.entity.SignBlockEntity be) {
+						be.setText(be.getFrontText().withMessage(0, Text.literal("NN download test")), true);
+						be.markDirty();
+						world.updateListeners(sign, world.getBlockState(sign), world.getBlockState(sign), 3);
+					}
+				});
+			}
+			case 1341 -> check("a download starts when asked", WorldDownload.start(client) == null && WorldDownload.active());
+			case 1343 -> {
+				WorldDownload.stop(client);
+				downloadName = WorldDownload.name();
+				check("...and saves what's loaded (" + WorldDownload.chunks() + " chunks)", WorldDownload.chunks() > 20 && !WorldDownload.active());
+			}
+			// ---- Baritone: its screen, its settings, a trip, a highway roam ----
+			case 1344 -> {
+				check("Baritone is found", BaritoneBridge.present());
+				BaritoneBridge.setBool("allowParkour", true);
+				boolean on = Boolean.TRUE.equals(BaritoneBridge.bool("allowParkour"));
+				BaritoneBridge.setBool("allowParkour", false);
+				check("...its settings can be read and changed", on && Boolean.FALSE.equals(BaritoneBridge.bool("allowParkour")));
+				client.setScreen(new BaritoneScreen());
+			}
+			case 1347 -> screenshot(client, "62_baritone_go");
+			case 1349 -> ((BaritoneScreen) client.currentScreen).testPage(2);
+			case 1352 -> screenshot(client, "63_baritone_highway");
+			case 1354 -> {
+				client.setScreen(null);
+				BlockPos to = client.player.getBlockPos().add(0, 0, 40);
+				tripFrom = client.player.getBlockPos();
+				check("a trip is handed to Baritone", BaritoneBridge.run("goto " + to.getX() + " " + to.getY() + " " + to.getZ()));
+			}
+			case 1356 -> {
+				log("Baritone goal: " + BaritoneBridge.goal() + ", pathing " + BaritoneBridge.isPathing());
+				check("...with the goal set", BaritoneBridge.goal().contains("z=" + (tripFrom.getZ() + 40)));
+			}
+			case 1370 -> {
+				double moved = Math.sqrt(client.player.getBlockPos().getSquaredDistance(tripFrom));
+				log("Moved " + String.format(java.util.Locale.ROOT, "%.1f", moved) + " blocks");
+				check("...and it walks there (" + (int) moved + " blocks so far)", moved >= 3);
+				BaritoneBridge.run("stop");
+				HighwayRoam.axis = HighwayRoam.AXES[0];
+				HighwayRoam.elytra = false;
+				HighwayRoam.distance = 300;
+				HighwayRoam.height = Integer.MIN_VALUE;
+				String why = HighwayRoam.start(client);
+				check("a highway roam starts (" + (why == null ? HighwayRoam.target() : why) + ")", why == null && HighwayRoam.active());
+			}
+			case 1385 -> {
+				log("Roam goal: " + BaritoneBridge.goal());
+				check("...towards a point on the highway", BaritoneBridge.goal().contains(HighwayRoam.target().split(", ")[0]));
+				HighwayRoam.stop("test over");
+				check("...and stops", !HighwayRoam.active());
+				IntegratedServer server = client.getServer();
+				server.execute(() -> server.getCommandManager().parseAndExecute(server.getCommandSource(), "tp @a 0.5 -60 0.5 -90 0"));
 			}
 			// ---- A real disconnect, by "another mod" (this test): recorded with who did it and who was near ----
-			case 1340 -> {
+			// ---- The event log: the griefer's fight earlier in this test, read back ----
+			case 1388 -> {
+				java.util.Set<String> players = new java.util.HashSet<>();
+				for (Profile p : ledger.all()) players.add(p.name.toLowerCase(java.util.Locale.ROOT));
+				players.add(client.player.getGameProfile().name().toLowerCase(java.util.Locale.ROOT));
+				EventReport r = new EventReport(EventLog.blackBox(), players);
+				String me = client.player.getGameProfile().name();
+				log("Event log: " + r.entries.size() + " entries, first hit " + (r.firstHit == null ? "none" : r.firstHit.actor + " -> " + r.firstHit.target + " (" + r.firstHit.detail + ")"));
+				check("the fight's first hit is found (the griefer on you)", r.firstHit != null && r.firstHit.actor.equals(GRIEFER) && r.firstHit.target.equals(me));
+				check("...with what he held", r.firstHit != null && r.firstHit.detail.contains("End Crystal"));
+				check("the kill is in the kill feed", r.kills.stream().anyMatch(k -> k.actor.equals(GRIEFER) && k.target.equals(me)));
+				check("totem pops and positions are logged", r.entries.stream().anyMatch(e -> e.type == EventLog.Type.TOTEM && e.actor.equals(GRIEFER))
+						&& r.entries.stream().anyMatch(e -> e.type == EventLog.Type.POSITION && e.actor.equals(GRIEFER) && e.located()));
+				try {
+					java.nio.file.Path saved = EventLog.saveLast(30, "self-test");
+					List<EventLog.Entry> back = EventLog.load(saved);
+					java.nio.file.Path csv = saved.resolveSibling("self-test.csv");
+					EventLog.exportCsv(back, csv);
+					check("saving the last 30 minutes keeps every entry (" + back.size() + ")", back.size() >= r.entries.size() - 5 && back.size() > 20);
+					check("...and it exports to CSV", java.nio.file.Files.readAllLines(csv).size() == back.size() + 1);
+				} catch (java.io.IOException e) {
+					check("saving the last 30 minutes (" + e.getMessage() + ")", false);
+				}
+				client.setScreen(new EventScreen());
+			}
+			case 1392 -> screenshot(client, "65_events");
+			case 1394 -> client.setScreen(null);
+			case 1395 -> {
 				log("Disconnecting on purpose");
 				disconnectedAt = System.currentTimeMillis();
 				client.getNetworkHandler().getConnection().disconnect(Text.literal("[AutoLog] " + GRIEFER + " came near"));
@@ -1276,6 +1387,7 @@ public final class SelfTest {
 	}
 
 	private static BlockPos waterAt;
+	private static BlockPos tripFrom;
 
 	/** For the radar test: lets a chunk be old again, though the test marked it fresh first. */
 	private static void unmine(ChunkTrails trails, String dim, int x, int z) {
@@ -1365,8 +1477,50 @@ public final class SelfTest {
 				&& e.detail.contains("SelfTest"));
 		check("...with who was near", e != null && e.nearby.stream().anyMatch(n -> n.name.equals(GRIEFER)));
 		check("...and the player in the reason picked out", e != null && Disconnects.namedInReason(e) != null);
+		if (downloadName != null) {
+			// Open the downloaded world, to see the gold block and sign really are in it.
+			WorldDownload.flush();
+			log("Opening the downloaded world \"" + downloadName + "\"");
+			checkingDownload = System.currentTimeMillis();
+			client.createIntegratedServerLoader().start(downloadName, () -> {});
+			return;
+		}
+		finish(client);
+	}
+
+	private static void finish(MinecraftClient client) {
 		log("DONE: " + passed + " passed, " + failed + " failed");
 		client.scheduleStop();
+	}
+
+	private static BlockPos downloadGold, downloadSign;
+	private static String downloadName;
+	private static long checkingDownload;
+	private static boolean downloadScreenLogged;
+
+	/** While the downloaded world is open: once it's loaded, its blocks are compared, then the test finishes. */
+	private static boolean downloadCheck(MinecraftClient client) {
+		if (checkingDownload == 0) return false;
+		boolean timedOut = System.currentTimeMillis() - checkingDownload > 60_000;
+		long waited = System.currentTimeMillis() - checkingDownload;
+		if (waited > 10_000 && !downloadScreenLogged) {
+			downloadScreenLogged = true;
+			log("Waiting on screen: " + (client.currentScreen == null ? "none" : client.currentScreen.getClass().getName()
+					+ " \"" + client.currentScreen.getTitle().getString() + "\""));
+			screenshot(client, "64_download_opening");
+		}
+		if (!timedOut && (client.world == null || client.player == null || client.world.getChunkManager().getWorldChunk(downloadGold.getX() >> 4, downloadGold.getZ() >> 4) == null)) return true;
+		checkingDownload = 0;
+		boolean opened = !timedOut && client.world != null;
+		check("the downloaded world opens", opened);
+		boolean goldOk = opened && client.world.getBlockState(downloadGold).isOf(net.minecraft.block.Blocks.GOLD_BLOCK);
+		check("...with the gold block where it was", goldOk);
+		String signText = opened && client.world.getBlockEntity(downloadSign) instanceof net.minecraft.block.entity.SignBlockEntity be
+				? be.getFrontText().getMessage(0, false).getString() : "";
+		check("...and the sign's text (" + signText + ")", signText.equals("NN download test"));
+		downloadName = null;
+		finish(client);
+		return true;
 	}
 
 	private static int mediumWidth;

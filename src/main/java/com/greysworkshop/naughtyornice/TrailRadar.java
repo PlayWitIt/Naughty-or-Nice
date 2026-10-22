@@ -19,7 +19,7 @@ public final class TrailRadar {
 	private static final int SIZE = 112;
 	/** Chunks from the middle to the edge. */
 	private static final int SPAN = 32;
-	private static final int FRESH = 0x302E6BFF, OLD_LAND = 0x50A0A0A0, TRAIL = 0xFFFFB020, BACK = 0xB0101418, EDGE = 0xFF3A4048;
+	private static final int FRESH = 0x602E6BFF, OLD_LAND = 0x80A0A0A0, UNKNOWN_DOT = 0x60FFFFFF, TRAIL = 0xFFFFB020, BACK = 0xB0101418, EDGE = 0xFF3A4048;
 
 	/** The last analysis, refreshed by the watcher every two seconds. */
 	static List<int[]> patches = new ArrayList<>();
@@ -56,8 +56,14 @@ public final class TrailRadar {
 		for (int i = -reach; i <= reach; i++) {
 			for (int j = -reach; j <= reach; j++) {
 				byte s = trails.state(dim, pcx + i, pcz + j);
-				if (s == 0) continue;
 				int bx = (int) Math.round((pcx + i) * 16 - me.x), bz = (int) Math.round((pcz + j) * 16 - me.z);
+				if (s == 0) {
+					// Loaded, but nothing in it to tell by: dotted, so it's clearly "looked, can't tell", not "never seen".
+					if (client.world.getChunkManager().isChunkLoaded(pcx + i, pcz + j)) {
+						context.fill(bx + 6, bz + 6, bx + 10, bz + 10, UNKNOWN_DOT);
+					}
+					continue;
+				}
 				context.fill(bx, bz, bx + 16, bz + 16, s == ChunkTrails.NEW ? FRESH : OLD_LAND);
 			}
 		}
@@ -110,7 +116,9 @@ public final class TrailRadar {
 			ty += 10;
 		}
 		// The key.
-		context.drawTextWithShadow(font, "§9■§7 fresh §8■§7 old §6■§7 trail", x0, y0 - 10, 0xFFFFFFFF);
+		// The key, in words.
+		context.drawTextWithShadow(font, "§9■§7 new to you  §7■§7 loaded before", x0, y0 - 20, 0xFFFFFFFF);
+		context.drawTextWithShadow(font, "§f·§7 can't tell  §6■§7 trail", x0, y0 - 10, 0xFFFFFFFF);
 	}
 
 	/** Old land all around and no fresh land in sight: you can't see where it ends. */
