@@ -39,7 +39,7 @@ import java.util.function.Consumer;
 public class ShopScreen extends Screen {
 	public enum Tab {
 		ALL("All"), NEARBY("Nearby"), ONLINE("Online"), OFFLINE("Offline"), FRIENDS("Friends"), NICE("Nice list"), LOOK("Look Into"), NAUGHTY("Naughty list"),
-		GROUPS("Groups"), ACTIVITY("Activity"), CHAT("Chat"), SETTINGS("Settings");
+		GROUPS("Groups"), ACTIVITY("Activity"), INTEL("Intel"), CHAT("Chat"), SETTINGS("Settings");
 
 		final String label;
 
@@ -935,6 +935,40 @@ public class ShopScreen extends Screen {
 		return top + (n > 1 ? " ×" + n : "");
 	}
 
+	/** How a place is known, for people. */
+	static String howLabel(String how) {
+		return switch (how) {
+			case "wither" -> "Summoned a wither";
+			case "logout" -> "Logged out here";
+			case "highway" -> "Highway";
+			default -> "Wrote";
+		};
+	}
+
+	/** "Griefing 4, Stashes & bases 2", from topic counts. */
+	private static String topicsOf(Map<String, Integer> counts) {
+		List<Map.Entry<String, Integer>> entries = new ArrayList<>(counts.entrySet());
+		entries.sort(Map.Entry.<String, Integer>comparingByValue().reversed());
+		List<String> parts = new ArrayList<>();
+		for (Map.Entry<String, Integer> e : entries) {
+			try {
+				parts.add(ChatIntel.Topic.valueOf(e.getKey()).label + " " + e.getValue());
+			} catch (IllegalArgumentException ignored) {
+				// A topic from a newer version.
+			}
+		}
+		return String.join(", ", parts);
+	}
+
+	/** "W at 33 blocks/s from 1200, -400", from how they were moving when they left your view; "" if standing still. */
+	private static String heading(Profile.Sighting sg) {
+		double speed = Math.hypot(sg.vx, sg.vz);
+		if (speed < 1.5) return "";
+		String[] names = {"S", "SW", "W", "NW", "N", "NE", "E", "SE"};
+		String dir = names[(int) Math.floorMod(Math.round(Math.toDegrees(Math.atan2(-sg.vx, sg.vz)) / 45), 8)];
+		return String.format(Locale.ROOT, "%s at %.0f blocks/s from %d, %d (%s), %s", dir, speed, sg.lastX, sg.lastZ, dimensionName(sg.dimension), ago(sg.until));
+	}
+
 	/** "gg ×12, base ×4, spawn ×3": the biggest few of a count map. */
 	private static String topN(Map<String, Integer> map, int n) {
 		List<Map.Entry<String, Integer>> entries = new ArrayList<>(map.entrySet());
@@ -1033,6 +1067,7 @@ public class ShopScreen extends Screen {
 		context.fill(0, 0, width, height, PAGE);
 		if (tab == Tab.SETTINGS) renderSettings(context, mouseX, mouseY);
 		else if (tab == Tab.ACTIVITY && selected == null) renderActivity(context, mouseX, mouseY);
+		else if (tab == Tab.INTEL && selected == null) renderIntel(context, mouseX, mouseY);
 		else if (selected != null) renderDetail(context, mouseX, mouseY);
 		else if (tab == Tab.CHAT) renderChat(context, mouseX, mouseY);
 		else if (tab == Tab.GROUPS && openGroup == null) renderGroups(context, mouseX, mouseY);
@@ -1172,6 +1207,7 @@ public class ShopScreen extends Screen {
 				case LOOK -> "Look";
 				case GROUPS -> "Groups";
 				case ACTIVITY -> "Activity";
+				case INTEL -> "Intel";
 				case CHAT -> "Chat";
 				case SETTINGS -> "Settings";
 			};
@@ -1835,7 +1871,7 @@ public class ShopScreen extends Screen {
 
 	private double maxScroll() {
 		if (selected == null && tab == Tab.CHAT) return chatMaxScroll;
-		int top = selected != null || tab == Tab.SETTINGS || tab == Tab.ACTIVITY ? BODY : BODY + 17;
+		int top = selected != null || tab == Tab.SETTINGS || tab == Tab.ACTIVITY || tab == Tab.INTEL ? BODY : BODY + 17;
 		return Math.max(0, contentHeight - (height - top));
 	}
 
@@ -2059,6 +2095,8 @@ public class ShopScreen extends Screen {
 		row(rows, "Time in view", st.inViewMs >= 1000 ? span(st.inViewMs) : "");
 		row(rows, "Time near you", p.secondsNear > 0 ? duration(p.secondsNear) + " (within " + NNConfig.INSTANCE.nearRadius + " blocks)" : "");
 		row(rows, "Last up close", st.lastInView > 0 ? ago(st.lastInView) : "");
+		Profile.Sighting lastSeen = p.lastSighting();
+		if (lastSeen != null) row(rows, "Left heading", heading(lastSeen));
 		row(rows, "Closest to you", st.closest >= 0 ? String.format(Locale.ROOT, "%.1f blocks", st.closest) : "");
 		row(rows, "Travelled in view", st.travelled >= 1 ? String.format(Locale.ROOT, "%,.0f blocks", st.travelled) : "");
 		row(rows, "Top speed", st.topSpeed >= 0.5 ? String.format(Locale.ROOT, "%.1f blocks/s (%.0f km/h)", st.topSpeed, st.topSpeed * 3.6) : "");
@@ -2087,17 +2125,20 @@ public class ShopScreen extends Screen {
 		row(rows, "Named most by", topN(st.mentionedBy, 3));
 		row(rows, "Says your name", st.mentionsOfYou > 0 ? st.mentionsOfYou + (st.mentionsOfYou == 1 ? " time" : " times") : "");
 		row(rows, "Favourite words", topN(st.topWords, 5));
+		row(rows, "Talks about", topicsOf(st.topics));
 		row(rows, "All caps", st.messages >= 10 && st.capsMessages > 0 ? percent(st.capsMessages, st.messages) + " of messages" : "");
 		row(rows, "Questions", st.messages >= 10 && st.questions > 0 ? percent(st.questions, st.messages) + " of messages" : "");
 		boxes.add(new StatBox("Chat", rows, ""));
 
 		rows = new ArrayList<>();
-		for (int i = st.coordsPosted.size() - 1; i >= 0 && rows.size() < 6; i--) {
-			PlayerStats.Note n = st.coordsPosted.get(i);
-			row(rows, ago(n.time), n.text);
+		for (int i = st.places.size() - 1; i >= 0 && rows.size() < 8; i--) {
+			PlayerStats.Place pl = st.places.get(i);
+			row(rows, howLabel(pl.how) + ", " + ago(pl.time), pl.coords() + (pl.dimension.isEmpty() ? "" : " (" + dimensionName(pl.dimension) + ")")
+					+ (pl.how.equals("said") || pl.how.equals("highway") ? ": \"" + pl.text + "\"" : ""));
 		}
-		if (st.coordsPosted.size() > 6) row(rows, "", "and " + (st.coordsPosted.size() - 6) + " more (the last 15 are kept)");
-		boxes.add(new StatBox("Coordinates they posted", rows, "Lines where they wrote two or more 3-digit numbers. Read them yourself: not every one is a place."));
+		if (st.places.size() > 8) row(rows, "", "and " + (st.places.size() - 8) + " more on the Intel tab");
+		boxes.add(new StatBox("Places they gave away", rows, "Only certain ones: coordinates they wrote (any common way: x/z labels, x y z, 12k, highway "
+				+ "distances), where they logged out in front of you, and where they summoned a wither. Copy them from the Intel tab."));
 
 		rows = new ArrayList<>();
 		for (int i = st.linksPosted.size() - 1; i >= 0 && rows.size() < 5; i--) {
@@ -2621,7 +2662,12 @@ public class ShopScreen extends Screen {
 			facts.add("Maybe the same person as " + top.other().name + " (" + String.join(", ", top.reasons()) + ")"
 					+ (alts.size() > 1 ? " and " + (alts.size() - 1) + " more, see Stats" : ""));
 		}
-		if (!p.stats.coordsPosted.isEmpty()) facts.add("Posted coordinates in chat " + p.stats.coordsPosted.size() + (p.stats.coordsPosted.size() == 1 ? " time" : " times") + ", see Stats");
+		if (!p.stats.places.isEmpty()) {
+			PlayerStats.Place pl = p.stats.places.get(p.stats.places.size() - 1);
+			facts.add("Gave away a place " + ago(pl.time) + ": " + pl.coords() + (pl.dimension.isEmpty() ? "" : " (" + dimensionName(pl.dimension) + ")")
+					+ " (" + howLabel(pl.how).toLowerCase(Locale.ROOT) + ")" + (p.stats.places.size() > 1 ? ", " + (p.stats.places.size() - 1) + " more in Stats" : ""));
+		}
+		if (p.stats.topics.containsKey("THREAT")) facts.add("Has made threats in chat (" + p.stats.topics.get("THREAT") + "×), see Intel");
 		Profile.Sighting last = p.lastSighting();
 		if (last != null) {
 			String near = fromBase(last.dimension, last.lastX, last.lastZ);
@@ -3916,6 +3962,25 @@ public class ShopScreen extends Screen {
 
 	private record Option(String label, String help, BooleanSupplier get, Consumer<Boolean> set) {}
 
+	/** Every /nn command and what it does, for the bottom of Settings. */
+	private static final String[][] COMMANDS = {
+			{"/nn", "Open this screen (or N; look at a player first for their page)"},
+			{"/nn who <name>", "Open a player's page"},
+			{"/nn add", "Add players by name"},
+			{"/nn nice | look | naughty <name>", "Put someone on a list"},
+			{"/nn friend <name> [type]", "Make someone a friend, of a friend type"},
+			{"/nn unsort <name>", "Take someone off your lists"},
+			{"/nn group <name> <group>", "Put someone in a group"},
+			{"/nn friends | groups | chat | intel", "Open that tab"},
+			{"/nn chat <name>", "A player's chat log"},
+			{"/nn share | import", "Share your lists, or open a friend's"},
+			{"/nn open <link>", "Open a share link"},
+			{"/nn check", "The chat check (lines the mod couldn't read)"},
+			{"/nn disconnects", "Why you were disconnected, and who was near"},
+			{"/nn sendanyway", "Send a message the coordinate guard held back"},
+			{"/nn settings", "Open Settings"},
+	};
+
 	private List<Option> options() {
 		NNConfig c = NNConfig.INSTANCE;
 		List<Option> options = new ArrayList<>();
@@ -3935,7 +4000,22 @@ public class ShopScreen extends Screen {
 				() -> c.noteLookInto, v -> c.noteLookInto = v));
 		options.add(new Option("Warning sound", "Play a low note with warnings.", () -> c.warnSounds, v -> c.warnSounds = v));
 		options.add(new Option("Killers go on the Naughty list", "Anyone not on a list who kills you is added automatically (you can undo it).", () -> c.autoNaughtyKillers, v -> c.autoNaughtyKillers = v));
-		options.add(new Option("Read the chat", "Friendly words (thanks, gg, np) count for players; trash talk counts against them.", () -> c.watchChat, v -> c.watchChat = v));
+		options.add(new Option("Read the chat", "Friendly words (thanks, gg, np) count for players; trash talk aimed at someone (\"you're trash\", \"kys\", "
+				+ "\"gg ez\") counts against them. Ordinary words like \"trash can\" never do.", () -> c.watchChat, v -> c.watchChat = v));
+		options.add(new Option("Guard my coordinates", "Holds your own chat message or whisper back when it gives away coordinates, a base name or your own "
+				+ "x or z, with [Send anyway] and [Edit].", () -> c.guardMyCoords, v -> c.guardMyCoords = v));
+		options.add(new Option("Alert on threats against you", "A ping when someone threatens you or your base in chat (\"gonna grief your base\", "
+				+ "\"found your stash\") or whispers you a threat.", () -> c.alertThreats, v -> c.alertThreats = v));
+		options.add(new Option("Ping on any coordinates", "A ping whenever anyone posts coordinates. They're always listed on the Intel tab either way.",
+				() -> c.pingAllCoords, v -> c.pingAllCoords = v));
+		for (ChatIntel.Topic t : ChatIntel.Topic.values()) {
+			if (t == ChatIntel.Topic.THREAT) continue;
+			options.add(new Option("Ping on talk about " + t.label.toLowerCase(Locale.ROOT), "A ping when anyone talks about " + t.about
+					+ ". Always listed on the Intel tab either way.", () -> c.topicPings.contains(t.name()), v -> {
+						c.topicPings.remove(t.name());
+						if (v) c.topicPings.add(t.name());
+					}));
+		}
 		options.add(new Option("Log chat of listed players", "Everything said around anyone on your lists is saved as conversations on their page.", () -> c.chatLog, v -> c.chatLog = v));
 		options.add(new Option("Chat tab shows everyone", "Off: the Chat tab's All shows only players on a list or in a group (and you).",
 				() -> c.chatShowEveryone, v -> c.chatShowEveryone = v));
@@ -4117,7 +4197,16 @@ public class ShopScreen extends Screen {
 		hit(x + 26, fieldY, w - 36, 16, "alert-words", () -> setFocused(alertField));
 		y += boxH + 10;
 
-		link(context, mouseX, mouseY, x, y, "Open chat log folder", "open-chat-folder", () -> {
+		// Where things are kept, and every command.
+		link(context, mouseX, mouseY, x, y, "Open the mod's folder", "open-mod-folder", () -> {
+			try {
+				Files.createDirectories(NNConfig.dir());
+			} catch (java.io.IOException ignored) {
+				// Opening will just fail quietly.
+			}
+			Util.getOperatingSystem().open(NNConfig.dir());
+		});
+		link(context, mouseX, mouseY, x + textRenderer.getWidth("Open the mod's folder") + 16, y, "Open chat logs", "open-chat-folder", () -> {
 			try {
 				Files.createDirectories(mod.chatLogger.folder());
 			} catch (java.io.IOException ignored) {
@@ -4126,12 +4215,18 @@ public class ShopScreen extends Screen {
 			Util.getOperatingSystem().open(mod.chatLogger.folder());
 		});
 		y += 14;
-		for (var line : textRenderer.wrapLines(Text.literal("Your lists are saved per server in config/naughtyornice/lists, chat logs in config/naughtyornice/chatlogs. "
-				+ "Shared lists are saved in config/naughtyornice/shared. "
-				+ "Commands: /nn, /nn add, /nn friends, /nn chat, /nn groups, /nn share, /nn import, /nn check, /nn disconnects, /nn friend <name> [type], "
-				+ "/nn nice <name>, /nn look <name>, /nn naughty <name>, /nn unsort <name>, /nn group <name> <group>, /nn chat <name>."), w)) {
-			context.drawText(textRenderer, line, x, y, MUTED, false);
-			y += 10;
+		y = wrapped(context, "In config/naughtyornice: lists/ (your lists, per server), chatlogs/ (conversations and all chat), shared/ (shared lists). "
+				+ "Screenshots go in screenshots/naughtyornice.", x, y, w, MUTED, 3) + 8;
+		context.drawText(textRenderer, Text.literal("Commands").styled(st -> st.withBold(true)), x, y, TEXT, false);
+		y += 12;
+		int cmdW = 0;
+		for (String[] cmd : COMMANDS) cmdW = Math.max(cmdW, textRenderer.getWidth(cmd[0]));
+		cmdW = Math.min(cmdW + 10, w / 2);
+		for (String[] cmd : COMMANDS) {
+			textTrim(context, cmd[0], x, y, cmdW - 6, LINK);
+			var lines = textRenderer.wrapLines(Text.literal(cmd[1]), Math.max(60, w - cmdW));
+			for (int i = 0; i < lines.size(); i++) context.drawText(textRenderer, lines.get(i), x + cmdW, y + i * 10, MUTED, false);
+			y += Math.max(1, lines.size()) * 10 + 1;
 		}
 		context.disableScissor();
 		contentHeight = y - y0 + 10;
@@ -4174,7 +4269,229 @@ public class ShopScreen extends Screen {
 		return players < 0 ? "not enough yet" : "about " + Math.round(players) + " online";
 	}
 
-	private void renderActivity(DrawContext context, int mouseX, int mouseY) {
+	// ---- Intel: places given away, world events, and what's being talked about ----
+
+	private enum IntelFilter {
+		ALL("Everything"), PLACES("Places"), WORLD("World events"), THREAT("Threats"), STASH("Stashes & bases"), GRIEF("Griefing"),
+		DUPE("Duping"), HACKS("Hacks & exploits"), TRADE("Trading"), MEETUP("Meeting up"), PVP("PvP"), ALTS("Alts");
+
+		final String label;
+
+		IntelFilter(String label) {
+			this.label = label;
+		}
+
+		ChatIntel.Topic topic() {
+			for (ChatIntel.Topic t : ChatIntel.Topic.values()) {
+				if (t.name().equals(name())) return t;
+			}
+			return null;
+		}
+	}
+
+	private IntelFilter intelFilter = IntelFilter.ALL;
+
+	/** One line on the Intel tab: a place someone gave away, a world event, or a line of chat about something. */
+	private record IntelRow(long time, Profile who, String sender, String text, java.util.Set<ChatIntel.Topic> topics, PlayerStats.Place place,
+			ServerActivity.WorldEvent event) {}
+
+	/** Topics of each chat line, worked out once per line. */
+	private final Map<Profile.Line, java.util.Set<ChatIntel.Topic>> lineTopics = new java.util.IdentityHashMap<>();
+	private List<IntelRow> intelRows;
+	private int intelAt = -1, intelFeedAt = -1, intelEventsAt = -1;
+
+	private List<IntelRow> intelRows() {
+		int at = mod.ledger.changes(), feedAt = mod.chatLogger.feedVersion(), eventsAt = mod.ledger.activity.version();
+		if (intelRows != null && at == intelAt && feedAt == intelFeedAt && eventsAt == intelEventsAt) return intelRows;
+		List<IntelRow> rows = new ArrayList<>();
+		java.util.Set<String> names = new java.util.HashSet<>();
+		for (Profile p : mod.ledger.all()) {
+			names.add(p.name.toLowerCase(Locale.ROOT));
+			for (PlayerStats.Place pl : p.stats.places) rows.add(new IntelRow(pl.time, p, p.name, pl.text, java.util.Set.of(), pl, null));
+		}
+		for (ServerActivity.WorldEvent e : mod.ledger.activity.events) {
+			if (e.who.isEmpty()) rows.add(new IntelRow(e.time, null, "", "", java.util.Set.of(), null, e));
+		}
+		// A line that gave a place and is about something too is one row, with both.
+		Map<String, Integer> placeRows = new HashMap<>();
+		for (int i = 0; i < rows.size(); i++) {
+			IntelRow r = rows.get(i);
+			if (r.place() != null && !r.place().how.equals("logout") && !r.place().how.equals("wither")) {
+				placeRows.put(r.sender().toLowerCase(Locale.ROOT) + "\n" + r.text(), i);
+			}
+		}
+		List<Profile.Line> feed = mod.chatLogger.feed();
+		if (lineTopics.size() > feed.size() + 500) lineTopics.clear();
+		for (Profile.Line line : feed) {
+			if (line.system || line.me) continue;
+			java.util.Set<ChatIntel.Topic> topics = lineTopics.computeIfAbsent(line, l -> ChatIntel.topics(l.text, names));
+			if (topics.isEmpty()) continue;
+			String text = line.text.length() > 160 ? line.text.substring(0, 160) + "…" : line.text;
+			Integer same = placeRows.get(line.sender.toLowerCase(Locale.ROOT) + "\n" + text);
+			if (same != null && Math.abs(rows.get(same).time() - line.time) < 10_000) {
+				IntelRow r = rows.get(same);
+				rows.set(same, new IntelRow(r.time(), r.who(), r.sender(), r.text(), topics, r.place(), null));
+				continue;
+			}
+			rows.add(new IntelRow(line.time, mod.ledger.byName(line.sender), line.sender, line.text, topics, null, null));
+		}
+		rows.sort(Comparator.comparingLong(IntelRow::time).reversed());
+		intelRows = rows;
+		intelAt = at;
+		intelFeedAt = feedAt;
+		intelEventsAt = eventsAt;
+		return rows;
+	}
+
+	private static boolean intelMatches(IntelRow r, IntelFilter f) {
+		return switch (f) {
+			case ALL -> true;
+			case PLACES -> r.place() != null;
+			case WORLD -> r.event() != null || r.place() != null && r.place().how.equals("wither");
+			default -> r.topics().contains(f.topic());
+		};
+	}
+
+	/** "2,400 blocks NE of Home" for the nearest base (the other dimension too, at 8 to 1); "" without bases. */
+	private static String nearestBase(String dimension, int x, int z) {
+		if (!dimension.isEmpty()) {
+			String same = fromBase(dimension, x, z);
+			if (!same.isEmpty()) return same;
+			if (dimension.endsWith("the_nether")) return fromBase("minecraft:overworld", x * 8, z * 8);
+			if (dimension.endsWith("overworld")) return fromBase("minecraft:the_nether", x / 8, z / 8);
+			return "";
+		}
+		String over = fromBase("minecraft:overworld", x, z);
+		if (!over.isEmpty()) return over + " (if in the overworld)";
+		String nether = fromBase("minecraft:the_nether", x, z);
+		return nether.isEmpty() ? "" : nether + " (if in the nether)";
+	}
+
+	private void renderIntel(DrawContext context, int mouseX, int mouseY) {
+		List<IntelRow> all = intelRows();
+		String q = query.toLowerCase(Locale.ROOT);
+		int x = 8;
+		int y0 = BODY + 8 - (int) scroll;
+		int y = y0;
+		context.enableScissor(0, BODY, width, height);
+		big(context, "Intel", x, y, TEXT, 1.4f);
+		y += 18;
+		y = wrapped(context, "Places players gave away (coordinates they wrote, where they logged out in front of you, where they summoned a wither), "
+				+ "things the server tells everyone (withers, end portals), and the last week of chat sorted by what it's about. Only what's certain is shown.",
+				x, y, width - 16, MUTED, 3) + 8;
+
+		// Filters, with how many of each.
+		int sideW = 130;
+		int sy = y;
+		context.drawText(textRenderer, Text.literal("Show").styled(st -> st.withBold(true)), x, sy, TEXT, false);
+		sy += 12;
+		for (IntelFilter f : IntelFilter.values()) {
+			long n = all.stream().filter(r -> intelMatches(r, f)).count();
+			boolean on = intelFilter == f;
+			boolean hover = over(mouseX, mouseY, x, sy - 1, sideW, 11);
+			int color = f == IntelFilter.THREAT ? NAUGHTY : f == IntelFilter.PLACES || f == IntelFilter.WORLD ? ORANGE : LINK;
+			context.drawText(textRenderer, Text.literal((on ? "› " : "") + f.label).styled(st -> st.withBold(on).withUnderline(hover)), x, sy,
+					hover ? HOVER_LINK : on ? TEXT : color, false);
+			String count = String.valueOf(n);
+			text(context, count, x + sideW - 8 - textRenderer.getWidth(count), sy, MUTED);
+			hits.add(new Hit(x, Math.max(sy - 1, BODY), x + sideW, sy + 10, "intel-filter:" + f.name(), () -> {
+				intelFilter = f;
+				scroll = 0;
+			}));
+			sy += 11;
+		}
+
+		// The rows.
+		int rx = x + sideW + 8;
+		int rw = width - rx - 10;
+		int shown = 0;
+		for (IntelRow r : all) {
+			if (!intelMatches(r, intelFilter)) continue;
+			if (!q.isEmpty() && !r.sender().toLowerCase(Locale.ROOT).contains(q) && !r.text().toLowerCase(Locale.ROOT).contains(q)) continue;
+			if (shown++ >= 300) break;
+			boolean located = r.place() != null || r.event() != null;
+			boolean twoLines = !r.text().isEmpty() && textRenderer.getWidth(r.text()) > rw - 12;
+			int h = 16 + (located ? 11 : 0) + (r.text().isEmpty() ? 0 : twoLines ? 20 : 10);
+			if (y + h >= BODY && y <= height) intelRow(context, mouseX, mouseY, r, rx, y, rw, h, twoLines);
+			y += h + 4;
+		}
+		if (shown == 0) {
+			y = wrapped(context, all.isEmpty() ? "Nothing yet. Places, world events and chat about stashes, griefing, threats and more show up here as they happen."
+					: "Nothing matches.", rx, y, rw, MUTED, 3);
+		}
+		context.disableScissor();
+		contentHeight = Math.max(y, sy) - y0 + 10;
+		scrollbar(context, BODY);
+	}
+
+	private void intelRow(DrawContext context, int mouseX, int mouseY, IntelRow r, int x, int y, int w, int h, boolean twoLines) {
+		boolean threat = r.topics().contains(ChatIntel.Topic.THREAT);
+		roundedBorder(context, x, y, w, h, CARD, threat ? NAUGHTY : BORDER);
+		int ty = y + 4;
+		// When, who, what about.
+		String when = day(r.time()) + " " + clock(r.time());
+		text(context, when, x + 6, ty, MUTED);
+		int tx = x + 6 + textRenderer.getWidth(when) + 6;
+		if (r.who() != null || !r.sender().isEmpty()) {
+			Profile p = r.who();
+			String name = (p != null && p.verdict != Profile.Verdict.NONE ? verdictMark(p.verdict) : "") + r.sender();
+			boolean hover = p != null && over(mouseX, mouseY, tx, ty - 1, textRenderer.getWidth(name), 11);
+			int color = p == null || p.verdict == Profile.Verdict.NONE ? (hover ? HOVER_LINK : LINK) : verdictColor(p.verdict);
+			context.drawText(textRenderer, Text.literal(name).styled(st -> st.withBold(true).withUnderline(hover)), tx, ty, color, false);
+			if (p != null) hits.add(new Hit(tx, ty - 1, tx + textRenderer.getWidth(name), ty + 10, "intel-who:" + r.sender(), () -> open(p)));
+			tx += textRenderer.getWidth(Text.literal(name).styled(st -> st.withBold(true))) + 6;
+		}
+		List<String> tags = new ArrayList<>();
+		if (r.place() != null) tags.add(howLabel(r.place().how));
+		if (r.event() != null) tags.add(switch (r.event().kind) {
+			case "wither" -> "A wither spawned";
+			case "end_portal" -> "An end portal was lit";
+			case "dragon" -> "The dragon died";
+			default -> r.event().kind;
+		});
+		for (ChatIntel.Topic t : r.topics()) tags.add(t.label);
+		for (String tag : tags) {
+			int color = tag.equals("Threats") ? NAUGHTY : r.place() != null || r.event() != null ? ORANGE : LOOK;
+			text(context, "[" + tag + "]", tx, ty, color);
+			tx += textRenderer.getWidth("[" + tag + "]") + 4;
+		}
+		ty += 12;
+		// Where, and how far from your bases and you.
+		if (r.place() != null || r.event() != null) {
+			String dim = r.place() != null ? r.place().dimension : r.event().dimension;
+			int px = r.place() != null ? r.place().x : r.event().x, pz = r.place() != null ? r.place().z : r.event().z;
+			String coords = r.place() != null ? r.place().coords() : r.event().x + ", " + r.event().y + ", " + r.event().z;
+			String where = coords + (dim.isEmpty() ? " (dimension not said)" : " (" + dimensionName(dim) + ")");
+			context.drawText(textRenderer, Text.literal(where).styled(st -> st.withBold(true)), x + 6, ty, TEXT, false);
+			int wx = x + 6 + textRenderer.getWidth(Text.literal(where).styled(st -> st.withBold(true))) + 6;
+			List<String> notes = new ArrayList<>();
+			String near = nearestBase(dim, px, pz);
+			if (!near.isEmpty()) notes.add(near);
+			if (client.player != null && client.world != null && (dim.isEmpty() || dim.equals(client.world.getRegistryKey().getValue().toString()))) {
+				notes.add(String.format(Locale.ROOT, "%,d blocks from you", (int) Math.hypot(px - client.player.getX(), pz - client.player.getZ())));
+			}
+			String copy = "Copy";
+			int cx = x + w - 6 - textRenderer.getWidth(copy);
+			textTrim(context, String.join(" · ", notes), wx, ty, cx - wx - 6, near.startsWith("in your base") ? NAUGHTY : MUTED);
+			String clip = coords.replace(",", "");
+			link(context, mouseX, mouseY, cx, ty, copy, "intel-copy:" + r.time() + ":" + px, () -> {
+				client.keyboard.setClipboard(clip);
+				flash("Copied " + clip, NICE, null);
+			});
+			ty += 11;
+		}
+		if (!r.text().isEmpty()) {
+			int color = threat ? NAUGHTY : TEXT;
+			if (twoLines) {
+				var lines = textRenderer.wrapLines(Text.literal(r.text()), w - 12);
+				for (int i = 0; i < Math.min(2, lines.size()); i++) context.drawText(textRenderer, lines.get(i), x + 6, ty + i * 10, color, false);
+			} else {
+				text(context, r.text(), x + 6, ty, color);
+			}
+		}
+	}
+
+		private void renderActivity(DrawContext context, int mouseX, int mouseY) {
 		ServerActivity a = mod.ledger.activity;
 		int w = Math.min(720, width - 16);
 		int x = (width - w) / 2;
@@ -4489,7 +4806,7 @@ public class ShopScreen extends Screen {
 			new Board("Most totems popped", p -> p.stats.totemPops, n -> String.valueOf(n)),
 			new Board("Chattiest", p -> p.stats.messages, n -> n + (n == 1 ? " msg" : " msgs")),
 			new Board("Most advancements", p -> p.stats.advancements.size(), n -> String.valueOf(n)),
-			new Board("Most coordinates posted", p -> p.stats.coordsPosted.size(), n -> String.valueOf(n)),
+			new Board("Most places given away", p -> p.stats.places.size(), n -> String.valueOf(n)),
 			new Board("Fastest seen", p -> Math.round(p.stats.topSpeed * 10), n -> String.format(Locale.ROOT, "%.1f b/s", n / 10.0)),
 	};
 

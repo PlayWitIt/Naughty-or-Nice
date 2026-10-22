@@ -70,6 +70,14 @@ public final class Commands {
 							+ " again. Newer versions still get a note.").formatted(Formatting.GRAY)));
 					return 1;
 				}))))
+				.then(literal("sendanyway").executes(c -> {
+					if (!CoordGuard.sendHeld()) c.getSource().sendError(Text.literal("No message is being held."));
+					return 1;
+				}))
+				.then(literal("intel").executes(c -> {
+					NaughtyOrNiceClient.INSTANCE.openLater(new ShopScreen(ShopScreen.Tab.INTEL, null));
+					return 1;
+				}))
 				.then(literal("disconnects").executes(c -> {
 					NaughtyOrNiceClient.INSTANCE.openLater(new ShopScreen().withDisconnects());
 					return 1;

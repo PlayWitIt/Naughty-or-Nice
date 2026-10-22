@@ -140,9 +140,65 @@ public final class PlayerStats {
 	public Map<String, Integer> topWords = new HashMap<>();
 	public int capsMessages;
 	public int questions;
-	/** Lines where they posted coordinates, and links (Discord invites...), newest last. */
+	/** 1.8.0 kept the lines themselves; they're read again with the stricter parser into {@link #places} when loaded. */
 	public List<Note> coordsPosted = new ArrayList<>();
+	/** Links they posted (Discord invites...), newest last. */
 	public List<Note> linksPosted = new ArrayList<>();
+	/** Places they gave away: coordinates they wrote, or where they summoned a wither. Newest last. */
+	public List<Place> places = new ArrayList<>();
+	/** What they talk about ({@link ChatIntel.Topic} names), counted. */
+	public Map<String, Integer> topics = new HashMap<>();
+
+	/** A place a player gave away, and how we know. */
+	public static final class Place {
+		public long time;
+		public int x, z;
+		/** {@link Integer#MIN_VALUE} if they gave no height. */
+		public int y = Integer.MIN_VALUE;
+		/** "minecraft:the_nether"..., or "" if they didn't say. */
+		public String dimension = "";
+		/** How we know: "said" (they wrote it), "highway" (a distance along one), "wither" (they summoned one there). */
+		public String how = "said";
+		/** The line they wrote, or what happened. */
+		public String text = "";
+
+		public boolean hasY() {
+			return y != Integer.MIN_VALUE;
+		}
+
+		public String coords() {
+			return hasY() ? x + ", " + y + ", " + z : x + ", " + z;
+		}
+	}
+
+	/** Notes a place, unless it's the same one they gave in the last 10 minutes. */
+	public boolean addPlace(int x, int y, int z, String dimension, String how, String text, long time) {
+		for (int i = places.size() - 1; i >= 0 && i >= places.size() - 10; i--) {
+			Place p = places.get(i);
+			if (p.x == x && p.z == z && time - p.time < 600_000) return false;
+		}
+		Place p = new Place();
+		p.time = time;
+		p.x = x;
+		p.y = y;
+		p.z = z;
+		p.dimension = dimension == null ? "" : dimension;
+		p.how = how;
+		p.text = text.length() > 160 ? text.substring(0, 160) + "…" : text;
+		places.add(p);
+		while (places.size() > 40) places.remove(0);
+		return true;
+	}
+
+	/** Every place in a line they wrote. Returns how many were new. */
+	public int placesFrom(String text, long time) {
+		int added = 0;
+		for (ChatIntel.Coord c : ChatIntel.coords(text)) {
+			String how = c.kind() == ChatIntel.CoordKind.HIGHWAY ? "highway" : "said";
+			if (addPlace(c.x(), c.y(), c.z(), c.dimension(), how, text, time)) added++;
+		}
+		return added;
+	}
 
 	/** Something with a time: an advancement, a line they posted. */
 	public static final class Note {
@@ -448,6 +504,19 @@ public final class PlayerStats {
 		if (mentionedBy == null) mentionedBy = new HashMap<>();
 		if (topWords == null) topWords = new HashMap<>();
 		if (coordsPosted == null) coordsPosted = new ArrayList<>();
+		if (places == null) places = new ArrayList<>();
+		places.removeIf(pl -> pl == null);
+		for (Place pl : places) {
+			if (pl.dimension == null) pl.dimension = "";
+			if (pl.how == null) pl.how = "said";
+			if (pl.text == null) pl.text = "";
+		}
+		if (topics == null) topics = new HashMap<>();
+		// 1.8.0 noted any line with two 3-digit numbers; only the ones that really are places carry over.
+		for (Note n : coordsPosted) {
+			if (n != null && n.text != null) placesFrom(n.text, n.time);
+		}
+		coordsPosted.clear();
 		if (linksPosted == null) linksPosted = new ArrayList<>();
 	}
 }

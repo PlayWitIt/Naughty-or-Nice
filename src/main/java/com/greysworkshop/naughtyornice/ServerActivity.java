@@ -37,7 +37,30 @@ public final class ServerActivity {
 	/** Times you joined this server, since 1.8.0 (for how often things happen just after you join by chance). */
 	public int myJoins;
 
-	private transient boolean dirty;
+	/**
+	 * Things the server tells every player about, wherever they happen: a wither finishing its spawn, an end portal
+	 * being lit, the dragon dying. Each comes with its exact position. Newest last.
+	 */
+	public java.util.List<WorldEvent> events = new java.util.ArrayList<>();
+
+	public static final class WorldEvent {
+		public long time;
+		/** "wither", "end_portal" or "dragon". */
+		public String kind = "";
+		public String dimension = "";
+		public int x, y, z;
+		/** Who did it, when that's certain (one player got the matching advancement just before); "" otherwise. */
+		public String who = "";
+	}
+
+	public void event(WorldEvent e) {
+		events.add(e);
+		while (events.size() > 300) events.remove(0);
+		dirty = true;
+		version++;
+	}
+
+		private transient boolean dirty;
 	private transient int version;
 
 	public static int cell(DayOfWeek day, int hour) {
@@ -161,7 +184,15 @@ public final class ServerActivity {
 			try (Reader reader = Files.newBufferedReader(file)) {
 				ServerActivity loaded = GSON.fromJson(reader, ServerActivity.class);
 				if (loaded != null && loaded.minutes != null && loaded.minutes.length == CELLS && loaded.playerMinutes != null
-						&& loaded.playerMinutes.length == CELLS && loaded.peak != null && loaded.peak.length == CELLS) return loaded;
+						&& loaded.playerMinutes.length == CELLS && loaded.peak != null && loaded.peak.length == CELLS) {
+					if (loaded.events == null) loaded.events = new java.util.ArrayList<>();
+					loaded.events.removeIf(e -> e == null || e.kind == null);
+					for (WorldEvent e : loaded.events) {
+						if (e.dimension == null) e.dimension = "";
+						if (e.who == null) e.who = "";
+					}
+					return loaded;
+				}
 			} catch (IOException | RuntimeException e) {
 				NaughtyOrNiceClient.LOGGER.error("Could not read {}", file, e);
 			}
@@ -171,7 +202,7 @@ public final class ServerActivity {
 
 	public void save(Path file, boolean force) {
 		if (!dirty && !force) return;
-		if (since == 0) return;
+		if (since == 0 && events.isEmpty()) return;
 		try {
 			Files.createDirectories(file.getParent());
 			try (Writer writer = Files.newBufferedWriter(file)) {

@@ -25,7 +25,7 @@ features. To share lists with a friend who has the mod, use **⇄ Share** in the
   offline players too.
 - Search finds players by name, their details, their groups, or anything they've said in chat.
 - Tabs: All, Nearby, Online, **Offline**, **Friends**, Nice list, **Look Into** (your Look Into list, then players whose behaviour
-  suggests a list), Naughty list, **Groups**, **Chat**, Settings.
+  suggests a list), Naughty list, **Groups**, **Activity**, **Intel**, **Chat**, Settings.
 - Everyone you see (nearby or on the tab list) is remembered, so they're still listed after logging off. Players who
   never did anything are forgotten after 180 days unseen (configurable).
 - Light and dark themes: the ☾ / ☀ button at the top (dark by default).
@@ -33,8 +33,8 @@ features. To share lists with a friend who has the mod, use **⇄ Share** in the
   Settings → **Screen size**: Small fits the most (about 900 wide), Medium is in between (about 680), Large is the
   biggest (about 540, never so big the panels don't fit). Whole-pixel scales are used where they're close, so text
   stays sharp.
-- Commands: `/nn`, `/nn add`, `/nn friends`, `/nn chat`, `/nn groups`, `/nn share`, `/nn import`, `/nn open <link>`,
-  `/nn disconnects`, `/nn friend <name> [type]`, `/nn nice <name>`, `/nn look <name>`, `/nn naughty <name>`,
+- Commands: `/nn`, `/nn add`, `/nn friends`, `/nn chat`, `/nn groups`, `/nn intel`, `/nn share`, `/nn import`, `/nn open <link>`,
+  `/nn disconnects`, `/nn sendanyway`, `/nn friend <name> [type]`, `/nn nice <name>`, `/nn look <name>`, `/nn naughty <name>`,
   `/nn unsort <name>`, `/nn group <name> <group>`, `/nn who <name>`, `/nn chat <name>`, `/nn settings`.
 
 ## Friends
@@ -137,7 +137,7 @@ Things other players do around you build their rating and activity history:
 | Hitting you, hurting or killing your pets | Friendly chat (thanks, gg, np...) |
 | Killing or attacking other players | |
 | Breaking blocks in your bases (needs Base Insurance) | |
-| Trash talk in chat | |
+| Trash talk aimed at someone ("you're trash", "kys", "gg ez"; never ordinary words like "trash can") | |
 
 Listed players get a green ✔, gold ? or red ✖ on their nametag and in the tab list, followed by their group tag. You
 get a warning (chat + sound) when a Naughty-list player comes into view or joins the server, and a quiet chat note for
@@ -149,6 +149,49 @@ breaking inside your bases show up on players' pages.
 Lists are saved per server in `config/naughtyornice/lists/`. The address is tidied up, so `Constantiam.net` and
 `constantiam.net:25565` share one set of lists; lists that older versions saved under different spellings of the same
 address are merged automatically (the extra files are kept as `.merged`).
+
+## Intel
+The **Intel** tab gathers what's been given away on the server, newest first, with filters and counts:
+- **Places**: coordinates players wrote in chat, read strictly so only real places count. Labeled (`x: 1200 z: -3400`,
+  `xz 1200 -3400`), `x y z` (the middle number a height), F3 pastes (`1200.5 / 64 / -400.2`), `12k -4k`, highway
+  distances (`-x 20k`, `+x+z hwy 5000`), and pairs when the line says it's a place ("base at 1200 -3400", "meet me at...")
+  or is nothing but the numbers. Amounts never count ("1000 diamonds and 200 gold", "$500 600", "150 200 ms", years,
+  screen sizes, dates). The dimension is noted when the line names it.
+- **Where they logged out**, when they did it in front of you: often at or near their base.
+- **Wither summoners**: servers tell every player in a dimension where a wither finished spawning. When exactly one
+  player got "Withering Heights" in the 5 to 40 seconds before, that's who, and where they were. Two candidates means no
+  answer, never a guess.
+- **World events**: lit end portals (a stronghold), withers, the dragon dying, with exact positions.
+- **Talk about**: threats, stashes and base hunting, griefing, duping, hacks and exploits, trading, meeting up, PvP, alts.
+  Each needs unambiguous wording ("gonna grief your base", "found a stash", "wts", "meteor client"), so "gonna find
+  food", "the meteor shower", "buying a house irl" or "press alt f4" don't count.
+
+Each place shows how far it is from your nearest base (the other dimension too, at 8 to 1) and from you, with
+**Copy**. Places with a known dimension are pinned on Base Insurance's map. A player's own places, topics and the way
+they were heading when they left your view are on their Stats tab.
+
+**Alerts**: a threat aimed at you or your base (or whispered to you) always pings. You can also be pinged for any
+topic, or any coordinates at all (Settings).
+
+## Guarding your own location
+**Guard my coordinates** (on by default) reads your own chat messages and whispers before they're sent. If one would
+give away coordinates, one of your base names, or your own current x or z, it's held, with **[Send anyway]** and
+**[Edit]**. It catches Baritone commands typed into public chat by mistake, pasted F3 coordinates, and slips.
+
+What else gives players' locations away in 1.21.11, so you know what to avoid:
+- **Being in someone's tracking range**: they get your exact position, through walls. If they're near when you log
+  out, some clients mark the spot.
+- **Chunk trails**: flying from a highway into new land leaves freshly generated chunks that cheat clients highlight,
+  in a line to your base. Leave highways at random points, cross explored land, double back.
+- **Withers, end portals, the dragon**: their positions are sent to everyone in the dimension (unless the server turns
+  that off), and "Withering Heights" names who summoned one.
+- **What you say and show**: coordinates, directions, base names, landmarks, F3 or terrain in screenshots (with a known
+  seed, terrain can be matched to a place).
+- **Your mods**: Baritone commands in public chat, minimap waypoint sharing, Discord status showing coordinates or biome.
+- **Items you hand over**: a lodestone compass points at your lodestone; a map shows its area.
+- **Nether portals**: being seen near yours gives away your overworld base's area (8 to 1).
+
+Not a risk: death messages, the tab list, ping, skins and advancements (except "Withering Heights", above).
 
 ## Stats
 Every player page has a **Stats** tab: all-time numbers from everything your game gets to see. Most of it works for
@@ -166,7 +209,7 @@ numbers come from, and nothing is guessed. Totals are never trimmed, however lon
   best armour, what they usually hold.
 - **Chat**: messages, words per message, whispers both ways, chattiest hour, **who they talk to** and who talks about
   them, how often they say your name, favourite words, all caps, questions.
-- **Coordinates they posted** and **links they posted** (Discord invites...): the lines themselves, newest first.
+- **Places they gave away** (see Intel) and **links they posted** (Discord invites...).
 - **Around you**: how often they log in just after you join, log out as you join, log out within 30 seconds of coming
   into your view, or log out after dying. Each is shown against how often it would happen **by chance**, and marked
   "more than chance" when it's well over.
@@ -176,11 +219,11 @@ numbers come from, and nothing is guessed. Totals are never trimmed, however lon
   client) and new chat keys (game restarts), their skin and where it came from (skin plugins name the account),
   skin changes, names they've had.
 - **Maybe also**: other accounts that may be the same person, with a score and the reasons: the same skin (now or
-  before), a borrowed skin, taking turns online without ever being on together, similar names, the same ping. One
-  hint alone isn't enough to be listed.
+  before), a borrowed skin, taking turns online without ever being on together, similar names, the same ping. It takes
+  two different kinds of evidence to be listed: popular skins are shared by strangers, so a skin alone never is.
 
 The **Activity** tab has **Top players** boards for the server: most time online, most days online, most kills, most
-deaths, most totems, chattiest, most advancements, most coordinates posted, fastest seen. Click a name for their page.
+deaths, most totems, chattiest, most advancements, most places given away, fastest seen. Click a name for their page.
 The player summary uses the same numbers, the page header says when they were last *online*, and the list can be
 sorted by **Most time online** and **Most kills**.
 
@@ -238,5 +281,6 @@ is also written to a text file a day in `config/naughtyornice/chatlogs/<server>/
 
 ## Building
 Requires JDK 21. Run `./gradlew build`; the jar goes to `build/libs/`.
-`./gradlew runSelfTest` runs a scripted in-game test (192 checks) that spawns a fake griefer and saves screenshots to
+`./gradlew testIntel` checks the chat detectors (coordinates, topics, trash talk) against 146 lines in a few seconds.
+`./gradlew runSelfTest` runs a scripted in-game test (204 checks) that spawns a fake griefer and saves screenshots to
 `run/screenshots/`.

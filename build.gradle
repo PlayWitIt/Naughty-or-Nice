@@ -53,3 +53,19 @@ loom {
 		}
 	}
 }
+
+// A fast check of the chat detectors (coordinates, topics, tone) against a corpus of lines: ./gradlew testIntel
+sourceSets {
+	intelTest {
+		java.srcDir 'src/intelTest/java'
+		compileClasspath += sourceSets.main.output
+		runtimeClasspath += sourceSets.main.output
+	}
+}
+
+tasks.register('testIntel', JavaExec) {
+	group = 'verification'
+	description = 'Checks ChatIntel against its corpus of chat lines.'
+	classpath = sourceSets.intelTest.runtimeClasspath
+	mainClass = 'com.greysworkshop.naughtyornice.ChatIntelCheck'
+}
