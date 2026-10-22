@@ -15,6 +15,10 @@ By **PlayWit Creation**.
 Optional: [Mod Menu](https://modrinth.com/mod/modmenu) for a settings button, and Base Insurance for base-aware
 features. To share lists with a friend who has the mod, use **⇄ Share** in the lists screen.
 
+**Mods panel:** press **Right Shift** on the title screen, the server or world list, or the pause menu, or click
+**Mods panel** at the top left of the title screen. It shows the main switches of every PlayWit mod you have (Naughty or Nice,
+Base Insurance, Container Peek), so you can turn something off before you join a world, and opens each one's full settings.
+
 ## How to use it
 - Press **N** to open it. If you're looking at a player, it opens their page. Press **J** for the chunk trail radar, **B** for Baritone, **Z** to stop Baritone.
 - Every player is shown as a card with their face, a star rating, a **☆** in the corner to make them a friend, and three buttons: **✔ Nice**, **? Look Into** (not
