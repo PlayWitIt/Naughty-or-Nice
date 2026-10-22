@@ -89,6 +89,39 @@ public final class PlayerStats {
 	public String lastDeath = "";
 	public long lastDeathTime;
 
+	// ---- Identity (tab list) ----
+	/** The server's own name for them in the tab list ("[VIP] Steve"), if it isn't just their name. */
+	public String tabName = "";
+	public List<String> pastTabNames = new ArrayList<>();
+	/** The account a skin came from, when it isn't theirs (skin plugins on offline-mode servers name it). */
+	public String skinOwner = "";
+	/** Whether their chat is signed (vanilla); off means a chat-reports mod, an offline account or a modified client. */
+	public boolean signedChat;
+	public boolean signedKnown;
+	/** Their chat key's expiry, to notice when it changes (a new key: their game restarted, or the key renewed). */
+	public long chatKey;
+	public int chatKeyChanges;
+
+	// ---- Habits (tab list) ----
+	/** Days they were online (days since 1970, local time), oldest first. */
+	public List<Integer> days = new ArrayList<>();
+	/** Minutes online on each day of the week, Monday first. */
+	public int[] weekdays = new int[7];
+	/** Logins and logouts seen, as points on a 24-hour clock face, for the usual time of day. */
+	public double loginSin, loginCos, logoutSin, logoutCos;
+	/** Logins within 2 minutes of you joining, logouts within a minute of you joining. */
+	public int joinedAfterYou;
+	public int leftAfterYouJoined;
+	/** Logouts within 30 seconds of coming into your view. */
+	public int leftWhenSeen;
+	/** Logouts within a minute of dying. */
+	public int leftAfterDying;
+	/** How they died, by kind ("Fall", "Explosion", "Elytra crash"...). */
+	public Map<String, Integer> deathCauses = new HashMap<>();
+	/** Advancements they made, as the server announced them. */
+	public List<Note> advancements = new ArrayList<>();
+	public long pingSquares;
+
 	// ---- Chat ----
 	public int messages;
 	public int whispersToYou;
@@ -96,6 +129,38 @@ public final class PlayerStats {
 	public long words;
 	public long firstMessage;
 	public long lastMessage;
+	/** Messages in each hour of the day. */
+	public int[] chatHours = new int[24];
+	/** Players they name in chat, and players who name them. */
+	public Map<String, Integer> mentions = new HashMap<>();
+	public Map<String, Integer> mentionedBy = new HashMap<>();
+	/** Times they said your name. */
+	public int mentionsOfYou;
+	/** Words they use most (4+ letters, not everyday ones). */
+	public Map<String, Integer> topWords = new HashMap<>();
+	public int capsMessages;
+	public int questions;
+	/** Lines where they posted coordinates, and links (Discord invites...), newest last. */
+	public List<Note> coordsPosted = new ArrayList<>();
+	public List<Note> linksPosted = new ArrayList<>();
+
+	/** Something with a time: an advancement, a line they posted. */
+	public static final class Note {
+		public long time;
+		public String text = "";
+
+		public Note() {}
+
+		Note(long time, String text) {
+			this.time = time;
+			this.text = text;
+		}
+	}
+
+	static void note(List<Note> list, String text, int keep) {
+		list.add(new Note(System.currentTimeMillis(), text.length() > 120 ? text.substring(0, 120) + "…" : text));
+		while (list.size() > keep) list.remove(0);
+	}
 
 	/** One stretch of being online, as seen from the tab list. */
 	public static final class Session {
@@ -117,9 +182,13 @@ public final class PlayerStats {
 	private static final int MAP_KEYS = 12;
 
 	static void bump(Map<String, Integer> map, String key, int by) {
+		bump(map, key, by, MAP_KEYS);
+	}
+
+	static void bump(Map<String, Integer> map, String key, int by, int keys) {
 		if (key == null || key.isEmpty()) return;
 		map.merge(key, by, Integer::sum);
-		if (map.size() > MAP_KEYS) {
+		if (map.size() > keys) {
 			String smallest = null;
 			for (Map.Entry<String, Integer> e : map.entrySet()) {
 				if (!e.getKey().equals(key) && (smallest == null || e.getValue() < map.get(smallest))) smallest = e.getKey();
@@ -155,6 +224,7 @@ public final class PlayerStats {
 	public void ping(int ms) {
 		if (ms <= 0) return;
 		pingSum += ms;
+		pingSquares += (long) ms * ms;
 		pingSamples++;
 		pingMin = pingMin == 0 ? ms : Math.min(pingMin, ms);
 		pingMax = Math.max(pingMax, ms);
@@ -164,6 +234,90 @@ public final class PlayerStats {
 	/** Average ping, or -1 if never measured. */
 	public int averagePing() {
 		return pingSamples == 0 ? -1 : (int) (pingSum / pingSamples);
+	}
+
+	/** How much their ping wanders (standard deviation, ms), or -1 without enough samples. */
+	public int pingSpread() {
+		if (pingSamples < 5) return -1;
+		double mean = pingSum / (double) pingSamples;
+		return (int) Math.round(Math.sqrt(Math.max(0, pingSquares / (double) pingSamples - mean * mean)));
+	}
+
+	/** Notes a minute online today. */
+	void onlineMinute(java.time.LocalDateTime now) {
+		int day = (int) now.toLocalDate().toEpochDay();
+		if (days.isEmpty() || days.get(days.size() - 1) != day) {
+			days.add(day);
+			while (days.size() > 400) days.remove(0);
+		}
+		weekdays[now.getDayOfWeek().getValue() - 1]++;
+	}
+
+	/** Days online in the last {@code n} days, today included. */
+	public int daysInLast(int n) {
+		int today = (int) java.time.LocalDate.now().toEpochDay();
+		int count = 0;
+		for (int d : days) {
+			if (d > today - n) count++;
+		}
+		return count;
+	}
+
+	/** Most days online in a row, and the run going on now (0 if not online today or yesterday). */
+	public int[] streaks() {
+		int best = 0, run = 0, prev = Integer.MIN_VALUE;
+		for (int d : days) {
+			run = d == prev + 1 ? run + 1 : 1;
+			best = Math.max(best, run);
+			prev = d;
+		}
+		int today = (int) java.time.LocalDate.now().toEpochDay();
+		int current = !days.isEmpty() && days.get(days.size() - 1) >= today - 1 ? run : 0;
+		return new int[] {best, current};
+	}
+
+	/** A login or logout at this time of day, on the clock face. */
+	void clock(boolean login, java.time.LocalTime time) {
+		double a = (time.getHour() * 60 + time.getMinute()) / 1440.0 * 2 * Math.PI;
+		if (login) {
+			loginSin += Math.sin(a);
+			loginCos += Math.cos(a);
+		} else {
+			logoutSin += Math.sin(a);
+			logoutCos += Math.cos(a);
+		}
+	}
+
+	/**
+	 * Their usual time to log in (or out) as "19:40", or null: needs 3 or more, close enough together to have a usual
+	 * time at all (the average clock-face point is at least 0.5 from the middle).
+	 */
+	public String usualTime(boolean login) {
+		int n = login ? logins : logouts;
+		double sin = login ? loginSin : logoutSin, cos = login ? loginCos : logoutCos;
+		if (n < 3 || Math.hypot(sin, cos) / n < 0.5) return null;
+		double a = Math.atan2(sin, cos);
+		if (a < 0) a += 2 * Math.PI;
+		int minutes = (int) Math.round(a / (2 * Math.PI) * 1440) % 1440;
+		return String.format(java.util.Locale.ROOT, "%02d:%02d", minutes / 60, minutes % 60);
+	}
+
+	/** What kind of death a death message is, from its translation key or (for plugin wording) its text. */
+	static String deathCause(String keyOrText, boolean byPlayer) {
+		String k = keyOrText.toLowerCase(java.util.Locale.ROOT);
+		if (k.contains("flyintowall") || k.contains("kinetic")) return "Elytra crash";
+		if (k.contains("explosion") || k.contains("blown up") || k.contains("blew up") || k.contains("crystal") || k.contains("badrespawn")
+				|| k.contains("intentional game design")) return "Explosion";
+		if (byPlayer) return "Killed by a player";
+		if (k.contains("outofworld") || k.contains("outsideborder") || k.contains("void") || k.contains("world border")) return "Void or border";
+		if (k.contains("fall") || k.contains("fell") || k.contains("hit the ground")) return "Fall";
+		if (k.contains("lava") || k.contains("fire") || k.contains("burn") || k.contains("hotfloor") || k.contains("flames")) return "Fire or lava";
+		if (k.contains("drown")) return "Drowned";
+		if (k.contains("wither")) return "Wither";
+		if (k.contains("starve")) return "Starved";
+		if (k.contains("inwall") || k.contains("suffocat") || k.contains("cramming") || k.contains("squashed")) return "Suffocated";
+		if (k.contains("mob") || k.contains("arrow") || k.contains("sting") || k.contains("trident") || k.contains("slain")) return "Mob";
+		return "Other";
 	}
 
 	/** Average length of sessions you saw both ends of (the only ones whose length is really known), or -1. */
@@ -211,7 +365,10 @@ public final class PlayerStats {
 		String newSkin = "", newModel = "", newCape = "";
 		try {
 			String json = new String(Base64.getDecoder().decode(textures.value()), StandardCharsets.UTF_8);
-			JsonObject t = JsonParser.parseString(json).getAsJsonObject().getAsJsonObject("textures");
+			JsonObject root = JsonParser.parseString(json).getAsJsonObject();
+			String owner = root.has("profileName") ? root.get("profileName").getAsString() : "";
+			skinOwner = owner.equalsIgnoreCase(profile.name()) ? "" : owner;
+			JsonObject t = root.getAsJsonObject("textures");
 			if (t != null && t.has("SKIN")) {
 				JsonObject s = t.getAsJsonObject("SKIN");
 				newSkin = hash(s.get("url"));
@@ -242,6 +399,21 @@ public final class PlayerStats {
 		return u.substring(u.lastIndexOf('/') + 1);
 	}
 
+	/**
+	 * What kind of account a UUID belongs to: Mojang gives Java accounts random (version 4) ids, offline-mode servers
+	 * make version 3 ids from the name, Geyser/Floodgate gives Bedrock players ids starting with zeros, and NPC
+	 * plugins use version 2.
+	 */
+	public static String accountType(java.util.UUID id) {
+		if (id.getMostSignificantBits() == 0) return "Bedrock (joins through Geyser)";
+		return switch (id.version()) {
+			case 4 -> "Java, Mojang account";
+			case 3 -> "Offline-mode (no Mojang login)";
+			case 2 -> "NPC or bot";
+			default -> "Unusual id (version " + id.version() + ")";
+		};
+	}
+
 	/** Fills in anything missing after loading from a file. */
 	void fixUp(Profile p) {
 		if (tally == null) tally = new HashMap<>();
@@ -264,5 +436,18 @@ public final class PlayerStats {
 		if (victims == null) victims = new HashMap<>();
 		if (weapons == null) weapons = new HashMap<>();
 		if (lastDeath == null) lastDeath = "";
+		if (tabName == null) tabName = "";
+		if (pastTabNames == null) pastTabNames = new ArrayList<>();
+		if (skinOwner == null) skinOwner = "";
+		if (days == null) days = new ArrayList<>();
+		if (weekdays == null || weekdays.length != 7) weekdays = new int[7];
+		if (deathCauses == null) deathCauses = new HashMap<>();
+		if (advancements == null) advancements = new ArrayList<>();
+		if (chatHours == null || chatHours.length != 24) chatHours = new int[24];
+		if (mentions == null) mentions = new HashMap<>();
+		if (mentionedBy == null) mentionedBy = new HashMap<>();
+		if (topWords == null) topWords = new HashMap<>();
+		if (coordsPosted == null) coordsPosted = new ArrayList<>();
+		if (linksPosted == null) linksPosted = new ArrayList<>();
 	}
 }

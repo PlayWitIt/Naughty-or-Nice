@@ -34,6 +34,8 @@ public final class ServerActivity {
 	public long last;
 	/** Your own time on this server, in milliseconds (wall clock), since 1.7.0. */
 	public long myMs;
+	/** Times you joined this server, since 1.8.0 (for how often things happen just after you join by chance). */
+	public int myJoins;
 
 	private transient boolean dirty;
 	private transient int version;
