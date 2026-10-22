@@ -17,7 +17,7 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 /**
- * Feeds the server's damage, death and block-breaking packets to the watcher. Injected at TAIL: the handlers
+ * Feeds the server's damage, death, totem and block-breaking packets to the watcher. Injected at TAIL: the handlers
  * hop to the game thread first, so by then we're on it.
  */
 @Mixin(ClientPlayNetworkHandler.class)
@@ -38,6 +38,10 @@ public abstract class ClientPlayNetworkHandlerMixin {
 		NaughtyOrNiceClient mod = NaughtyOrNiceClient.INSTANCE;
 		if (client.world == null || mod == null) return;
 		byte status = packet.getStatus();
+		if (status == EntityStatuses.USE_TOTEM_OF_UNDYING) {
+			Safe.run("watching totems", () -> mod.watcher.onTotem(client, packet.getEntity(client.world)));
+			return;
+		}
 		if (status != EntityStatuses.PLAY_DEATH_SOUND_OR_ADD_PROJECTILE_HIT_PARTICLES && status != EntityStatuses.ADD_DEATH_PARTICLES) return;
 		Safe.run("watching deaths", () -> {
 			Entity entity = packet.getEntity(client.world);

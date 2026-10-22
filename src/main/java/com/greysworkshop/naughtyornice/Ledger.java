@@ -160,6 +160,7 @@ public final class Ledger {
 						if (starts.add(c.start)) mine.conversations.add(c);
 					}
 					mine.conversations.sort(java.util.Comparator.comparingLong(c -> c.start));
+					other.stats.tally.forEach((k, v) -> mine.stats.tally.merge(k, v, Integer::sum));
 					mine.actions.addAll(other.actions);
 					mine.actions.sort(java.util.Comparator.comparingLong(a -> a.time));
 					while (mine.actions.size() > NNConfig.INSTANCE.maxActions) mine.actions.remove(0);
@@ -589,6 +590,8 @@ public final class Ledger {
 		profile.evidence.removeIf(ev -> ev == null || ev.file == null || ev.file.isBlank());
 		if (profile.friendViews == null) profile.friendViews = new ArrayList<>();
 		profile.friendViews.removeIf(v -> v == null || v.from == null || v.from.isBlank());
+		if (profile.stats == null) profile.stats = new PlayerStats();
+		profile.stats.fixUp(profile);
 		for (Profile.FriendView v : profile.friendViews) {
 			if (v.verdict == null) v.verdict = Profile.Verdict.NONE;
 		}
