@@ -16,6 +16,7 @@ import net.minecraft.resource.featuretoggle.FeatureFlags;
 import net.minecraft.server.integrated.IntegratedServer;
 import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.text.Text;
+import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.Vec3d;
 import net.minecraft.world.Difficulty;
 import net.minecraft.world.GameMode;
@@ -50,6 +51,9 @@ public final class SelfTest {
 		ScreenEvents.AFTER_INIT.register((client, screen, w, h) -> {
 			if (started || !(screen instanceof TitleScreen)) return;
 			started = true;
+			// Keep the game running while the window isn't focused (someone using the computer meanwhile), or the
+			// singleplayer server pauses and nothing that needs time (walking, flowing water) happens.
+			client.options.pauseOnLostFocus = false;
 			client.send(() -> openWorld(client));
 		});
 		ClientTickEvents.END_CLIENT_TICK.register(SelfTest::tick);
@@ -1201,8 +1205,53 @@ public final class SelfTest {
 				screenshot(client, "58_settings_bottom");
 				client.setScreen(null);
 			}
+			// ---- Chunk trails ----
+			case 1219 -> {
+				check("a corridor of old land through fresh land is a trail", trailTests());
+				log("Pouring water 4 chunks away, in land that had none");
+				IntegratedServer server = client.getServer();
+				BlockPos at = client.player.getBlockPos().add(64, 0, 0);
+				waterAt = at;
+				server.execute(() -> server.getPlayerManager().getPlayerList().get(0).getEntityWorld()
+						.setBlockState(at, net.minecraft.block.Blocks.WATER.getDefaultState()));
+			}
+			case 1250 -> {
+				String dim = client.world.getRegistryKey().getValue().toString();
+				int cx = waterAt.getX() >> 4, cz = waterAt.getZ() >> 4;
+				check("liquid starting to flow marks the chunk fresh (" + ledger.chunkTrails.state(dim, cx, cz) + ")", ledger.chunkTrails.state(dim, cx, cz) == ChunkTrails.NEW);
+				ChunkTrails probe = new ChunkTrails();
+				probe.chunkLoaded(dim, client.world.getChunk(cx, cz));
+				check("...and arriving with liquid already flowed reads as old", probe.state(dim, cx, cz) == ChunkTrails.OLD);
+				// A trail beside the player, for the radar.
+				ChunkTrails trails = ledger.chunkTrails;
+				int pcx = client.player.getBlockX() >> 4, pcz = client.player.getBlockZ() >> 4;
+				for (int i = -40; i <= 40; i++) {
+					for (int j = -40; j <= 40; j++) trails.set(dim, pcx + i, pcz + j, Math.abs(j - 6 + i / 4) <= 1 ? ChunkTrails.OLD : ChunkTrails.NEW);
+				}
+				for (int i = -40; i <= 40; i++) {
+					for (int j = -1; j <= 1; j++) unmine(trails, dim, pcx + i, pcz + 6 - i / 4 + j);
+				}
+				NNConfig.INSTANCE.trailRadar = true;
+				client.player.setYaw(-90);
+			}
+			case 1320 -> {
+				String[] say = ledger.chunkTrails.guidance(client.world.getRegistryKey().getValue().toString(), client.player.getX(), client.player.getZ(), client.player.getYaw());
+				log("Radar says: " + (say == null ? "nothing" : say[0] + " / " + say[1]));
+				check("the radar finds the trail beside you and says how to follow it", say != null && say[0].startsWith("Trail:"));
+				screenshot(client, "59_trail_radar");
+			}
+			case 1323 -> {
+				NNConfig.INSTANCE.trailRadar = false;
+				client.setScreen(new ShopScreen(ShopScreen.Tab.INTEL, null));
+			}
+			case 1326 -> check("the Intel map opens", screen(client).testClick("intel-view:Map"));
+			case 1332 -> screenshot(client, "60_intel_map");
+			case 1335 -> {
+				client.setScreen(null);
+				ledger.chunkTrails.clear();
+			}
 			// ---- A real disconnect, by "another mod" (this test): recorded with who did it and who was near ----
-			case 1220 -> {
+			case 1340 -> {
 				log("Disconnecting on purpose");
 				disconnectedAt = System.currentTimeMillis();
 				client.getNetworkHandler().getConnection().disconnect(Text.literal("[AutoLog] " + GRIEFER + " came near"));
@@ -1224,6 +1273,76 @@ public final class SelfTest {
 			evening.clock(true, java.time.LocalTime.of(m > 30 ? 19 : 20, m));
 		}
 		return spread.usualTime(true) == null && "20:00".equals(evening.usualTime(true));
+	}
+
+	private static BlockPos waterAt;
+
+	/** For the radar test: lets a chunk be old again, though the test marked it fresh first. */
+	private static void unmine(ChunkTrails trails, String dim, int x, int z) {
+		trails.forgetMine(dim, x, z);
+		trails.set(dim, x, z, ChunkTrails.OLD);
+	}
+
+	/** The trail finder on made-up land: what's a trail, what isn't, and which way it leads. */
+	private static boolean trailTests() {
+		String dim = "test:dim";
+		// Fresh land with an old corridor 4 chunks wide running east-west, its east end further from spawn.
+		ChunkTrails t = new ChunkTrails();
+		for (int x = 60; x <= 140; x++) {
+			for (int z = 60; z <= 140; z++) t.set(dim, x, z, z >= 98 && z <= 101 && x >= 70 && x <= 130 ? ChunkTrails.OLD : ChunkTrails.NEW);
+		}
+		for (int x = 70; x <= 130; x++) {
+			for (int z = 98; z <= 101; z++) {
+				t.forgetMine(dim, x, z);
+				t.set(dim, x, z, ChunkTrails.OLD);
+			}
+		}
+		List<ChunkTrails.Trail> found = t.analyse(dim, 100, 100, 1000, null);
+		boolean ok = found.size() == 1;
+		if (ok) {
+			ChunkTrails.Trail tr = found.get(0);
+			int[] far = tr.awayEnd();
+			log("Trail: " + tr.x1 + "," + tr.z1 + " to " + tr.x2 + "," + tr.z2 + " width " + tr.width + " away " + tr.away);
+			ok = Math.abs(far[0] - (130 * 16 + 8)) <= 16 && tr.length() >= 900 && tr.width >= 3 && tr.width <= 5;
+			String[] say = t.guidance(dim, 100 * 16, 99 * 16, -90);
+			log("Guidance on it, facing east: " + (say == null ? "none" : say[0] + " / " + say[1]));
+			ok &= say != null && say[1].startsWith("Away from spawn: E") && say[1].endsWith("straight on");
+		}
+		// A big explored square in fresh land: old land, but not a trail.
+		ChunkTrails square = new ChunkTrails();
+		for (int x = 60; x <= 140; x++) {
+			for (int z = 60; z <= 140; z++) {
+				boolean old = x >= 85 && x <= 115 && z >= 85 && z <= 115;
+				if (!old) square.set(dim, x, z, ChunkTrails.NEW);
+				else square.set(dim, x, z, ChunkTrails.OLD);
+			}
+		}
+		boolean squareOk = square.analyse(dim, 100, 100, 1000, null).isEmpty();
+		// The edge of explored land (old on one side, fresh on the other): not a trail.
+		ChunkTrails edge = new ChunkTrails();
+		for (int x = 60; x <= 140; x++) {
+			for (int z = 60; z <= 140; z++) {
+				if (z < 100) edge.set(dim, x, z, ChunkTrails.NEW);
+				else if (z <= 103) edge.set(dim, x, z, ChunkTrails.OLD);
+			}
+		}
+		boolean edgeOk = edge.analyse(dim, 100, 100, 1000, null).isEmpty();
+		// Your own path (chunks you generated) is never a trail.
+		ChunkTrails own = new ChunkTrails();
+		for (int x = 60; x <= 140; x++) {
+			for (int z = 60; z <= 140; z++) own.set(dim, x, z, ChunkTrails.NEW);
+		}
+		boolean ownOk = own.analyse(dim, 100, 100, 1000, null).isEmpty();
+		// Saved and loaded again: your chunks, old chunks and trails all come back.
+		java.nio.file.Path dir = MinecraftClient.getInstance().runDirectory.toPath().resolve("nn-test-trails");
+		java.nio.file.Path trailsFile = dir.resolve("t.trails.json"), chunksFile = dir.resolve("t.chunks.bin");
+		t.save(trailsFile, chunksFile, true);
+		ChunkTrails back = new ChunkTrails();
+		back.load(trailsFile, chunksFile);
+		boolean savedOk = back.trails.size() == 1 && back.state(dim, 100, 99) == ChunkTrails.OLD && back.state(dim, 100, 80) == ChunkTrails.NEW
+				&& back.state(dim, 10, 10) == 0;
+		log("Trail tests: corridor " + ok + ", square " + squareOk + ", edge " + edgeOk + ", own path " + ownOk + ", saved " + savedOk);
+		return ok && squareOk && edgeOk && ownOk && savedOk;
 	}
 
 	private static String shareLink;

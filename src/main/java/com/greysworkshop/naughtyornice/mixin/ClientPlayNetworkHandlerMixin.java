@@ -12,6 +12,11 @@ import net.minecraft.network.packet.s2c.play.DeathMessageS2CPacket;
 import net.minecraft.network.packet.s2c.play.EntityDamageS2CPacket;
 import net.minecraft.network.packet.s2c.play.EntityStatusS2CPacket;
 import net.minecraft.network.packet.s2c.play.WorldEventS2CPacket;
+import net.minecraft.network.packet.s2c.play.BlockUpdateS2CPacket;
+import net.minecraft.network.packet.s2c.play.ChunkDataS2CPacket;
+import net.minecraft.network.packet.s2c.play.ChunkDeltaUpdateS2CPacket;
+import net.minecraft.network.packet.s2c.play.UnloadChunkS2CPacket;
+import com.greysworkshop.naughtyornice.NNConfig;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
@@ -56,6 +61,39 @@ public abstract class ClientPlayNetworkHandlerMixin {
 		NaughtyOrNiceClient mod = NaughtyOrNiceClient.INSTANCE;
 		if (client.world == null || mod == null) return;
 		Safe.run("watching your death", () -> mod.watcher.onDeath(client, client.world.getEntityById(packet.playerId())));
+	}
+
+	@Inject(method = "onChunkData", at = @At("TAIL"))
+	private void naughtyornice$chunk(ChunkDataS2CPacket packet, CallbackInfo ci) {
+		MinecraftClient client = MinecraftClient.getInstance();
+		NaughtyOrNiceClient mod = NaughtyOrNiceClient.INSTANCE;
+		if (client.world == null || mod == null || !NNConfig.INSTANCE.chunkTrails) return;
+		Safe.run("reading a chunk", () -> mod.ledger.chunkTrails.chunkLoaded(client.world.getRegistryKey().getValue().toString(),
+				client.world.getChunk(packet.getChunkX(), packet.getChunkZ())));
+	}
+
+	@Inject(method = "onUnloadChunk", at = @At("TAIL"))
+	private void naughtyornice$unload(UnloadChunkS2CPacket packet, CallbackInfo ci) {
+		NaughtyOrNiceClient mod = NaughtyOrNiceClient.INSTANCE;
+		if (mod != null) Safe.run("forgetting a chunk", () -> mod.ledger.chunkTrails.chunkUnloaded(packet.pos().x, packet.pos().z));
+	}
+
+	@Inject(method = "onBlockUpdate", at = @At("TAIL"))
+	private void naughtyornice$block(BlockUpdateS2CPacket packet, CallbackInfo ci) {
+		MinecraftClient client = MinecraftClient.getInstance();
+		NaughtyOrNiceClient mod = NaughtyOrNiceClient.INSTANCE;
+		if (client.world == null || mod == null || !NNConfig.INSTANCE.chunkTrails) return;
+		Safe.run("reading a block update", () -> mod.ledger.chunkTrails.blockChanged(client, client.world.getRegistryKey().getValue().toString(),
+				packet.getPos(), packet.getState()));
+	}
+
+	@Inject(method = "onChunkDeltaUpdate", at = @At("TAIL"))
+	private void naughtyornice$blocks(ChunkDeltaUpdateS2CPacket packet, CallbackInfo ci) {
+		MinecraftClient client = MinecraftClient.getInstance();
+		NaughtyOrNiceClient mod = NaughtyOrNiceClient.INSTANCE;
+		if (client.world == null || mod == null || !NNConfig.INSTANCE.chunkTrails) return;
+		String dim = client.world.getRegistryKey().getValue().toString();
+		Safe.run("reading block updates", () -> packet.visitUpdates((pos, state) -> mod.ledger.chunkTrails.blockChanged(client, dim, pos, state)));
 	}
 
 	@Inject(method = "onWorldEvent", at = @At("TAIL"))

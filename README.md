@@ -16,7 +16,7 @@ Optional: [Mod Menu](https://modrinth.com/mod/modmenu) for a settings button, an
 features. To share lists with a friend who has the mod, use **⇄ Share** in the lists screen.
 
 ## How to use it
-- Press **N** to open it. If you're looking at a player, it opens their page.
+- Press **N** to open it. If you're looking at a player, it opens their page. Press **J** for the chunk trail radar.
 - Every player is shown as a card with their face, a star rating, a **☆** in the corner to make them a friend, and three buttons: **✔ Nice**, **? Look Into** (not
   sure yet, keep an eye on them) and **✖ Naughty**. Click again to take them off. Every change can be undone from the
   banner at the top.
@@ -34,7 +34,7 @@ features. To share lists with a friend who has the mod, use **⇄ Share** in the
   biggest (about 540, never so big the panels don't fit). Whole-pixel scales are used where they're close, so text
   stays sharp.
 - Commands: `/nn`, `/nn add`, `/nn friends`, `/nn chat`, `/nn groups`, `/nn intel`, `/nn share`, `/nn import`, `/nn open <link>`,
-  `/nn disconnects`, `/nn sendanyway`, `/nn friend <name> [type]`, `/nn nice <name>`, `/nn look <name>`, `/nn naughty <name>`,
+  `/nn disconnects`, `/nn sendanyway`, `/nn radar`, `/nn friend <name> [type]`, `/nn nice <name>`, `/nn look <name>`, `/nn naughty <name>`,
   `/nn unsort <name>`, `/nn group <name> <group>`, `/nn who <name>`, `/nn chat <name>`, `/nn settings`.
 
 ## Friends
@@ -173,6 +173,42 @@ they were heading when they left your view are on their Stats tab.
 **Alerts**: a threat aimed at you or your base (or whispered to you) always pings. You can also be pinged for any
 topic, or any coordinates at all (Settings).
 
+## Chunk trails
+Press **J** for the trail radar (or `/nn radar`). It's a small map on the right of the screen that turns with you, so
+ahead is always up:
+- **Blue**: fresh land, generated just now for you. Nobody has been here.
+- **Grey**: old land. Someone has been here before.
+- **Amber line**: a **trail**, a long, narrow strip of old land with fresh land on both sides. That's someone's path.
+  The **arrow** is on the end further from spawn (when one end clearly is). That's a fact about the trail, not a
+  promise of a base: it's where they went, or came from.
+- Underneath, in words: "Trail: 1,920 blocks long, runs NE–SW" and either "Away from spawn: NE, turn 35° left" when
+  you're on it, or "300 blocks ahead-left (W)" when you're not.
+
+When a new trail turns up you get a chat note with its far end. Every trail is kept on the **Intel** tab (Chunk trails),
+with Copy for the far end, and its far end is pinned on Base Insurance's map.
+
+**The Intel map** (Intel → Map) shows it all on one big map, north up: fresh and old land, trails with their arrows,
+your bases, places players gave away (where they logged out in front of you, where they summoned a wither,
+coordinates they wrote with the dimension named), world events, and where players on your lists were last seen.
+Drag to move, scroll to zoom, Overworld / Nether / End to switch, **Center on me** to come back. Hover anything for
+what it is and when; click to copy its coordinates. The mouse's coordinates and what's known about that land show in
+the corner.
+
+What the mod learns about land is kept per server (old land and the land you generated), so trails build up over many
+sessions instead of starting over.
+
+How it knows: land generated for the first time gets its water and lava flowing *after* it reaches you, so the server
+sends flowing-liquid updates for it. Land that already existed arrives with its liquids already flowed. Chunks without
+liquid can't be told either way and are left out, never guessed. The nether, with its lava, shows the most; the end
+shows nothing. Chunks you generated yourself are remembered per server, so your own old paths never show up as someone
+else's. A patch of old land only becomes a trail when it's at least 8 chunks long, twice as long as it is wide, and has
+fresh land on both sides. The edge of explored land, or a big explored area, never counts. Things that can go wrong
+only ever hide trails, never invent them: if a server lets fresh land flow before sending it, everything reads as old
+and no trail shows; a liquid poured by a player out of your sight marks one chunk fresh, which can't make a trail. If
+a trail is wider than your view distance you'll see only old land around you, and the radar says so. Water flowing
+out of fresh land into a dry old chunk next to it can mark that one chunk fresh, so a trail's edge can look a chunk
+narrower than it is; it can't move or make a trail.
+
 ## Guarding your own location
 **Guard my coordinates** (on by default) reads your own chat messages and whispers before they're sent. If one would
 give away coordinates, one of your base names, or your own current x or z, it's held, with **[Send anyway]** and
@@ -181,8 +217,8 @@ give away coordinates, one of your base names, or your own current x or z, it's 
 What else gives players' locations away in 1.21.11, so you know what to avoid:
 - **Being in someone's tracking range**: they get your exact position, through walls. If they're near when you log
   out, some clients mark the spot.
-- **Chunk trails**: flying from a highway into new land leaves freshly generated chunks that cheat clients highlight,
-  in a line to your base. Leave highways at random points, cross explored land, double back.
+- **Chunk trails**: flying from a highway into new land leaves a line of old chunks that others can follow (this mod's
+  radar shows exactly that). Leave highways at random points, cross explored land, double back.
 - **Withers, end portals, the dragon**: their positions are sent to everyone in the dimension (unless the server turns
   that off), and "Withering Heights" names who summoned one.
 - **What you say and show**: coordinates, directions, base names, landmarks, F3 or terrain in screenshots (with a known
@@ -282,5 +318,5 @@ is also written to a text file a day in `config/naughtyornice/chatlogs/<server>/
 ## Building
 Requires JDK 21. Run `./gradlew build`; the jar goes to `build/libs/`.
 `./gradlew testIntel` checks the chat detectors (coordinates, topics, trash talk) against 146 lines in a few seconds.
-`./gradlew runSelfTest` runs a scripted in-game test (204 checks) that spawns a fake griefer and saves screenshots to
+`./gradlew runSelfTest` runs a scripted in-game test (209 checks) that spawns a fake griefer and saves screenshots to
 `run/screenshots/`.

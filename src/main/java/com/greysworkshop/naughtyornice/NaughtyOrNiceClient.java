@@ -7,6 +7,7 @@ import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper;
 import net.fabricmc.fabric.api.client.message.v1.ClientReceiveMessageEvents;
 import net.fabricmc.fabric.api.client.message.v1.ClientSendMessageEvents;
+import net.fabricmc.fabric.api.client.rendering.v1.hud.HudElementRegistry;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.screen.Screen;
@@ -43,6 +44,8 @@ public class NaughtyOrNiceClient implements ClientModInitializer {
 	public final Watcher watcher = new Watcher(ledger, chatLogger, diagnostics);
 
 	private KeyBinding openKey;
+	private KeyBinding radarKey;
+	private int trailTimer;
 	private Screen pendingScreen;
 	private int saveTimer;
 	private int tipTimer;
@@ -54,6 +57,8 @@ public class NaughtyOrNiceClient implements ClientModInitializer {
 
 		KeyBinding.Category category = KeyBinding.Category.create(Identifier.of(MOD_ID, "main"));
 		openKey = KeyBindingHelper.registerKeyBinding(new KeyBinding("key.naughtyornice.open", InputUtil.Type.KEYSYM, GLFW.GLFW_KEY_N, category));
+		radarKey = KeyBindingHelper.registerKeyBinding(new KeyBinding("key.naughtyornice.radar", InputUtil.Type.KEYSYM, GLFW.GLFW_KEY_J, category));
+		HudElementRegistry.addLast(Identifier.of(MOD_ID, "trail_radar"), (context, tickCounter) -> Safe.run("drawing the trail radar", () -> TrailRadar.render(context, tickCounter)));
 
 		ClientCommandRegistrationCallback.EVENT.register((dispatcher, registryAccess) -> Commands.register(dispatcher));
 
@@ -100,7 +105,7 @@ public class NaughtyOrNiceClient implements ClientModInitializer {
 	 * the last 30 days. Worked out again only when the lists change.
 	 */
 	private List<Map<String, Object>> mapPins(String dimension) {
-		String key = dimension + "/" + ledger.changes() + "/" + ledger.activity.version() + "/" + ledger.key();
+		String key = dimension + "/" + ledger.changes() + "/" + ledger.activity.version() + "/" + ledger.chunkTrails.version() + "/" + ledger.key();
 		if (key.equals(pinsKey)) return pins;
 		List<Map<String, Object>> list = new ArrayList<>();
 		long oldest = System.currentTimeMillis() - 30L * 86_400_000L;
@@ -145,6 +150,12 @@ public class NaughtyOrNiceClient implements ClientModInitializer {
 			};
 			placed.add(new Object[] {e.time, what, e.x, e.z, "Heard server-wide"});
 		}
+		for (ChunkTrails.Trail t : ledger.chunkTrails.trails) {
+			if (!t.dimension.equals(dimension) || t.lastSeen < oldest) continue;
+			int[] end = t.awayEnd();
+			placed.add(new Object[] {t.lastSeen, t.away == 0 ? "Chunk trail end" : "Chunk trail: far end", end[0], end[1],
+					String.format(java.util.Locale.ROOT, "%,d blocks long, from %d, %d", t.length(), t.away == 1 ? t.x2 : t.x1, t.away == 1 ? t.z2 : t.z1)});
+		}
 		placed.sort((a1, b1) -> Long.compare((long) b1[0], (long) a1[0]));
 		for (Object[] o : placed.subList(0, Math.min(150, placed.size()))) {
 			Map<String, Object> pin = new HashMap<>();
@@ -158,6 +169,28 @@ public class NaughtyOrNiceClient implements ClientModInitializer {
 		pins = list;
 		pinsKey = key;
 		return list;
+	}
+
+	/** Every two seconds: trails around you, and a chat note for each new one. */
+	private void lookForTrails(MinecraftClient client) {
+		String dim = client.world.getRegistryKey().getValue().toString();
+		int cx = client.player.getBlockX() >> 4, cz = client.player.getBlockZ() >> 4;
+		ChunkTrails trails = ledger.chunkTrails;
+		List<int[]> patches = new ArrayList<>();
+		trails.analyse(dim, cx, cz, System.currentTimeMillis(), patches);
+		patches.sort(java.util.Comparator.comparingDouble(p -> Math.hypot(p[0] - client.player.getX(), p[1] - client.player.getZ())));
+		TrailRadar.patches = patches;
+		trails.trim(dim, cx, cz);
+		for (ChunkTrails.Trail t : trails.takeNew()) {
+			if (!NNConfig.INSTANCE.trailAlerts) continue;
+			String[] say = trails.guidance(dim, client.player.getX(), client.player.getZ(), client.player.getYaw());
+			int[] end = t.awayEnd();
+			Alerts.chat(Text.literal("Chunk trail found: ").formatted(Formatting.GOLD)
+					.append(Text.literal(say == null ? "" : say[0] + ". " + say[1] + ". ").formatted(Formatting.YELLOW))
+					.append(Text.literal(t.away == 0 ? "" : "The far end (away from spawn) is at " + end[0] + ", " + end[1] + ". ").formatted(Formatting.GRAY))
+					.append(Text.literal(NNConfig.INSTANCE.trailRadar ? "" : "[Show radar]").styled(st -> st.withColor(Formatting.AQUA).withUnderline(true)
+							.withClickEvent(new ClickEvent.RunCommand("/nn radar")))));
+		}
 	}
 
 	/** The UUID offline-mode servers give a name; our best guess for someone added before we've seen them. */
@@ -214,6 +247,16 @@ public class NaughtyOrNiceClient implements ClientModInitializer {
 
 		while (openKey.wasPressed()) {
 			if (client.currentScreen == null) client.setScreen(openScreen(client));
+		}
+		while (radarKey.wasPressed()) {
+			NNConfig.INSTANCE.trailRadar = !NNConfig.INSTANCE.trailRadar;
+			if (NNConfig.INSTANCE.trailRadar) NNConfig.INSTANCE.chunkTrails = true;
+			NNConfig.save();
+			client.inGameHud.setOverlayMessage(Text.literal("Chunk trail radar " + (NNConfig.INSTANCE.trailRadar ? "on" : "off")), false);
+		}
+		if (NNConfig.INSTANCE.chunkTrails && ++trailTimer >= 40) {
+			trailTimer = 0;
+			lookForTrails(client);
 		}
 
 		if (!NNConfig.INSTANCE.seenTip && ++tipTimer == 300) {

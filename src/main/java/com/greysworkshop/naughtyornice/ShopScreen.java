@@ -3978,6 +3978,7 @@ public class ShopScreen extends Screen {
 			{"/nn check", "The chat check (lines the mod couldn't read)"},
 			{"/nn disconnects", "Why you were disconnected, and who was near"},
 			{"/nn sendanyway", "Send a message the coordinate guard held back"},
+			{"/nn radar", "Show or hide the chunk trail radar (or J)"},
 			{"/nn settings", "Open Settings"},
 	};
 
@@ -4006,6 +4007,11 @@ public class ShopScreen extends Screen {
 				+ "x or z, with [Send anyway] and [Edit].", () -> c.guardMyCoords, v -> c.guardMyCoords = v));
 		options.add(new Option("Alert on threats against you", "A ping when someone threatens you or your base in chat (\"gonna grief your base\", "
 				+ "\"found your stash\") or whispers you a threat.", () -> c.alertThreats, v -> c.alertThreats = v));
+		options.add(new Option("Find chunk trails", "Tells old land (someone was there) from fresh land by how its water and lava flow, and finds "
+				+ "the paths players left through fresh land. Press J for the radar.", () -> c.chunkTrails, v -> c.chunkTrails = v));
+		options.add(new Option("Chunk trail radar", "A small map on the right that turns with you: fresh land blue, old land grey, trails amber with "
+				+ "an arrow away from spawn, and how to turn to follow. J shows or hides it.", () -> c.trailRadar, v -> c.trailRadar = v));
+		options.add(new Option("Note new chunk trails in chat", "Where a new trail is, which way it runs, and its far end.", () -> c.trailAlerts, v -> c.trailAlerts = v));
 		options.add(new Option("Ping on any coordinates", "A ping whenever anyone posts coordinates. They're always listed on the Intel tab either way.",
 				() -> c.pingAllCoords, v -> c.pingAllCoords = v));
 		for (ChatIntel.Topic t : ChatIntel.Topic.values()) {
@@ -4272,7 +4278,7 @@ public class ShopScreen extends Screen {
 	// ---- Intel: places given away, world events, and what's being talked about ----
 
 	private enum IntelFilter {
-		ALL("Everything"), PLACES("Places"), WORLD("World events"), THREAT("Threats"), STASH("Stashes & bases"), GRIEF("Griefing"),
+		ALL("Everything"), PLACES("Places"), TRAILS("Chunk trails"), WORLD("World events"), THREAT("Threats"), STASH("Stashes & bases"), GRIEF("Griefing"),
 		DUPE("Duping"), HACKS("Hacks & exploits"), TRADE("Trading"), MEETUP("Meeting up"), PVP("PvP"), ALTS("Alts");
 
 		final String label;
@@ -4293,7 +4299,12 @@ public class ShopScreen extends Screen {
 
 	/** One line on the Intel tab: a place someone gave away, a world event, or a line of chat about something. */
 	private record IntelRow(long time, Profile who, String sender, String text, java.util.Set<ChatIntel.Topic> topics, PlayerStats.Place place,
-			ServerActivity.WorldEvent event) {}
+			ServerActivity.WorldEvent event, ChunkTrails.Trail trail) {
+		IntelRow(long time, Profile who, String sender, String text, java.util.Set<ChatIntel.Topic> topics, PlayerStats.Place place,
+				ServerActivity.WorldEvent event) {
+			this(time, who, sender, text, topics, place, event, null);
+		}
+	}
 
 	/** Topics of each chat line, worked out once per line. */
 	private final Map<Profile.Line, java.util.Set<ChatIntel.Topic>> lineTopics = new java.util.IdentityHashMap<>();
@@ -4301,7 +4312,7 @@ public class ShopScreen extends Screen {
 	private int intelAt = -1, intelFeedAt = -1, intelEventsAt = -1;
 
 	private List<IntelRow> intelRows() {
-		int at = mod.ledger.changes(), feedAt = mod.chatLogger.feedVersion(), eventsAt = mod.ledger.activity.version();
+		int at = mod.ledger.changes() * 31 + mod.ledger.chunkTrails.version(), feedAt = mod.chatLogger.feedVersion(), eventsAt = mod.ledger.activity.version();
 		if (intelRows != null && at == intelAt && feedAt == intelFeedAt && eventsAt == intelEventsAt) return intelRows;
 		List<IntelRow> rows = new ArrayList<>();
 		java.util.Set<String> names = new java.util.HashSet<>();
@@ -4311,6 +4322,11 @@ public class ShopScreen extends Screen {
 		}
 		for (ServerActivity.WorldEvent e : mod.ledger.activity.events) {
 			if (e.who.isEmpty()) rows.add(new IntelRow(e.time, null, "", "", java.util.Set.of(), null, e));
+		}
+		for (ChunkTrails.Trail t : mod.ledger.chunkTrails.trails) {
+			String runs = ChunkTrails.compass(t.x2 - t.x1, t.z2 - t.z1) + "–" + ChunkTrails.compass(t.x1 - t.x2, t.z1 - t.z2);
+			rows.add(new IntelRow(t.lastSeen, null, "", String.format(Locale.ROOT, "%,d blocks long, runs %s, %d chunks wide. Ends at %d, %d and %d, %d.",
+					t.length(), runs, t.width, t.x1, t.z1, t.x2, t.z2), java.util.Set.of(), null, null, t));
 		}
 		// A line that gave a place and is about something too is one row, with both.
 		Map<String, Integer> placeRows = new HashMap<>();
@@ -4347,6 +4363,7 @@ public class ShopScreen extends Screen {
 		return switch (f) {
 			case ALL -> true;
 			case PLACES -> r.place() != null;
+			case TRAILS -> r.trail() != null;
 			case WORLD -> r.event() != null || r.place() != null && r.place().how.equals("wither");
 			default -> r.topics().contains(f.topic());
 		};
@@ -4375,6 +4392,25 @@ public class ShopScreen extends Screen {
 		int y = y0;
 		context.enableScissor(0, BODY, width, height);
 		big(context, "Intel", x, y, TEXT, 1.4f);
+		// List or map.
+		int tx = x + textRenderer.getWidth("Intel") * 14 / 10 + 14;
+		for (boolean asMap : new boolean[] {false, true}) {
+			String label = asMap ? "Map" : "List";
+			int pw = textRenderer.getWidth(label) + 14;
+			boolean on = intelMap == asMap;
+			pill(context, mouseX, mouseY, tx, y, pw, 14, label, on ? LINK : SOFT, on ? LINK : BORDER, on ? CARD : TEXT, "intel-view:" + label, () -> {
+				intelMap = asMap;
+				scroll = 0;
+				if (asMap) centreMap();
+			});
+			tx += pw + 4;
+		}
+		if (intelMap) {
+			context.disableScissor();
+			renderIntelMap(context, mouseX, mouseY, x, y + 20, width - 16, height - (y + 20) - 8);
+			contentHeight = 0;
+			return;
+		}
 		y += 18;
 		y = wrapped(context, "Places players gave away (coordinates they wrote, where they logged out in front of you, where they summoned a wither), "
 				+ "things the server tells everyone (withers, end portals), and the last week of chat sorted by what it's about. Only what's certain is shown.",
@@ -4389,7 +4425,7 @@ public class ShopScreen extends Screen {
 			long n = all.stream().filter(r -> intelMatches(r, f)).count();
 			boolean on = intelFilter == f;
 			boolean hover = over(mouseX, mouseY, x, sy - 1, sideW, 11);
-			int color = f == IntelFilter.THREAT ? NAUGHTY : f == IntelFilter.PLACES || f == IntelFilter.WORLD ? ORANGE : LINK;
+			int color = f == IntelFilter.THREAT ? NAUGHTY : f == IntelFilter.PLACES || f == IntelFilter.WORLD || f == IntelFilter.TRAILS ? ORANGE : LINK;
 			context.drawText(textRenderer, Text.literal((on ? "› " : "") + f.label).styled(st -> st.withBold(on).withUnderline(hover)), x, sy,
 					hover ? HOVER_LINK : on ? TEXT : color, false);
 			String count = String.valueOf(n);
@@ -4409,7 +4445,7 @@ public class ShopScreen extends Screen {
 			if (!intelMatches(r, intelFilter)) continue;
 			if (!q.isEmpty() && !r.sender().toLowerCase(Locale.ROOT).contains(q) && !r.text().toLowerCase(Locale.ROOT).contains(q)) continue;
 			if (shown++ >= 300) break;
-			boolean located = r.place() != null || r.event() != null;
+			boolean located = r.place() != null || r.event() != null || r.trail() != null;
 			boolean twoLines = !r.text().isEmpty() && textRenderer.getWidth(r.text()) > rw - 12;
 			int h = 16 + (located ? 11 : 0) + (r.text().isEmpty() ? 0 : twoLines ? 20 : 10);
 			if (y + h >= BODY && y <= height) intelRow(context, mouseX, mouseY, r, rx, y, rw, h, twoLines);
@@ -4422,6 +4458,282 @@ public class ShopScreen extends Screen {
 		context.disableScissor();
 		contentHeight = Math.max(y, sy) - y0 + 10;
 		scrollbar(context, BODY);
+	}
+
+	// ---- The Intel map: land, trails, places and events, around you or anywhere ----
+
+	private boolean intelMap;
+	/** The middle of the map, in blocks, and pixels per block. */
+	private double mapX, mapZ, mapZoom = 0.125;
+	private String mapDim;
+	/** Where the map was drawn, for dragging and zooming. */
+	private int mapLeft, mapTop, mapW, mapH;
+	/** The land picture, rebuilt at most twice a second: one colour per cell. */
+	private int[] mapCells;
+	private int mapCellSize, mapCols, mapRows;
+	private long mapBuiltAt;
+	private String mapBuiltFor = "";
+	/** Where the map's middle was when the land picture was built, so it can be shifted while dragging. */
+	private double mapBuiltX, mapBuiltZ;
+
+	private void centreMap() {
+		if (client.player == null || client.world == null) return;
+		mapX = client.player.getX();
+		mapZ = client.player.getZ();
+		mapDim = client.world.getRegistryKey().getValue().toString();
+	}
+
+	private int mapPx(double bx) {
+		return (int) Math.round(mapLeft + mapW / 2.0 + (bx - mapX) * mapZoom);
+	}
+
+	private int mapPz(double bz) {
+		return (int) Math.round(mapTop + mapH / 2.0 + (bz - mapZ) * mapZoom);
+	}
+
+	private boolean overMap(double mx, double my) {
+		return intelMap && tab == Tab.INTEL && selected == null && mx >= mapLeft && mx < mapLeft + mapW && my >= mapTop && my < mapTop + mapH;
+	}
+
+	/** Drags the map. */
+	private void dragMap(double dx, double dy) {
+		mapX -= dx / mapZoom;
+		mapZ -= dy / mapZoom;
+	}
+
+	/** Zooms in or out around the point under the mouse, so it stays put. */
+	private void zoomMap(double mx, double my, double amount) {
+		double bx = mapX + (mx - mapLeft - mapW / 2.0) / mapZoom, bz = mapZ + (my - mapTop - mapH / 2.0) / mapZoom;
+		mapZoom = Math.max(1 / 128.0, Math.min(4, mapZoom * Math.pow(1.25, amount)));
+		mapX = bx - (mx - mapLeft - mapW / 2.0) / mapZoom;
+		mapZ = bz - (my - mapTop - mapH / 2.0) / mapZoom;
+	}
+
+	/** The land as cells: old wins over fresh (old is what trails are made of). */
+	private void buildMapCells() {
+		// Rebuilt when the zoom, size or dimension changes, and otherwise at most every 150 ms (moving) or 500 ms (still):
+		// in between, the last picture is shifted to where the map has moved.
+		String key = mapDim + "/" + mapZoom + "/" + mapW + "/" + mapH + "/" + mod.ledger.key();
+		long now = System.currentTimeMillis();
+		boolean moved = mapBuiltX != mapX || mapBuiltZ != mapZ;
+		if (mapCells != null && key.equals(mapBuiltFor) && now - mapBuiltAt < (moved ? 150 : 500)) return;
+		double chunkPx = 16 * mapZoom;
+		mapCellSize = Math.max(2, (int) Math.ceil(chunkPx));
+		mapCols = mapW / mapCellSize + 1;
+		mapRows = mapH / mapCellSize + 1;
+		int[] cells = new int[mapCols * mapRows];
+		double left = mapX - mapW / 2.0 / mapZoom, top = mapZ - mapH / 2.0 / mapZoom;
+		double cellBlocks = mapCellSize / mapZoom;
+		mod.ledger.chunkTrails.forEachChunk(mapDim, (cx, cz, state) -> {
+			int c = (int) Math.floor((cx * 16 + 8 - left) / cellBlocks), r = (int) Math.floor((cz * 16 + 8 - top) / cellBlocks);
+			if (c < 0 || r < 0 || c >= mapCols || r >= mapRows) return;
+			int i = r * mapCols + c;
+			if (state == ChunkTrails.OLD) cells[i] = 2;
+			else if (cells[i] == 0) cells[i] = 1;
+		});
+		mapCells = cells;
+		mapBuiltAt = now;
+		mapBuiltFor = key;
+		mapBuiltX = mapX;
+		mapBuiltZ = mapZ;
+	}
+
+	private static final int MAP_BACK = 0xFF0E1216, MAP_FRESH = 0xFF1C3A63, MAP_OLD = 0xFF55595F, MAP_TRAIL = 0xFFFFB020, MAP_PLACE = 0xFFFF7A1A,
+			MAP_EVENT = 0xFFB070FF, MAP_BASE = 0xFF4CD39B;
+
+	private void renderIntelMap(DrawContext context, int mouseX, int mouseY, int x, int y, int w, int h) {
+		if (mapDim == null) centreMap();
+		if (mapDim == null) return;
+		// Dimension buttons, centre, and the key.
+		int bx = x;
+		for (String[] d : new String[][] {{"minecraft:overworld", "Overworld"}, {"minecraft:the_nether", "Nether"}, {"minecraft:the_end", "End"}}) {
+			int pw = textRenderer.getWidth(d[1]) + 14;
+			boolean on = d[0].equals(mapDim);
+			pill(context, mouseX, mouseY, bx, y, pw, 14, d[1], on ? LINK : SOFT, on ? LINK : BORDER, on ? CARD : TEXT, "map-dim:" + d[1], () -> {
+				mapDim = d[0];
+				mapCells = null;
+			});
+			bx += pw + 4;
+		}
+		String centre = "Center on me";
+		int cw = textRenderer.getWidth(centre) + 14;
+		pill(context, mouseX, mouseY, bx + 6, y, cw, 14, centre, SOFT, BORDER, TEXT, "map-centre", this::centreMap);
+		String key = "§9■§r fresh  §7■§r old  §6━§r trail  §6◆§r place  §d●§r event  §a□§r base";
+		textTrim(context, key, bx + cw + 18, y + 3, x + w - (bx + cw + 18), MUTED);
+		y += 20;
+		h -= 20;
+		mapLeft = x;
+		mapTop = y;
+		mapW = w;
+		mapH = h;
+		roundedBorder(context, x - 1, y - 1, w + 2, h + 2, MAP_BACK, BORDER);
+		context.enableScissor(x, y, x + w, y + h);
+		context.fill(x, y, x + w, y + h, MAP_BACK);
+
+		// Land.
+		buildMapCells();
+		int shiftX = (int) Math.round((mapBuiltX - mapX) * mapZoom), shiftZ = (int) Math.round((mapBuiltZ - mapZ) * mapZoom);
+		for (int r = 0; r < mapRows; r++) {
+			for (int c = 0; c < mapCols; c++) {
+				int v = mapCells[r * mapCols + c];
+				if (v == 0) continue;
+				int px = x + c * mapCellSize + shiftX, py = y + r * mapCellSize + shiftZ;
+				context.fill(px, py, px + mapCellSize, py + mapCellSize, v == 2 ? MAP_OLD : MAP_FRESH);
+			}
+		}
+
+		List<String> tip = null;
+		// Your bases.
+		for (BaseInsuranceBridge.BaseArea base : BaseInsuranceBridge.bases()) {
+			if (!base.dimension().equals(mapDim)) continue;
+			int x0 = mapPx(base.minX()), z0 = mapPz(base.minZ()), x1 = Math.max(x0 + 3, mapPx(base.maxX() + 1)), z1 = Math.max(z0 + 3, mapPz(base.maxZ() + 1));
+			context.drawStrokedRectangle(x0, z0, x1 - x0, z1 - z0, MAP_BASE);
+			text(context, base.name(), x0, z0 - 10, MAP_BASE);
+		}
+		// Trails.
+		for (ChunkTrails.Trail t : mod.ledger.chunkTrails.trails) {
+			if (!t.dimension.equals(mapDim)) continue;
+			int ax = mapPx(t.x1), az = mapPz(t.z1), cx2 = mapPx(t.x2), cz2 = mapPz(t.z2);
+			int thick = Math.max(2, (int) Math.round(t.width * 16 * mapZoom * 0.5));
+			screenLine(context, ax, az, cx2, cz2, thick, MAP_TRAIL);
+			if (t.away != 0) {
+				int[] end = t.awayEnd();
+				int[] from = t.away == 1 ? new int[] {t.x2, t.z2} : new int[] {t.x1, t.z1};
+				screenArrow(context, mapPx(end[0]), mapPz(end[1]), end[0] - from[0], end[1] - from[1], Math.max(5, thick + 3), MAP_TRAIL);
+			}
+			if (ChunkTrails.segmentDistance(t, mapX + (mouseX - x - w / 2.0) / mapZoom, mapZ + (mouseY - y - h / 2.0) / mapZoom) <= Math.max(6 / mapZoom, t.width * 8)
+					&& over(mouseX, mouseY, x, y, w, h)) {
+				int[] end = t.awayEnd();
+				String runs = ChunkTrails.compass(t.x2 - t.x1, t.z2 - t.z1) + "–" + ChunkTrails.compass(t.x1 - t.x2, t.z1 - t.z2);
+				tip = List.of("Chunk trail", String.format(Locale.ROOT, "%,d blocks long, runs %s, %d chunks wide", t.length(), runs, t.width),
+						(t.away == 0 ? "Ends: " + t.x1 + ", " + t.z1 + " and " : "Far end (away from spawn): ") + end[0] + ", " + end[1],
+						"Seen " + ago(t.lastSeen) + " · click to copy the far end");
+				hit(mouseX - 4, mouseY - 4, 8, 8, "map-trail", () -> {
+					client.keyboard.setClipboard(end[0] + " " + end[1]);
+					flash("Copied " + end[0] + " " + end[1], NICE, null);
+				});
+			}
+		}
+		// World events.
+		for (ServerActivity.WorldEvent e : mod.ledger.activity.events) {
+			if (!e.dimension.equals(mapDim)) continue;
+			int px = mapPx(e.x), pz = mapPz(e.z);
+			context.fill(px - 3, pz - 3, px + 3, pz + 3, 0xFF000000);
+			context.fill(px - 2, pz - 2, px + 2, pz + 2, MAP_EVENT);
+			if (Math.abs(mouseX - px) <= 4 && Math.abs(mouseY - pz) <= 4) {
+				String what = switch (e.kind) {
+					case "wither" -> "A wither spawned";
+					case "end_portal" -> "An end portal was lit";
+					default -> "The dragon died";
+				};
+				tip = List.of(what + (e.who.isEmpty() ? "" : " (" + e.who + ")"), e.x + ", " + e.y + ", " + e.z, ago(e.time) + " · click to copy");
+				hit(px - 4, pz - 4, 8, 8, "map-event", () -> {
+					client.keyboard.setClipboard(e.x + " " + e.y + " " + e.z);
+					flash("Copied " + e.x + " " + e.y + " " + e.z, NICE, null);
+				});
+			}
+		}
+		// Places players gave away, and where listed players were last seen.
+		for (Profile p : mod.ledger.all()) {
+			for (PlayerStats.Place pl : p.stats.places) {
+				if (!pl.dimension.equals(mapDim)) continue;
+				int px = mapPx(pl.x), pz = mapPz(pl.z);
+				diamond(context, px, pz, MAP_PLACE);
+				if (Math.abs(mouseX - px) <= 4 && Math.abs(mouseY - pz) <= 4) {
+					tip = List.of(p.name + ": " + howLabel(pl.how).toLowerCase(Locale.ROOT), pl.coords() + " · " + ago(pl.time),
+							pl.how.equals("said") || pl.how.equals("highway") ? "\"" + fit(pl.text, 220) + "\"" : pl.text, "Click to copy");
+					hit(px - 4, pz - 4, 8, 8, "map-place:" + p.name, () -> {
+						client.keyboard.setClipboard(pl.coords().replace(",", ""));
+						flash("Copied " + pl.coords(), NICE, null);
+					});
+				}
+			}
+			if (p.verdict == Profile.Verdict.NONE && p.groups.isEmpty()) continue;
+			Profile.Sighting sg = p.lastSighting();
+			if (sg == null || !sg.dimension.equals(mapDim)) continue;
+			int px = mapPx(sg.lastX), pz = mapPz(sg.lastZ);
+			int color = p.verdict == Profile.Verdict.NONE ? LINK : verdictColor(p.verdict);
+			context.fill(px - 2, pz - 2, px + 2, pz + 2, 0xFF000000);
+			context.fill(px - 1, pz - 1, px + 1, pz + 1, color);
+			if (Math.abs(mouseX - px) <= 4 && Math.abs(mouseY - pz) <= 4) {
+				String heading = heading(sg);
+				tip = List.of(p.name + " was last seen here", sg.lastX + ", " + sg.lastY + ", " + sg.lastZ + " · " + ago(sg.until),
+						heading.isEmpty() ? "Standing still" : "Left heading " + heading);
+			}
+		}
+		// You.
+		if (client.player != null && client.world != null && client.world.getRegistryKey().getValue().toString().equals(mapDim)) {
+			int px = mapPx(client.player.getX()), pz = mapPz(client.player.getZ());
+			var m = context.getMatrices();
+			m.pushMatrix();
+			m.translate(px, pz);
+			m.rotate((float) Math.toRadians(client.player.getYaw() + 180));
+			context.drawText(textRenderer, "▲", -textRenderer.getWidth("▲") / 2, -4, 0xFFFFFFFF, true);
+			m.popMatrix();
+		}
+		context.disableScissor();
+
+		// North, scale, and where the mouse is.
+		text(context, "N ↑", x + 6, y + 6, 0xFFFF6060);
+		int barBlocks = niceScale(80 / mapZoom);
+		int barPx = (int) Math.round(barBlocks * mapZoom);
+		context.fill(x + 6, y + h - 8, x + 6 + barPx, y + h - 6, 0xFFDDDDDD);
+		text(context, String.format(Locale.ROOT, "%,d blocks", barBlocks), x + 10 + barPx, y + h - 11, 0xFFDDDDDD);
+		if (over(mouseX, mouseY, x, y, w, h)) {
+			int bxm = (int) Math.floor(mapX + (mouseX - x - w / 2.0) / mapZoom), bzm = (int) Math.floor(mapZ + (mouseY - y - h / 2.0) / mapZoom);
+			byte st = mod.ledger.chunkTrails.state(mapDim, bxm >> 4, bzm >> 4);
+			String land = st == ChunkTrails.OLD ? "old land" : st == ChunkTrails.NEW ? "fresh land" : "not known";
+			String where = String.format(Locale.ROOT, "%d, %d · %s", bxm, bzm, land);
+			text(context, where, x + w - 6 - textRenderer.getWidth(where), y + h - 11, 0xFFDDDDDD);
+			if (tip != null) tooltip(mouseX, mouseY, tip.toArray(new String[0]));
+		}
+		if (mod.ledger.chunkTrails.trails.stream().noneMatch(t -> t.dimension.equals(mapDim)) && mapCells != null
+				&& java.util.Arrays.stream(mapCells).allMatch(v -> v == 0)) {
+			String none = NNConfig.INSTANCE.chunkTrails ? "Nothing known about this land yet. It fills in as you travel: chunks with water or lava show as fresh or old."
+					: "Find chunk trails is off (Settings), so no land is being read.";
+			text(context, none, x + w / 2 - textRenderer.getWidth(none) / 2, y + h / 2 + 12, MUTED);
+		}
+	}
+
+	/** 1, 2 or 5 times a power of ten, at most {@code max}. */
+	private static int niceScale(double max) {
+		int p = 1;
+		while (p * 10 <= max) p *= 10;
+		if (p * 5 <= max) return p * 5;
+		if (p * 2 <= max) return p * 2;
+		return p;
+	}
+
+	private static void diamond(DrawContext context, int x, int y, int color) {
+		context.fill(x - 1, y - 3, x + 2, y + 4, 0xFF000000);
+		context.fill(x - 3, y - 1, x + 4, y + 2, 0xFF000000);
+		context.fill(x, y - 2, x + 1, y + 3, color);
+		context.fill(x - 2, y, x + 3, y + 1, color);
+		context.fill(x - 1, y - 1, x + 2, y + 2, color);
+	}
+
+	private static void screenLine(DrawContext context, int x1, int y1, int x2, int y2, int thick, int color) {
+		double len = Math.hypot(x2 - x1, y2 - y1);
+		int steps = (int) Math.max(1, len);
+		int h = Math.max(1, thick / 2);
+		for (int k = 0; k <= steps; k++) {
+			int x = (int) Math.round(x1 + (x2 - x1) * (double) k / steps), y = (int) Math.round(y1 + (y2 - y1) * (double) k / steps);
+			context.fill(x - h, y - h, x + h, y + h, color);
+		}
+	}
+
+	private static void screenArrow(DrawContext context, int x, int y, double dx, double dy, int size, int color) {
+		double len = Math.hypot(dx, dy);
+		if (len < 1) return;
+		double ux = dx / len, uy = dy / len;
+		for (int k = 0; k <= size * 2; k++) {
+			double half = k * 0.6;
+			double cx = x - ux * k, cy = y - uy * k;
+			for (double s = -half; s <= half; s += 1) {
+				int fx = (int) Math.round(cx - uy * s), fy = (int) Math.round(cy + ux * s);
+				context.fill(fx, fy, fx + 1, fy + 1, color);
+			}
+		}
 	}
 
 	private void intelRow(DrawContext context, int mouseX, int mouseY, IntelRow r, int x, int y, int w, int h, boolean twoLines) {
@@ -4449,19 +4761,24 @@ public class ShopScreen extends Screen {
 			case "dragon" -> "The dragon died";
 			default -> r.event().kind;
 		});
+		if (r.trail() != null) tags.add("Chunk trail");
 		for (ChatIntel.Topic t : r.topics()) tags.add(t.label);
 		for (String tag : tags) {
-			int color = tag.equals("Threats") ? NAUGHTY : r.place() != null || r.event() != null ? ORANGE : LOOK;
+			int color = tag.equals("Threats") ? NAUGHTY : r.place() != null || r.event() != null || r.trail() != null ? ORANGE : LOOK;
 			text(context, "[" + tag + "]", tx, ty, color);
 			tx += textRenderer.getWidth("[" + tag + "]") + 4;
 		}
 		ty += 12;
 		// Where, and how far from your bases and you.
-		if (r.place() != null || r.event() != null) {
-			String dim = r.place() != null ? r.place().dimension : r.event().dimension;
-			int px = r.place() != null ? r.place().x : r.event().x, pz = r.place() != null ? r.place().z : r.event().z;
-			String coords = r.place() != null ? r.place().coords() : r.event().x + ", " + r.event().y + ", " + r.event().z;
-			String where = coords + (dim.isEmpty() ? " (dimension not said)" : " (" + dimensionName(dim) + ")");
+		if (r.place() != null || r.event() != null || r.trail() != null) {
+			ChunkTrails.Trail trail = r.trail();
+			int[] far = trail == null ? null : trail.awayEnd();
+			String dim = trail != null ? trail.dimension : r.place() != null ? r.place().dimension : r.event().dimension;
+			int px = trail != null ? far[0] : r.place() != null ? r.place().x : r.event().x;
+			int pz = trail != null ? far[1] : r.place() != null ? r.place().z : r.event().z;
+			String coords = trail != null ? px + ", " + pz : r.place() != null ? r.place().coords() : r.event().x + ", " + r.event().y + ", " + r.event().z;
+			String where = (trail == null ? "" : trail.away == 0 ? "End: " : "Far end (away from spawn): ") + coords
+					+ (dim.isEmpty() ? " (dimension not said)" : " (" + dimensionName(dim) + ")");
 			context.drawText(textRenderer, Text.literal(where).styled(st -> st.withBold(true)), x + 6, ty, TEXT, false);
 			int wx = x + 6 + textRenderer.getWidth(Text.literal(where).styled(st -> st.withBold(true))) + 6;
 			List<String> notes = new ArrayList<>();
@@ -5268,7 +5585,12 @@ public class ShopScreen extends Screen {
 
 	@Override
 	public boolean mouseDragged(Click click, double dx, double dy) {
-		return super.mouseDragged(scaled(click), scaled(dx), scaled(dy));
+		Click c = scaled(click);
+		if (overMap(c.x(), c.y())) {
+			dragMap(scaled(dx), scaled(dy));
+			return true;
+		}
+		return super.mouseDragged(c, scaled(dx), scaled(dy));
 	}
 
 	@Override
@@ -5290,6 +5612,10 @@ public class ShopScreen extends Screen {
 		}
 		if (selected == null && tab == Tab.CHAT) {
 			chatScroll = Math.max(0, Math.min(chatMaxScroll, chatScroll + verticalAmount * 24));
+			return true;
+		}
+		if (overMap(scaled(mouseX), scaled(mouseY))) {
+			zoomMap(scaled(mouseX), scaled(mouseY), verticalAmount);
 			return true;
 		}
 		if (sharing) {

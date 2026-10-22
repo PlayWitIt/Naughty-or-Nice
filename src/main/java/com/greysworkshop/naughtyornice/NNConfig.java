@@ -88,6 +88,12 @@ public final class NNConfig {
 	public boolean pingAllCoords = false;
 	/** Hold your own chat message when it gives away coordinates or a base name, until you say send anyway. */
 	public boolean guardMyCoords = true;
+	/** Tell old land from fresh land and look for trails through it. */
+	public boolean chunkTrails = true;
+	/** Show the chunk-trail radar (J toggles it). */
+	public boolean trailRadar = false;
+	/** A chat note when a new chunk trail is found. */
+	public boolean trailAlerts = true;
 	/** A summary of who's online from your lists when you join a server. */
 	public boolean joinSummary = true;
 

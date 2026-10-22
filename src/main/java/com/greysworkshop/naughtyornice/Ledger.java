@@ -45,6 +45,8 @@ public final class Ledger {
 	public final Links links = new Links();
 	/** How busy this server is at each hour of the week. */
 	public ServerActivity activity = new ServerActivity();
+	/** Old and fresh land, and the trails through it. */
+	public final ChunkTrails chunkTrails = new ChunkTrails();
 
 	/**
 	 * The server (by address) or singleplayer world. The address is tidied up, so "Constantiam.net",
@@ -80,7 +82,7 @@ public final class Ledger {
 		return key.replaceAll("[^A-Za-z0-9._-]", "_");
 	}
 
-	private static final String[] SIDE_FILES = {".groups.json", ".links.json", ".alerts.json", ".activity.json"};
+	private static final String[] SIDE_FILES = {".groups.json", ".links.json", ".alerts.json", ".activity.json", ".trails.json", ".chunks.bin"};
 
 	/**
 	 * Older versions kept lists per address exactly as typed, so the same server could be split across several
@@ -192,11 +194,13 @@ public final class Ledger {
 		groupCache = null;
 		links.clear();
 		activity = new ServerActivity();
+		chunkTrails.clear();
 		key = newKey;
 		if (key != null) {
 			load();
 			links.load(linksFile());
 			activity = ServerActivity.load(activityFile());
+			chunkTrails.load(sideFile(".trails.json"), sideFile(".chunks.bin"));
 		}
 		if (NaughtyOrNiceClient.INSTANCE != null) NaughtyOrNiceClient.INSTANCE.chatLogger.loadFeed();
 	}
@@ -598,6 +602,11 @@ public final class Ledger {
 		}
 	}
 
+	/** A file next to the lists for this server, e.g. lists/&lt;server&gt;.trails.json. */
+	private Path sideFile(String suffix) {
+		return NNConfig.dir().resolve("lists").resolve(key.replaceAll("[^A-Za-z0-9._-]", "_") + suffix);
+	}
+
 	/** Group colours and alerts, next to the lists. */
 	private void loadSideFiles() {
 		Path colors = groupsFile();
@@ -695,6 +704,7 @@ public final class Ledger {
 		if (key == null) return;
 		links.save(linksFile(), force);
 		activity.save(activityFile(), force);
+		chunkTrails.save(sideFile(".trails.json"), sideFile(".chunks.bin"), force);
 		if (NaughtyOrNiceClient.INSTANCE != null) NaughtyOrNiceClient.INSTANCE.chatLogger.saveFeed(force);
 		if (!dirty && !force) return;
 		List<Profile> keep = new ArrayList<>();

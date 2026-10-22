@@ -74,6 +74,14 @@ public final class Commands {
 					if (!CoordGuard.sendHeld()) c.getSource().sendError(Text.literal("No message is being held."));
 					return 1;
 				}))
+				.then(literal("radar").executes(c -> {
+					NNConfig.INSTANCE.trailRadar = !NNConfig.INSTANCE.trailRadar;
+					if (NNConfig.INSTANCE.trailRadar) NNConfig.INSTANCE.chunkTrails = true;
+					NNConfig.save();
+					c.getSource().sendFeedback(Alerts.prefix().append(Text.literal("Chunk trail radar " + (NNConfig.INSTANCE.trailRadar ? "on (J toggles it)" : "off"))
+							.formatted(Formatting.GRAY)));
+					return 1;
+				}))
 				.then(literal("intel").executes(c -> {
 					NaughtyOrNiceClient.INSTANCE.openLater(new ShopScreen(ShopScreen.Tab.INTEL, null));
 					return 1;
