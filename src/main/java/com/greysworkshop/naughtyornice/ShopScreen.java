@@ -4470,6 +4470,10 @@ public class ShopScreen extends Screen {
 	private int mapLeft, mapTop, mapW, mapH;
 	/** The land picture, rebuilt at most twice a second: one colour per cell. */
 	private int[] mapCells;
+	/** Old and fresh chunks counted in each cell, for the heat map. */
+	private int[] mapOld, mapFresh;
+	/** Show land as heat (how much of each area is old land) rather than chunk by chunk. */
+	private boolean mapHeat;
 	private int mapCellSize, mapCols, mapRows;
 	private long mapBuiltAt;
 	private String mapBuiltFor = "";
@@ -4513,25 +4517,34 @@ public class ShopScreen extends Screen {
 	private void buildMapCells() {
 		// Rebuilt when the zoom, size or dimension changes, and otherwise at most every 150 ms (moving) or 500 ms (still):
 		// in between, the last picture is shifted to where the map has moved.
-		String key = mapDim + "/" + mapZoom + "/" + mapW + "/" + mapH + "/" + mod.ledger.key();
+		String key = mapDim + "/" + mapZoom + "/" + mapW + "/" + mapH + "/" + mapHeat + "/" + mod.ledger.key();
 		long now = System.currentTimeMillis();
 		boolean moved = mapBuiltX != mapX || mapBuiltZ != mapZ;
 		if (mapCells != null && key.equals(mapBuiltFor) && now - mapBuiltAt < (moved ? 150 : 500)) return;
 		double chunkPx = 16 * mapZoom;
-		mapCellSize = Math.max(2, (int) Math.ceil(chunkPx));
+		// Heat is shown in bigger cells (at least 6 pixels), so each one sums up an area.
+		mapCellSize = mapHeat ? Math.max(6, (int) Math.ceil(chunkPx)) : Math.max(2, (int) Math.ceil(chunkPx));
 		mapCols = mapW / mapCellSize + 1;
 		mapRows = mapH / mapCellSize + 1;
 		int[] cells = new int[mapCols * mapRows];
+		int[] olds = new int[mapCols * mapRows], freshes = new int[mapCols * mapRows];
 		double left = mapX - mapW / 2.0 / mapZoom, top = mapZ - mapH / 2.0 / mapZoom;
 		double cellBlocks = mapCellSize / mapZoom;
 		mod.ledger.chunkTrails.forEachChunk(mapDim, (cx, cz, state) -> {
 			int c = (int) Math.floor((cx * 16 + 8 - left) / cellBlocks), r = (int) Math.floor((cz * 16 + 8 - top) / cellBlocks);
 			if (c < 0 || r < 0 || c >= mapCols || r >= mapRows) return;
 			int i = r * mapCols + c;
-			if (state == ChunkTrails.OLD) cells[i] = 2;
-			else if (cells[i] == 0) cells[i] = 1;
+			if (state == ChunkTrails.OLD) {
+				cells[i] = 2;
+				olds[i]++;
+			} else {
+				if (cells[i] == 0) cells[i] = 1;
+				freshes[i]++;
+			}
 		});
 		mapCells = cells;
+		mapOld = olds;
+		mapFresh = freshes;
 		mapBuiltAt = now;
 		mapBuiltFor = key;
 		mapBuiltX = mapX;
@@ -4558,7 +4571,15 @@ public class ShopScreen extends Screen {
 		String centre = "Center on me";
 		int cw = textRenderer.getWidth(centre) + 14;
 		pill(context, mouseX, mouseY, bx + 6, y, cw, 14, centre, SOFT, BORDER, TEXT, "map-centre", this::centreMap);
-		String key = "§9■§r fresh  §7■§r old  §6━§r trail  §6◆§r place  §d●§r event  §a□§r base";
+		String heat = "Heat";
+		int hw = textRenderer.getWidth(heat) + 14;
+		pill(context, mouseX, mouseY, bx + cw + 10, y, hw, 14, heat, mapHeat ? ORANGE : SOFT, mapHeat ? ORANGE : BORDER, mapHeat ? CARD : TEXT, "map-heat", () -> {
+			mapHeat = !mapHeat;
+			mapCells = null;
+		});
+		cw += hw + 4;
+		String key = mapHeat ? "§9■§r all fresh  §e■§r some old  §c■§r all old  §6━§r trail  §6◆§r place  §a□§r base"
+				: "§9■§r new to you  §7■§r loaded before  §6━§r trail  §6◆§r place  §d●§r event  §a□§r base";
 		textTrim(context, key, bx + cw + 18, y + 3, x + w - (bx + cw + 18), MUTED);
 		y += 20;
 		h -= 20;
@@ -4578,7 +4599,12 @@ public class ShopScreen extends Screen {
 				int v = mapCells[r * mapCols + c];
 				if (v == 0) continue;
 				int px = x + c * mapCellSize + shiftX, py = y + r * mapCellSize + shiftZ;
-				context.fill(px, py, px + mapCellSize, py + mapCellSize, v == 2 ? MAP_OLD : MAP_FRESH);
+				if (mapHeat) {
+					int i = r * mapCols + c;
+					context.fill(px, py, px + mapCellSize, py + mapCellSize, heatColor(mapOld[i], mapFresh[i]));
+				} else {
+					context.fill(px, py, px + mapCellSize, py + mapCellSize, v == 2 ? MAP_OLD : MAP_FRESH);
+				}
 			}
 		}
 
@@ -4682,7 +4708,8 @@ public class ShopScreen extends Screen {
 		if (over(mouseX, mouseY, x, y, w, h)) {
 			int bxm = (int) Math.floor(mapX + (mouseX - x - w / 2.0) / mapZoom), bzm = (int) Math.floor(mapZ + (mouseY - y - h / 2.0) / mapZoom);
 			byte st = mod.ledger.chunkTrails.state(mapDim, bxm >> 4, bzm >> 4);
-			String land = st == ChunkTrails.OLD ? "old land" : st == ChunkTrails.NEW ? "fresh land" : "not known";
+			String land = st == ChunkTrails.OLD ? "loaded before you (someone was here)" : st == ChunkTrails.NEW ? "new: first loaded by you"
+					: "can't tell (no water or lava here, or not seen)";
 			String where = String.format(Locale.ROOT, "%d, %d · %s", bxm, bzm, land);
 			text(context, where, x + w - 6 - textRenderer.getWidth(where), y + h - 11, 0xFFDDDDDD);
 			if (tip != null) tooltip(mouseX, mouseY, tip.toArray(new String[0]));
@@ -4693,6 +4720,30 @@ public class ShopScreen extends Screen {
 					: "Find chunk trails is off (Settings), so no land is being read.";
 			text(context, none, x + w / 2 - textRenderer.getWidth(none) / 2, y + h / 2 + 12, MUTED);
 		}
+	}
+
+	/**
+	 * How much of an area is old land, as a colour: blue where it's all fresh, through yellow, to red where it's all
+	 * old. Fainter where few chunks there could be told (so a guess from one chunk doesn't shout).
+	 */
+	private static int heatColor(int old, int fresh) {
+		int known = old + fresh;
+		if (known == 0) return 0;
+		double share = old / (double) known;
+		int r, g, b;
+		if (share < 0.5) {
+			double t = share * 2;
+			r = (int) (40 + t * (240 - 40));
+			g = (int) (90 + t * (200 - 90));
+			b = (int) (200 - t * 170);
+		} else {
+			double t = (share - 0.5) * 2;
+			r = (int) (240 + t * 10);
+			g = (int) (200 - t * 160);
+			b = (int) (30 + t * 10);
+		}
+		int alpha = (int) (90 + Math.min(1, known / 6.0) * 150);
+		return alpha << 24 | r << 16 | g << 8 | b;
 	}
 
 	/** 1, 2 or 5 times a power of ten, at most {@code max}. */

@@ -16,7 +16,7 @@ Optional: [Mod Menu](https://modrinth.com/mod/modmenu) for a settings button, an
 features. To share lists with a friend who has the mod, use **⇄ Share** in the lists screen.
 
 ## How to use it
-- Press **N** to open it. If you're looking at a player, it opens their page. Press **J** for the chunk trail radar.
+- Press **N** to open it. If you're looking at a player, it opens their page. Press **J** for the chunk trail radar, **B** for Baritone, **Z** to stop Baritone.
 - Every player is shown as a card with their face, a star rating, a **☆** in the corner to make them a friend, and three buttons: **✔ Nice**, **? Look Into** (not
   sure yet, keep an eye on them) and **✖ Naughty**. Click again to take them off. Every change can be undone from the
   banner at the top.
@@ -34,7 +34,7 @@ features. To share lists with a friend who has the mod, use **⇄ Share** in the
   biggest (about 540, never so big the panels don't fit). Whole-pixel scales are used where they're close, so text
   stays sharp.
 - Commands: `/nn`, `/nn add`, `/nn friends`, `/nn chat`, `/nn groups`, `/nn intel`, `/nn share`, `/nn import`, `/nn open <link>`,
-  `/nn disconnects`, `/nn sendanyway`, `/nn radar`, `/nn friend <name> [type]`, `/nn nice <name>`, `/nn look <name>`, `/nn naughty <name>`,
+  `/nn disconnects`, `/nn sendanyway`, `/nn radar`, `/nn events`, `/nn baritone`, `/nn friend <name> [type]`, `/nn nice <name>`, `/nn look <name>`, `/nn naughty <name>`,
   `/nn unsort <name>`, `/nn group <name> <group>`, `/nn who <name>`, `/nn chat <name>`, `/nn settings`.
 
 ## Friends
@@ -176,8 +176,10 @@ topic, or any coordinates at all (Settings).
 ## Chunk trails
 Press **J** for the trail radar (or `/nn radar`). It's a small map on the right of the screen that turns with you, so
 ahead is always up:
-- **Blue**: fresh land, generated just now for you. Nobody has been here.
-- **Grey**: old land. Someone has been here before.
+- **Blue: new to you**: generated just now, as you got there. Nobody had loaded it before.
+- **Grey: loaded before**: someone was here before you.
+- **Small dot: can't tell**: it's loaded, but has no water or lava to tell by.
+- **Dark: not loaded**.
 - **Amber line**: a **trail**, a long, narrow strip of old land with fresh land on both sides. That's someone's path.
   The **arrow** is on the end further from spawn (when one end clearly is). That's a fact about the trail, not a
   promise of a base: it's where they went, or came from.
@@ -194,6 +196,10 @@ Drag to move, scroll to zoom, Overworld / Nether / End to switch, **Center on me
 what it is and when; click to copy its coordinates. The mouse's coordinates and what's known about that land show in
 the corner.
 
+**Heat** turns the map into a heat map of where people have been: each area is coloured by how much of the land
+there is old, blue where it's all fresh, through yellow, to red where it's all old. Highways and the routes players
+fly come out as hot lines through cool fresh land; areas where little could be read are drawn fainter.
+
 What the mod learns about land is kept per server (old land and the land you generated), so trails build up over many
 sessions instead of starting over.
 
@@ -208,6 +214,55 @@ and no trail shows; a liquid poured by a player out of your sight marks one chun
 a trail is wider than your view distance you'll see only old land around you, and the radar says so. Water flowing
 out of fresh land into a dry old chunk next to it can mark that one chunk fresh, so a trail's edge can look a chunk
 narrower than it is; it can't move or make a trail.
+
+## Events: everything that happened, and who started it
+The mod keeps a log of everything around you, so when an event turns into a brawl you can find out exactly what
+happened. `/nn events` opens it.
+- **What's logged**, with the time to the millisecond: chat and whispers, joins and leaves, deaths (killer, weapon and
+  cause, and where if it was in view), every hit (who, on whom, with what item, what kind of damage, and the health
+  left as the server shows it), arm swings (and who at), totem pops, shots (arrows, tridents, pearls, potions,
+  fireworks, and who fired them), end crystals (who set one off; who was near when one appeared), explosions, gear
+  changes, advancements, and where everyone in view was, every second.
+- **Always on**: the last 30 minutes are always kept, so after something happens, **Save last 30 minutes** keeps it,
+  even if you never pressed record. Or **Start recording** before the event: it writes to a file as it goes, so even
+  a crash loses nothing.
+- **The report**: when it ran, how many took part and died; **How the fighting started** (the first hit one player
+  landed on another, which the server reports exactly, and the swings just before it); a **Kill feed** with weapons;
+  **Players** (kills, deaths, hits dealt and taken, totems, crystals, shots, chat, who they hit most and with what);
+  and a **Timeline** of everything, filtered by player or kind.
+- **Export CSV** opens in any spreadsheet. Recordings are kept in config/naughtyornice/recordings/&lt;server&gt;/, one line per
+  entry (JSON Lines).
+
+Who did something is only written when the server says so (the attacker of a hit, the shooter of a projectile,
+whoever damaged a crystal). When it doesn't (who placed a crystal), the players close by are listed instead.
+
+## Baritone, with buttons
+If you have [Baritone](https://github.com/cabaletta/baritone) installed (on its own, or inside a client that has it),
+press **B** (or `/nn baritone`). Naughty or Nice drives it through Baritone's own API, so nothing goes through chat.
+- **Go to…**: every place the mod knows, in one list with distance and direction: your saved waypoints (type a name,
+  **Save where I am**), your bases, chunk trails' far ends, places players gave away, where your list's players were
+  last seen, lit end portals (strongholds), and coordinates on your clipboard. Search it, filter it, press **Go**.
+- **Smart Go** works out how: a place in the other dimension becomes the matching spot in yours (8 to 1); it flies by
+  elytra only when that will work (in the nether, over 1,000 blocks, an elytra on and fireworks with you) and walks
+  otherwise. While going, a line at the top of the screen shows where to, how far, about how long (from the speed you're
+  actually making) and how.
+- **Z stops everything**: the trip, a highway roam, and Baritone. (Change it in Controls.)
+- **Safety on every trip**: it pauses and asks when someone who isn't a friend or on your Nice list shows up, and stops
+  when your health gets low (Settings page).
+- **Do**: type coordinates, follow a player, mine a block, explore, farm, Stop / Pause / Resume.
+- **Highway roam**: pick a highway (±X, ±Z, the diagonals), walk or elytra, its height and how far. Damaged highways:
+  break through filled-in parts, bridge gaps and missing floor with blocks you carry (or go round the side), parkour
+  jumps, and walking on lava only if you have Fire Resistance. It stops and asks when a chunk trail turns up near the
+  highway ([Follow it], [Keep going], [Download this area]) or when a stranger shows up.
+- **Settings**: Baritone's main switches, on and off.
+
+## Downloading the world (only when you say yes)
+Press **Download** (Baritone screen, or the button when a highway roam stops at a trail): from then until you stop,
+every chunk you load in that dimension is saved into a singleplayer world named after the server, the dimension and the
+time. It saves blocks, biomes and the block data the server sends (signs, banners...). Chest contents aren't sent to
+players unless you open the chest, so they can't be saved. Each chunk is saved when it arrives and again when you leave
+it, so blocks broken or placed while you were there are kept. The world is plain vanilla: open it from Singleplayer in
+creative. Everything you didn't load is empty, never made up.
 
 ## Guarding your own location
 **Guard my coordinates** (on by default) reads your own chat messages and whispers before they're sent. If one would
@@ -318,5 +373,5 @@ is also written to a text file a day in `config/naughtyornice/chatlogs/<server>/
 ## Building
 Requires JDK 21. Run `./gradlew build`; the jar goes to `build/libs/`.
 `./gradlew testIntel` checks the chat detectors (coordinates, topics, trash talk) against 146 lines in a few seconds.
-`./gradlew runSelfTest` runs a scripted in-game test (209 checks) that spawns a fake griefer and saves screenshots to
+`./gradlew runSelfTest` runs a scripted in-game test (229 checks) that spawns a fake griefer and saves screenshots to
 `run/screenshots/`.

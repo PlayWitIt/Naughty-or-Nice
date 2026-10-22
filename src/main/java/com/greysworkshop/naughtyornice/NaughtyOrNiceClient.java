@@ -45,6 +45,9 @@ public class NaughtyOrNiceClient implements ClientModInitializer {
 
 	private KeyBinding openKey;
 	private KeyBinding radarKey;
+	private KeyBinding baritoneKey;
+	private KeyBinding stopKey;
+	private int roamTimer;
 	private int trailTimer;
 	private Screen pendingScreen;
 	private int saveTimer;
@@ -58,6 +61,9 @@ public class NaughtyOrNiceClient implements ClientModInitializer {
 		KeyBinding.Category category = KeyBinding.Category.create(Identifier.of(MOD_ID, "main"));
 		openKey = KeyBindingHelper.registerKeyBinding(new KeyBinding("key.naughtyornice.open", InputUtil.Type.KEYSYM, GLFW.GLFW_KEY_N, category));
 		radarKey = KeyBindingHelper.registerKeyBinding(new KeyBinding("key.naughtyornice.radar", InputUtil.Type.KEYSYM, GLFW.GLFW_KEY_J, category));
+		baritoneKey = KeyBindingHelper.registerKeyBinding(new KeyBinding("key.naughtyornice.baritone", InputUtil.Type.KEYSYM, GLFW.GLFW_KEY_B, category));
+		stopKey = KeyBindingHelper.registerKeyBinding(new KeyBinding("key.naughtyornice.stop", InputUtil.Type.KEYSYM, GLFW.GLFW_KEY_Z, category));
+		HudElementRegistry.addLast(Identifier.of(MOD_ID, "trip"), (context, tickCounter) -> Safe.run("drawing the trip line", () -> SmartTravel.render(context, tickCounter)));
 		HudElementRegistry.addLast(Identifier.of(MOD_ID, "trail_radar"), (context, tickCounter) -> Safe.run("drawing the trail radar", () -> TrailRadar.render(context, tickCounter)));
 
 		ClientCommandRegistrationCallback.EVENT.register((dispatcher, registryAccess) -> Commands.register(dispatcher));
@@ -77,6 +83,8 @@ public class NaughtyOrNiceClient implements ClientModInitializer {
 
 		// Disconnect fires on the network thread; do the work on the game thread.
 		ClientPlayConnectionEvents.DISCONNECT.register((handler, client) -> client.execute(() -> {
+			HighwayRoam.stop(null);
+			SmartTravel.stop();
 			ledger.switchTo(null);
 			watcher.reset();
 		}));
@@ -182,6 +190,7 @@ public class NaughtyOrNiceClient implements ClientModInitializer {
 		TrailRadar.patches = patches;
 		trails.trim(dim, cx, cz);
 		for (ChunkTrails.Trail t : trails.takeNew()) {
+			HighwayRoam.trailFound(client, t);
 			if (!NNConfig.INSTANCE.trailAlerts) continue;
 			String[] say = trails.guidance(dim, client.player.getX(), client.player.getZ(), client.player.getYaw());
 			int[] end = t.awayEnd();
@@ -191,6 +200,11 @@ public class NaughtyOrNiceClient implements ClientModInitializer {
 					.append(Text.literal(NNConfig.INSTANCE.trailRadar ? "" : "[Show radar]").styled(st -> st.withColor(Formatting.AQUA).withUnderline(true)
 							.withClickEvent(new ClickEvent.RunCommand("/nn radar")))));
 		}
+	}
+
+	/** The stop key as it's bound right now ("Z"), for telling people. */
+	public String stopKeyName() {
+		return stopKey == null ? "Z" : stopKey.getBoundKeyLocalizedText().getString();
 	}
 
 	/** The UUID offline-mode servers give a name; our best guess for someone added before we've seen them. */
@@ -247,6 +261,22 @@ public class NaughtyOrNiceClient implements ClientModInitializer {
 
 		while (openKey.wasPressed()) {
 			if (client.currentScreen == null) client.setScreen(openScreen(client));
+		}
+		while (stopKey.wasPressed()) {
+			// One key stops everything: a trip, a highway roam, and whatever Baritone is doing.
+			boolean was = SmartTravel.active() || HighwayRoam.active() || BaritoneBridge.isPathing();
+			SmartTravel.stop();
+			HighwayRoam.stop(null);
+			BaritoneBridge.run("stop");
+			if (BaritoneBridge.present()) client.inGameHud.setOverlayMessage(Text.literal(was ? "Stopped" : "Nothing to stop").formatted(Formatting.YELLOW), false);
+		}
+		while (baritoneKey.wasPressed()) {
+			if (client.currentScreen == null) client.setScreen(new BaritoneScreen());
+		}
+		if (++roamTimer >= 20) {
+			roamTimer = 0;
+			HighwayRoam.tick(client);
+			SmartTravel.tick(client);
 		}
 		while (radarKey.wasPressed()) {
 			NNConfig.INSTANCE.trailRadar = !NNConfig.INSTANCE.trailRadar;

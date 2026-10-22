@@ -94,6 +94,12 @@ public final class NNConfig {
 	public boolean trailRadar = false;
 	/** A chat note when a new chunk trail is found. */
 	public boolean trailAlerts = true;
+	/** On a Baritone trip: pause and ask when someone who isn't a friend (or on your Nice list) shows up. */
+	public boolean tripStopForStrangers = true;
+	/** On a Baritone trip: stop when your health is at or below this (half-hearts; 0 = never). */
+	public int tripStopHealth = 8;
+	/** Keep a log of everything around you (the last 30 minutes always; recordings when you start one). */
+	public boolean eventLog = true;
 	/** A summary of who's online from your lists when you join a server. */
 	public boolean joinSummary = true;
 

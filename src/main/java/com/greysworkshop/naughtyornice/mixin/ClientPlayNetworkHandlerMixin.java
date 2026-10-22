@@ -12,11 +12,17 @@ import net.minecraft.network.packet.s2c.play.DeathMessageS2CPacket;
 import net.minecraft.network.packet.s2c.play.EntityDamageS2CPacket;
 import net.minecraft.network.packet.s2c.play.EntityStatusS2CPacket;
 import net.minecraft.network.packet.s2c.play.WorldEventS2CPacket;
+import net.minecraft.network.packet.s2c.play.EntityAnimationS2CPacket;
+import net.minecraft.network.packet.s2c.play.EntitySpawnS2CPacket;
+import net.minecraft.network.packet.s2c.play.ExplosionS2CPacket;
+import net.minecraft.network.packet.s2c.play.EntityEquipmentUpdateS2CPacket;
+import com.greysworkshop.naughtyornice.EventHooks;
 import net.minecraft.network.packet.s2c.play.BlockUpdateS2CPacket;
 import net.minecraft.network.packet.s2c.play.ChunkDataS2CPacket;
 import net.minecraft.network.packet.s2c.play.ChunkDeltaUpdateS2CPacket;
 import net.minecraft.network.packet.s2c.play.UnloadChunkS2CPacket;
 import com.greysworkshop.naughtyornice.NNConfig;
+import com.greysworkshop.naughtyornice.WorldDownload;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
@@ -36,6 +42,11 @@ public abstract class ClientPlayNetworkHandlerMixin {
 		Entity target = client.world.getEntityById(packet.entityId());
 		Entity attacker = client.world.getEntityById(packet.sourceCauseId());
 		Safe.run("watching damage", () -> mod.watcher.onDamage(client, target, attacker));
+		if (NNConfig.INSTANCE.eventLog) {
+			Entity direct = client.world.getEntityById(packet.sourceDirectId());
+			String type = packet.sourceType().getKey().map(k -> k.getValue().getPath()).orElse("damage");
+			Safe.run("logging a hit", () -> EventHooks.hit(client, target, attacker, direct, type));
+		}
 	}
 
 	@Inject(method = "onEntityStatus", at = @At("TAIL"))
@@ -67,9 +78,20 @@ public abstract class ClientPlayNetworkHandlerMixin {
 	private void naughtyornice$chunk(ChunkDataS2CPacket packet, CallbackInfo ci) {
 		MinecraftClient client = MinecraftClient.getInstance();
 		NaughtyOrNiceClient mod = NaughtyOrNiceClient.INSTANCE;
-		if (client.world == null || mod == null || !NNConfig.INSTANCE.chunkTrails) return;
+		if (client.world == null || mod == null) return;
+		if (WorldDownload.active()) Safe.run("downloading a chunk", () -> WorldDownload.chunk(client, client.world.getChunk(packet.getChunkX(), packet.getChunkZ())));
+		if (!NNConfig.INSTANCE.chunkTrails) return;
 		Safe.run("reading a chunk", () -> mod.ledger.chunkTrails.chunkLoaded(client.world.getRegistryKey().getValue().toString(),
 				client.world.getChunk(packet.getChunkX(), packet.getChunkZ())));
+	}
+
+	@Inject(method = "onUnloadChunk", at = @At("HEAD"))
+	private void naughtyornice$beforeUnload(UnloadChunkS2CPacket packet, CallbackInfo ci) {
+		MinecraftClient client = MinecraftClient.getInstance();
+		// The chunk as it is when you leave it (blocks broken or placed since it arrived), for a download.
+		if (client.world != null && WorldDownload.active()) {
+			Safe.run("downloading a chunk", () -> WorldDownload.chunk(client, client.world.getChunkManager().getWorldChunk(packet.pos().x, packet.pos().z)));
+		}
 	}
 
 	@Inject(method = "onUnloadChunk", at = @At("TAIL"))
@@ -94,6 +116,37 @@ public abstract class ClientPlayNetworkHandlerMixin {
 		if (client.world == null || mod == null || !NNConfig.INSTANCE.chunkTrails) return;
 		String dim = client.world.getRegistryKey().getValue().toString();
 		Safe.run("reading block updates", () -> packet.visitUpdates((pos, state) -> mod.ledger.chunkTrails.blockChanged(client, dim, pos, state)));
+	}
+
+	@Inject(method = "onEntityAnimation", at = @At("TAIL"))
+	private void naughtyornice$swing(EntityAnimationS2CPacket packet, CallbackInfo ci) {
+		MinecraftClient client = MinecraftClient.getInstance();
+		if (client.world == null || !NNConfig.INSTANCE.eventLog) return;
+		Safe.run("logging a swing", () -> EventHooks.swing(client, client.world.getEntityById(packet.getEntityId()), packet.getAnimationId()));
+	}
+
+	@Inject(method = "onEntitySpawn", at = @At("TAIL"))
+	private void naughtyornice$spawn(EntitySpawnS2CPacket packet, CallbackInfo ci) {
+		MinecraftClient client = MinecraftClient.getInstance();
+		if (client.world == null || !NNConfig.INSTANCE.eventLog) return;
+		Safe.run("logging something appearing", () -> {
+			Entity e = client.world.getEntityById(packet.getEntityId());
+			if (e != null) EventHooks.spawned(client, e);
+		});
+	}
+
+	@Inject(method = "onExplosion", at = @At("TAIL"))
+	private void naughtyornice$explosion(ExplosionS2CPacket packet, CallbackInfo ci) {
+		MinecraftClient client = MinecraftClient.getInstance();
+		if (client.world == null || !NNConfig.INSTANCE.eventLog) return;
+		Safe.run("logging an explosion", () -> EventHooks.explosion(client, packet.center(), packet.radius()));
+	}
+
+	@Inject(method = "onEntityEquipmentUpdate", at = @At("TAIL"))
+	private void naughtyornice$gear(EntityEquipmentUpdateS2CPacket packet, CallbackInfo ci) {
+		MinecraftClient client = MinecraftClient.getInstance();
+		if (client.world == null || !NNConfig.INSTANCE.eventLog) return;
+		Safe.run("logging gear", () -> EventHooks.gear(client, client.world.getEntityById(packet.getEntityId()), packet.getEquipmentList()));
 	}
 
 	@Inject(method = "onWorldEvent", at = @At("TAIL"))
