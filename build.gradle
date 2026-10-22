@@ -56,6 +56,14 @@ loom {
 			vmArgs "-Dnaughtyornice.selftest=true", "-Xmx1536m"
 			runDir "run"
 		}
+		// The mods panel on the title screen, with Base Insurance and Container Peek beside this mod (their jars go in
+		// run-panel/mods): ./gradlew runPanelTest
+		panelTest {
+			client()
+			name = "Panel Test"
+			vmArgs "-Dnaughtyornice.paneltest=true", "-Xmx1536m"
+			runDir "run-panel"
+		}
 	}
 }
 

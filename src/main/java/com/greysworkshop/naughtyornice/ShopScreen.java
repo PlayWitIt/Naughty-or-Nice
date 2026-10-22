@@ -347,6 +347,20 @@ public class ShopScreen extends Screen {
 		this.selected = selected;
 	}
 
+	/** Where Esc goes back to (the game when there's none). */
+	private net.minecraft.client.gui.screen.Screen parent;
+
+	/** Goes back to {@code parent} when closed, e.g. the mods panel on the title screen. */
+	public ShopScreen withParent(net.minecraft.client.gui.screen.Screen parent) {
+		this.parent = parent;
+		return this;
+	}
+
+	@Override
+	public void close() {
+		client.setScreen(parent);
+	}
+
 	/** Opens with the Add players panel showing, set to add to {@code target}. */
 	public ShopScreen withAddPanel(Profile.Verdict target) {
 		addOnOpen = true;

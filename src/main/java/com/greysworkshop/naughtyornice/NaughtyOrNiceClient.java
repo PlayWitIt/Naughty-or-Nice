@@ -94,11 +94,13 @@ public class NaughtyOrNiceClient implements ClientModInitializer {
 		});
 
 		BaseInsuranceBridge.registerMapPins(this::mapPins);
+		ModsPanel.install(panelEntry());
 
-		// Scripted development test (./gradlew runSelfTest); the class isn't shipped in the release jar.
-		if (Boolean.getBoolean("naughtyornice.selftest")) {
+		// Scripted development tests (./gradlew runSelfTest, runPanelTest); the classes aren't shipped in the release jar.
+		if (Boolean.getBoolean("naughtyornice.selftest") || Boolean.getBoolean("naughtyornice.paneltest")) {
 			try {
-				Class.forName("com.greysworkshop.naughtyornice.SelfTest").getMethod("start").invoke(null);
+				Class.forName(Boolean.getBoolean("naughtyornice.paneltest") ? "com.greysworkshop.naughtyornice.SelfTestPanel"
+						: "com.greysworkshop.naughtyornice.SelfTest").getMethod("start").invoke(null);
 			} catch (ReflectiveOperationException e) {
 				LOGGER.error("Self-test not available", e);
 			}
@@ -304,5 +306,49 @@ public class NaughtyOrNiceClient implements ClientModInitializer {
 			saveTimer = 0;
 			ledger.save(false);
 		}
+	}
+
+	/** This mod's part of the mods panel (Right Shift on the title screen): the switches worth flipping before joining. */
+	private static java.util.Map<String, Object> panelEntry() {
+		NNConfig c = NNConfig.INSTANCE;
+		String version = net.fabricmc.loader.api.FabricLoader.getInstance().getModContainer(MOD_ID)
+				.map(m -> m.getMetadata().getVersion().getFriendlyString()).orElse("?").replaceAll("\\+.*", "");
+		java.util.List<java.util.Map<String, Object>> switches = java.util.List.of(
+				ModsPanel.section("Watching"),
+				ModsPanel.toggle("Remember everyone you see", "Players you see nearby or on the tab list stay in your lists after they log off.",
+						() -> c.rememberEveryone, v -> c.rememberEveryone = v),
+				ModsPanel.toggle("Read the chat", "Friendly words and trash talk count for or against players, and coordinates and topics go on the Intel tab.",
+						() -> c.watchChat, v -> c.watchChat = v),
+				ModsPanel.toggle("Event recorder", "Keeps the last 30 minutes of everything around you (hits, deaths, shots, crystals), so a fight can be saved afterwards.",
+						() -> c.eventLog, v -> c.eventLog = v),
+				ModsPanel.toggle("Note sightings", "Where and when players come into view, and what they're wearing.", () -> c.recordSightings, v -> c.recordSightings = v),
+				ModsPanel.toggle("Evidence screenshots", "A screenshot when someone kills you or a naughty player comes into one of your bases.",
+						() -> c.evidenceShots, v -> c.evidenceShots = v),
+				ModsPanel.section("Your safety"),
+				ModsPanel.toggle("Guard my coordinates", "Holds your own message back when it gives away coordinates, a base name or your own x or z.",
+						() -> c.guardMyCoords, v -> c.guardMyCoords = v),
+				ModsPanel.toggle("Warn when a naughty player joins", "When someone on your Naughty list joins the server.", () -> c.warnNaughtyJoin, v -> c.warnNaughtyJoin = v),
+				ModsPanel.toggle("Warn when a naughty player is near", "When someone on your Naughty list comes into view.", () -> c.warnNaughtyNearby, v -> c.warnNaughtyNearby = v),
+				ModsPanel.toggle("Alert on threats against you", "A ping when someone threatens you or your base in chat.", () -> c.alertThreats, v -> c.alertThreats = v),
+				ModsPanel.toggle("Warning sound", "Play a low note with warnings.", () -> c.warnSounds, v -> c.warnSounds = v),
+				ModsPanel.section("On screen"),
+				ModsPanel.toggle("Marks on nametags", "Green ✔, gold ? or red ✖ before listed players' names above their heads.", () -> c.nametagMarks, v -> c.nametagMarks = v),
+				ModsPanel.toggle("Marks in the tab list", "The same marks in the player list (Tab).", () -> c.tabListMarks, v -> c.tabListMarks = v),
+				ModsPanel.toggle("Who's on when you join", "A summary of who's online from your lists when you join a server.", () -> c.joinSummary, v -> c.joinSummary = v),
+				ModsPanel.section("Chunk trails"),
+				ModsPanel.toggle("Find chunk trails", "Tells old land from fresh land by how its water and lava flow, and finds the paths players left.",
+						() -> c.chunkTrails, v -> c.chunkTrails = v),
+				ModsPanel.toggle("Chunk trail radar", "The small turning map on the right (J shows or hides it in game).", () -> c.trailRadar, v -> {
+					c.trailRadar = v;
+					if (v) c.chunkTrails = true;
+				}),
+				ModsPanel.toggle("Note new chunk trails in chat", "Where a new trail is, which way it runs, and its far end.", () -> c.trailAlerts, v -> c.trailAlerts = v),
+				ModsPanel.section("Other"),
+				ModsPanel.toggle("Offer to open shared links", "When a friend sends you a Naughty or Nice share link in chat.", () -> c.openSharedLinks, v -> c.openSharedLinks = v),
+				ModsPanel.toggle("Tell me about updates", "Once per game session, a note in chat when a newer version is out.", () -> c.checkUpdates, v -> c.checkUpdates = v));
+		return java.util.Map.of("id", MOD_ID, "name", "Naughty or Nice", "version", version, "icon", Identifier.of(MOD_ID, "icon.png"),
+				"settings", (java.util.function.Function<net.minecraft.client.gui.screen.Screen, net.minecraft.client.gui.screen.Screen>)
+						parent -> new ShopScreen(ShopScreen.Tab.SETTINGS, null).withParent(parent),
+				"save", (Runnable) NNConfig::save, "switches", switches);
 	}
 }
