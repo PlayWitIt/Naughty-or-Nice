@@ -1,6 +1,11 @@
 package com.greysworkshop.naughtyornice;
 
 import java.lang.reflect.Field;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Comparator;
+import java.util.List;
+import java.util.stream.Stream;
 
 /**
  * Talks to Baritone (when it's installed) through its API, not chat, so nothing is ever sent to the server by
@@ -66,6 +71,147 @@ public final class BaritoneBridge {
 		} catch (ReflectiveOperationException | LinkageError | RuntimeException e) {
 			return "unreadable: " + e;
 		}
+	}
+
+	/** One of Baritone's commands: its names (the first is the one to type), what it does, and how it's used. */
+	public record Command(List<String> names, String shortDesc, List<String> longDesc) {
+		public String name() {
+			return names.get(0);
+		}
+	}
+
+	/** Every command Baritone has (not the hidden ones), by name; empty without Baritone. */
+	public static List<Command> commands() {
+		if (!present()) return List.of();
+		List<Command> list = new ArrayList<>();
+		try {
+			Object manager = Class.forName("baritone.api.IBaritone").getMethod("getCommandManager").invoke(baritone());
+			Object registry = Class.forName("baritone.api.command.manager.ICommandManager").getMethod("getRegistry").invoke(manager);
+			Collection<?> entries = (Collection<?>) registry.getClass().getField("entries").get(registry);
+			Class<?> command = Class.forName("baritone.api.command.ICommand");
+			for (Object c : entries) {
+				if (Boolean.TRUE.equals(command.getMethod("hiddenFromHelp").invoke(c))) continue;
+				@SuppressWarnings("unchecked") List<String> names = (List<String>) command.getMethod("getNames").invoke(c);
+				@SuppressWarnings("unchecked") List<String> lines = (List<String>) command.getMethod("getLongDesc").invoke(c);
+				if (names == null || names.isEmpty()) continue;
+				list.add(new Command(List.copyOf(names), String.valueOf(command.getMethod("getShortDesc").invoke(c)), lines == null ? List.of() : List.copyOf(lines)));
+			}
+		} catch (ReflectiveOperationException | LinkageError | RuntimeException e) {
+			NaughtyOrNiceClient.LOGGER.warn("Couldn't list Baritone's commands", e);
+		}
+		list.sort(Comparator.comparing(Command::name));
+		return list;
+	}
+
+	/** What Baritone suggests next for a command line typed so far (as Tab does in chat), e.g. "mine dia" gives diamond_ore. */
+	public static List<String> suggest(String line) {
+		if (!present()) return List.of();
+		try {
+			Object manager = Class.forName("baritone.api.IBaritone").getMethod("getCommandManager").invoke(baritone());
+			Stream<?> s = (Stream<?>) Class.forName("baritone.api.command.manager.ICommandManager").getMethod("tabComplete", String.class).invoke(manager, line);
+			return s.limit(200).map(String::valueOf).map(x -> x.startsWith("minecraft:") ? x.substring(10) : x).distinct().toList();
+		} catch (ReflectiveOperationException | LinkageError | RuntimeException e) {
+			return List.of();
+		}
+	}
+
+	/** One Baritone setting: its name, value and default (as Baritone writes them), and whether it's on/off. */
+	public record Setting(String name, String value, String defaultValue, boolean bool) {
+		public boolean changed() {
+			return !value.equals(defaultValue);
+		}
+	}
+
+	/** Every Baritone setting you can set in game, by name. */
+	public static List<Setting> settings() {
+		if (!present()) return List.of();
+		List<Setting> list = new ArrayList<>();
+		try {
+			Object settings = Class.forName("baritone.api.BaritoneAPI").getMethod("getSettings").invoke(null);
+			List<?> all = (List<?>) settings.getClass().getField("allSettings").get(settings);
+			Class<?> setting = Class.forName("baritone.api.Settings$Setting");
+			Class<?> util = Class.forName("baritone.api.utils.SettingsUtil");
+			var valueOf = util.getMethod("settingValueToString", setting);
+			var defaultOf = util.getMethod("settingDefaultToString", setting);
+			for (Object s : all) {
+				if (Boolean.TRUE.equals(setting.getMethod("isJavaOnly").invoke(s))) continue;
+				Object value = setting.getField("value").get(s);
+				list.add(new Setting(String.valueOf(setting.getMethod("getName").invoke(s)), String.valueOf(valueOf.invoke(null, s)),
+						String.valueOf(defaultOf.invoke(null, s)), value instanceof Boolean));
+			}
+		} catch (ReflectiveOperationException | LinkageError | RuntimeException e) {
+			NaughtyOrNiceClient.LOGGER.warn("Couldn't list Baritone's settings", e);
+		}
+		list.sort(Comparator.comparing(Setting::name, String.CASE_INSENSITIVE_ORDER));
+		return list;
+	}
+
+	/** Puts a Baritone setting back to its default. */
+	public static void reset(String name) {
+		if (!present()) return;
+		try {
+			Object s = setting(name);
+			s.getClass().getMethod("reset").invoke(s);
+		} catch (ReflectiveOperationException | LinkageError | RuntimeException e) {
+			NaughtyOrNiceClient.LOGGER.warn("Couldn't reset Baritone's {}", name, e);
+		}
+	}
+
+	// ---- What Baritone says back ----
+
+	/** Something Baritone said (in chat, or as a toast): its words, and whether it said them in red (an error). */
+	public record Reply(String text, boolean error) {}
+
+	private static final java.util.Deque<Reply> replies = new java.util.ArrayDeque<>();
+	private static int replyCount;
+	private static boolean hooked;
+
+	/**
+	 * Listens to what Baritone says: everything it writes goes through its "logger" setting, which is wrapped here (still
+	 * passing everything on), so the Baritone screen can show its answer to a command.
+	 */
+	@SuppressWarnings({"unchecked", "rawtypes"})
+	public static synchronized void listen() {
+		if (hooked || !present()) return;
+		try {
+			Object s = setting("logger");
+			Field f = s.getClass().getField("value");
+			java.util.function.Consumer<Object> original = (java.util.function.Consumer<Object>) f.get(s);
+			f.set(s, (java.util.function.Consumer) message -> {
+				heard(message);
+				original.accept(message);
+			});
+			hooked = true;
+		} catch (ReflectiveOperationException | LinkageError | RuntimeException e) {
+			NaughtyOrNiceClient.LOGGER.warn("Couldn't listen to Baritone", e);
+		}
+	}
+
+	private static synchronized void heard(Object message) {
+		if (!(message instanceof net.minecraft.text.Text text)) return;
+		boolean[] red = {false};
+		text.visit((style, part) -> {
+			if (style.getColor() != null && style.getColor().equals(net.minecraft.text.TextColor.fromFormatting(net.minecraft.util.Formatting.RED))) red[0] = true;
+			return java.util.Optional.empty();
+		}, net.minecraft.text.Style.EMPTY);
+		String words = text.getString().replaceFirst("^\\[Baritone\\]\\s*", "").strip();
+		if (words.isEmpty()) return;
+		replies.addLast(new Reply(words, red[0]));
+		while (replies.size() > 50) replies.removeFirst();
+		replyCount++;
+	}
+
+	/** How many things Baritone has said so far: pass it to {@link #repliesSince} later. */
+	public static synchronized int replyCount() {
+		return replyCount;
+	}
+
+	/** What Baritone has said since {@code count}, oldest first. */
+	public static synchronized List<Reply> repliesSince(int count) {
+		int n = Math.min(replies.size(), replyCount - count);
+		if (n <= 0) return List.of();
+		List<Reply> all = new ArrayList<>(replies);
+		return List.copyOf(all.subList(all.size() - n, all.size()));
 	}
 
 	private static Object pathing() throws ReflectiveOperationException {
