@@ -33,9 +33,14 @@ import java.util.function.Predicate;
  * Chunk trails: which land is old (someone was there before) and which is fresh (just generated for you), and the
  * paths other players left through fresh land.
  * <p>
- * How a chunk is told apart: when land is generated for the first time, its water and lava start to flow only after
- * it has been sent to you, so the server sends flowing-liquid updates for it. Land that already existed arrives with its
- * liquids already flowed. Chunks without any liquid can't be told either way and are left unknown, never guessed.
+ * How a chunk is told apart, first: the order of each section's block palette. Land the server has just generated
+ * still has the palette it was built with (air first, the rest in the order generation placed them); land it loaded
+ * from disk has a palette rebuilt when it was saved, in the order its blocks come (bottom corner first), with nothing
+ * unused. Checked on the same chunks fresh and then reloaded (./gradlew runPaletteProbe), overworld 172 and nether 329:
+ * every one read right both times, none wrong. This works with or without water. Then, for chunks the palette leaves
+ * undecided: when land is generated for the first time, its water and lava start to flow only after it has been sent
+ * to you, so the server sends flowing-liquid updates for it. Land that already existed arrives with its liquids
+ * already flowed. Chunks neither can tell are left unknown, never guessed.
  * Chunks you generated yourself are remembered (per server), so your own old paths are never taken for someone else's.
  * <p>
  * Only land the server couldn't have run for you is read as old. Land within your simulation distance runs its liquids
@@ -116,6 +121,9 @@ public final class ChunkTrails {
 		return walked.computeIfAbsent(dimension, d -> new LongOpenHashSet());
 	}
 
+	/** For the palette probe (development only): sees every chunk as it arrives. */
+	static java.util.function.Consumer<WorldChunk> arrivalProbe;
+
 	/** For the self-test: one chunk whose every reading is written to the log. */
 	static long debugKey = Long.MIN_VALUE;
 
@@ -131,6 +139,13 @@ public final class ChunkTrails {
 	 * while it was unknown, or it's within your reach (it may have flowed for you before it was sent).
 	 */
 	public void chunkLoaded(String dimension, WorldChunk chunk, boolean inReach) {
+		if (arrivalProbe != null) arrivalProbe.accept(chunk);
+		byte palette = paletteVerdict(chunk);
+		if (chunk.getPos().toLong() == debugKey) NaughtyOrNiceClient.LOGGER.info("[SELFTEST] chunk {} palette says {}", chunk.getPos(), palette);
+		if (palette != 0) {
+			paletteSays(dimension, chunk.getPos().toLong(), palette);
+			return;
+		}
 		boolean flowing = hasFlowing(chunk);
 		if (chunk.getPos().toLong() == debugKey) NaughtyOrNiceClient.LOGGER.info("[SELFTEST] chunk {} arrived, flowing liquid in it: {}, in reach: {}", chunk.getPos(), flowing, inReach);
 		arrived(dimension, chunk.getPos().toLong(), flowing, inReach);
@@ -161,6 +176,67 @@ public final class ChunkTrails {
 				if (state(dimension, cx + i, cz + j) == 0 && loaded.test(key) && set.add(key)) mineDirty = true;
 			}
 		}
+	}
+
+	/** The palette's reading of a chunk: fresh land is yours (you saw it made); old land is old unless it's your own path. */
+	void paletteSays(String dimension, long key, byte verdict) {
+		pristine.remove(key);
+		if (verdict == NEW) {
+			if (states(dimension).put(key, NEW) != NEW) version++;
+			if (mine(dimension).add(key)) mineDirty = true;
+			return;
+		}
+		if (mine(dimension).contains(key) || walked(dimension).contains(key)) return;
+		if (states(dimension).get(key) != NEW && states(dimension).put(key, OLD) != OLD) {
+			mineDirty = true;
+			version++;
+		}
+	}
+
+	// What a section's palette shows.
+	static final int NEVER_SAVED = 0, SAVED = 1, UNCLEAR = 2;
+
+	/**
+	 * NEW when 3 or more sections show a palette that was never saved and at most 1 looks saved; OLD when 2 or more look
+	 * saved and at most 1 doesn't (a player's building can upset a section or two); otherwise 0, undecided.
+	 */
+	static byte paletteVerdict(WorldChunk chunk) {
+		int never = 0, saved = 0;
+		for (ChunkSection section : chunk.getSectionArray()) {
+			int s = sectionPalette(section);
+			if (s == NEVER_SAVED) never++;
+			else if (s == SAVED) saved++;
+		}
+		if (never >= 3 && saved <= 1) return NEW;
+		if (saved >= 2 && never <= 1) return OLD;
+		return 0;
+	}
+
+	/**
+	 * NEVER_SAVED when the palette's first entry isn't the block in the section's first spot (a saved palette always
+	 * starts with it); SAVED when it starts with that block, not air, and lists every block in the order they first come
+	 * with none unused; UNCLEAR otherwise (all air, one kind of block, or an air corner that both can have).
+	 */
+	static int sectionPalette(ChunkSection section) {
+		if (section == null || section.isEmpty()) return UNCLEAR;
+		net.minecraft.world.chunk.PalettedContainer<BlockState> c = section.getBlockStateContainer();
+		net.minecraft.world.chunk.Palette<BlockState> palette = c.data.palette;
+		if (palette instanceof net.minecraft.world.chunk.IdListPalette) return UNCLEAR;
+		int n = palette.getSize();
+		if (n < 2) return UNCLEAR;
+		BlockState first = c.get(0, 0, 0);
+		if (palette.get(0) != first) return NEVER_SAVED;
+		if (first.isAir()) return UNCLEAR;
+		// In a saved palette, blocks are listed in the order they first come: y, then z, then x.
+		java.util.Set<BlockState> seen = new java.util.HashSet<>();
+		int next = 0;
+		for (int i = 0; i < 4096; i++) {
+			BlockState s = c.get(i & 15, i >> 8, (i >> 4) & 15);
+			if (!seen.add(s)) continue;
+			if (next >= n || palette.get(next) != s) return UNCLEAR;
+			next++;
+		}
+		return next == n ? SAVED : UNCLEAR;
 	}
 
 	static boolean hasFlowing(WorldChunk chunk) {

@@ -15,13 +15,14 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Chunk trails drawn in the world: a flat square on every chunk that's been read, fresh land blue, old land grey,
- * trail chunks amber, at one height (your feet, or a height you pick). K shows or hides it.
+ * Chunk trails drawn in the world: a flat square on every chunk that's been read, new land red, old land green,
+ * chunks of a trail yellow, at one height (your feet, or a height you pick); and a line at the top of the screen saying
+ * which the chunk you're in is. K shows or hides both.
  */
 public final class ChunkOverlay {
 	/** The height setting's value for "at your feet". */
 	public static final int FOLLOW = -1000;
-	private static final int FRESH = 0x2E6BFF, OLD = 0xB4B4B4, TRAIL = 0xFFB020;
+	public static final int FRESH = 0xFF4040, OLD = 0x3CDC5A, TRAIL = 0xFFE040, UNKNOWN = 0x9AA4AE;
 	/** A square a hair inside its chunk, so neighbours' outlines don't sit on top of each other. */
 	private static final double INSET = 0.15;
 	private static final VoxelShape SQUARE = VoxelShapes.cuboid(INSET, 0, INSET, 16 - INSET, 0.02, 16 - INSET);
@@ -106,6 +107,38 @@ public final class ChunkOverlay {
 		squares = list;
 		builtFor = key;
 		builtAt = now;
+	}
+
+	/** The line at the top of the screen: what the chunk you're standing in is, in its colour. */
+	public static void renderHud(net.minecraft.client.gui.DrawContext context, net.minecraft.client.render.RenderTickCounter tickCounter) {
+		MinecraftClient client = MinecraftClient.getInstance();
+		NNConfig c = NNConfig.INSTANCE;
+		NaughtyOrNiceClient mod = NaughtyOrNiceClient.INSTANCE;
+		if (!NNConfig.on() || !c.chunkTrails || !c.chunkOverlay || mod == null || client.world == null || client.player == null
+				|| client.options.hudHidden || client.getDebugHud().shouldShowDebugHud()) return;
+		String line = hereLine(mod.ledger.chunkTrails, client.world.getRegistryKey().getValue().toString(), client.player.getX(), client.player.getZ());
+		int rgb = line.startsWith("New") ? FRESH : line.startsWith("Trail") ? TRAIL : line.startsWith("Old") ? OLD : UNKNOWN;
+		var font = client.textRenderer;
+		int w = font.getWidth(line) + 18, x = (context.getScaledWindowWidth() - w) / 2, y = 4;
+		context.fill(x - 3, y - 3, x + w + 3, y + 12, 0xB0101418);
+		context.fill(x, y, x + 10, y + 9, 0xFF000000 | rgb);
+		context.drawTextWithShadow(font, line, x + 15, y + 1, 0xFF000000 | rgb);
+	}
+
+	/** What the chunk at x, z is, in words: new, old, on a trail (and which way it runs), or not known. */
+	static String hereLine(ChunkTrails trails, String dim, double x, double z) {
+		int cx = (int) Math.floor(x) >> 4, cz = (int) Math.floor(z) >> 4;
+		byte state = trails.state(dim, cx, cz);
+		if (state == ChunkTrails.NEW) return "New chunk: nobody had been here before you";
+		if (state == ChunkTrails.OLD) {
+			ChunkTrails.Trail t = trails.nearest(dim, cx * 16 + 8, cz * 16 + 8, 400);
+			if (t != null && ChunkTrails.segmentDistance(t, cx * 16 + 8, cz * 16 + 8) <= Math.max(1, t.width) * 8 + 12) {
+				String a = ChunkTrails.compass(t.x1 - t.x2, t.z1 - t.z2), b = ChunkTrails.compass(t.x2 - t.x1, t.z2 - t.z1);
+				return "Trail: you're on one, it runs " + a + " - " + b;
+			}
+			return "Old chunk: someone has been here";
+		}
+		return "Can't tell this chunk yet";
 	}
 
 	/** Whether an old chunk is part of a trail that was found: within the trail's width of its line. */

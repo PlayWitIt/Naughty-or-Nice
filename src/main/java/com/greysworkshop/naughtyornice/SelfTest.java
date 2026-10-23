@@ -1963,6 +1963,10 @@ public final class SelfTest {
 			}
 			case 159 -> {
 				check("nothing went to the server's chat through all of it (" + serverHeard + ")", serverHeard.isEmpty());
+				String coords = CoordsHud.line(client);
+				check("your coordinates show in the bottom left by default (" + coords + ")", NNConfig.INSTANCE.showCoords
+						&& coords.startsWith("XYZ " + p.getBlockX() + " " + p.getBlockY() + " " + p.getBlockZ())
+						&& coords.contains("Nether " + Math.floorDiv(p.getBlockX(), 8) + " " + Math.floorDiv(p.getBlockZ(), 8)));
 				client.setScreen(null);
 				NNConfig.save();
 				baritoneStep = 0;

@@ -11,15 +11,16 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * The chunk-trail radar: a small map on the right of the screen that turns with you, so ahead is always up. Fresh land
- * is a faint blue, old land a faint grey, and trails are thick amber lines with an arrow on the end that leads away
+ * The chunk-trail radar: a small map on the right of the screen that turns with you, so ahead is always up. New land
+ * is a faint red, old land a faint green, and trails are thick yellow lines with an arrow on the end that leads away
  * from spawn. Under it, in words: where the nearest trail is, which way it runs, and how to turn to follow it.
  */
 public final class TrailRadar {
 	private static final int SIZE = 112;
 	/** Chunks from the middle to the edge. */
 	private static final int SPAN = 32;
-	private static final int FRESH = 0x602E6BFF, OLD_LAND = 0x80A0A0A0, UNKNOWN_DOT = 0x60FFFFFF, TRAIL = 0xFFFFB020, BACK = 0xB0101418, EDGE = 0xFF3A4048;
+	private static final int FRESH = 0x60000000 | ChunkOverlay.FRESH, OLD_LAND = 0x80000000 | ChunkOverlay.OLD, UNKNOWN_DOT = 0x60FFFFFF,
+			TRAIL = 0xFF000000 | ChunkOverlay.TRAIL, BACK = 0xB0101418, EDGE = 0xFF3A4048;
 
 	/** The last analysis, refreshed by the watcher every two seconds. */
 	static List<int[]> patches = new ArrayList<>();

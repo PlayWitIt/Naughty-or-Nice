@@ -70,6 +70,8 @@ public class NaughtyOrNiceClient implements ClientModInitializer {
 		WorldRenderEvents.BEFORE_DEBUG_RENDER.register(context -> Safe.run("drawing chunks in the world", () -> ChunkOverlay.render(context)));
 		HudElementRegistry.addLast(Identifier.of(MOD_ID, "trip"), (context, tickCounter) -> Safe.run("drawing the trip line", () -> SmartTravel.render(context, tickCounter)));
 		HudElementRegistry.addLast(Identifier.of(MOD_ID, "logout_spots"), (context, tickCounter) -> Safe.run("drawing logout spots", () -> LogoutSpots.render(context, tickCounter)));
+		HudElementRegistry.addLast(Identifier.of(MOD_ID, "coords"), (context, tickCounter) -> Safe.run("drawing your coordinates", () -> CoordsHud.render(context, tickCounter)));
+		HudElementRegistry.addLast(Identifier.of(MOD_ID, "chunk_here"), (context, tickCounter) -> Safe.run("drawing the chunk line", () -> ChunkOverlay.renderHud(context, tickCounter)));
 		HudElementRegistry.addLast(Identifier.of(MOD_ID, "trail_radar"), (context, tickCounter) -> Safe.run("drawing the trail radar", () -> TrailRadar.render(context, tickCounter)));
 
 		DeathRecap.register();
@@ -107,9 +109,10 @@ public class NaughtyOrNiceClient implements ClientModInitializer {
 		ModsPanel.install(panelEntry());
 
 		// Scripted development tests (./gradlew runSelfTest, runPanelTest); the classes aren't shipped in the release jar.
-		if (Boolean.getBoolean("naughtyornice.selftest") || Boolean.getBoolean("naughtyornice.paneltest")) {
+		if (Boolean.getBoolean("naughtyornice.selftest") || Boolean.getBoolean("naughtyornice.paneltest") || Boolean.getBoolean("naughtyornice.paletteprobe")) {
 			try {
 				Class.forName(Boolean.getBoolean("naughtyornice.paneltest") ? "com.greysworkshop.naughtyornice.SelfTestPanel"
+						: Boolean.getBoolean("naughtyornice.paletteprobe") ? "com.greysworkshop.naughtyornice.SelfTestPalette"
 						: "com.greysworkshop.naughtyornice.SelfTest").getMethod("start").invoke(null);
 			} catch (ReflectiveOperationException e) {
 				LOGGER.error("Self-test not available", e);
@@ -199,7 +202,7 @@ public class NaughtyOrNiceClient implements ClientModInitializer {
 			NNConfig.save();
 			Alerts.chat(Text.literal("Chunk trails are on. Press ").formatted(Formatting.GRAY)
 					.append(Text.keybind("key.naughtyornice.radar").formatted(Formatting.YELLOW))
-					.append(Text.literal(" for the radar (new land blue, old land grey, trails amber), or ").formatted(Formatting.GRAY))
+					.append(Text.literal(" for the radar (new land red, old land green, trails yellow), or ").formatted(Formatting.GRAY))
 					.append(Text.literal("[show it]").styled(st -> st.withColor(Formatting.AQUA).withUnderline(true)
 							.withClickEvent(new ClickEvent.RunCommand("/nn radar")))));
 		}
@@ -374,6 +377,8 @@ public class NaughtyOrNiceClient implements ClientModInitializer {
 				ModsPanel.toggle("Alert on threats against you", "A ping when someone threatens you or your base in chat.", () -> c.alertThreats, v -> c.alertThreats = v),
 				ModsPanel.toggle("Warning sound", "Play a low note with warnings.", () -> c.warnSounds, v -> c.warnSounds = v),
 				ModsPanel.section("On screen"),
+				ModsPanel.toggle("My coordinates", "x y z, facing, and the nether/overworld match in the bottom left, so you don't need F3. "
+						+ "Hidden in stream-safe mode.", () -> c.showCoords, v -> c.showCoords = v),
 				ModsPanel.toggle("Marks on nametags", "Green ✔, gold ? or red ✖ before listed players' names above their heads.", () -> c.nametagMarks, v -> c.nametagMarks = v),
 				ModsPanel.toggle("Marks in the tab list", "The same marks in the player list (Tab).", () -> c.tabListMarks, v -> c.tabListMarks = v),
 				ModsPanel.toggle("Who's on when you join", "A summary of who's online from your lists when you join a server.", () -> c.joinSummary, v -> c.joinSummary = v),

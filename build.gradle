@@ -49,11 +49,19 @@ jar {
 }
 
 loom {
+	accessWidenerPath = file("src/main/resources/naughtyornice.accesswidener")
 	runs {
 		selfTest {
 			client()
 			name = "Self Test"
 			vmArgs "-Dnaughtyornice.selftest=true", "-Xmx1536m"
+			runDir "run"
+		}
+		// Proof for the palette method of telling old land from fresh: ./gradlew runPaletteProbe
+		paletteProbe {
+			client()
+			name = "Palette Probe"
+			vmArgs "-Dnaughtyornice.paletteprobe=true", "-Xmx2g"
 			runDir "run"
 		}
 		// The mods panel on the title screen, with Base Insurance and Hoard Eye beside this mod (their jars go in
