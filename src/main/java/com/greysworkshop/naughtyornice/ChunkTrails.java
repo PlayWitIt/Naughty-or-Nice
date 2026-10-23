@@ -77,6 +77,24 @@ public final class ChunkTrails {
 	static final int REACH_MARGIN = 2;
 	/** Loaded chunks that arrived with no flowing liquid: the only ones a flowing update can show to be fresh. */
 	private final LongOpenHashSet pristine = new LongOpenHashSet();
+	/**
+	 * How the two ways of reading chunks compare on this server, this session, for the chat check report: where both
+	 * could read a chunk, do they agree? (The palette reading was proven on vanilla; this shows it on the server you play.)
+	 */
+	public static final class Reading {
+		public int paletteNew, paletteOld, paletteUndecided, liquidOld, liquidNew, agreeOld, agreeNew, disagree;
+		public final List<String> disagreements = new ArrayList<>();
+	}
+
+	public final Reading reading = new Reading();
+	/** What the palette said of each loaded chunk (the key's dimension doesn't matter: unloaded on leaving one). */
+	private final Long2ByteOpenHashMap paletteOf = new Long2ByteOpenHashMap();
+
+	private void disagree(long key, String what) {
+		reading.disagree++;
+		if (reading.disagreements.size() < 10) reading.disagreements.add("chunk " + ChunkPos.getPackedX(key) + ", " + ChunkPos.getPackedZ(key) + ": " + what);
+	}
+
 	/** Trails found, saved per server. */
 	public List<Trail> trails = new ArrayList<>();
 	private boolean dirty, mineDirty;
@@ -140,13 +158,26 @@ public final class ChunkTrails {
 	 */
 	public void chunkLoaded(String dimension, WorldChunk chunk, boolean inReach) {
 		if (arrivalProbe != null) arrivalProbe.accept(chunk);
+		long key = chunk.getPos().toLong();
 		byte palette = paletteVerdict(chunk);
-		if (chunk.getPos().toLong() == debugKey) NaughtyOrNiceClient.LOGGER.info("[SELFTEST] chunk {} palette says {}", chunk.getPos(), palette);
+		boolean flowing = hasFlowing(chunk);
+		if (key == debugKey) NaughtyOrNiceClient.LOGGER.info("[SELFTEST] chunk {} palette says {}", chunk.getPos(), palette);
+		if (palette == NEW) reading.paletteNew++;
+		else if (palette == OLD) reading.paletteOld++;
+		else reading.paletteUndecided++;
+		// Liquid already flowed, beyond where the server could have run it for you: the liquid reading says old.
+		if (flowing && !inReach && !mine(dimension).contains(key) && !walked(dimension).contains(key)) {
+			reading.liquidOld++;
+			if (palette == OLD) reading.agreeOld++;
+			else if (palette == NEW) disagree(key, "the palette says new, its liquid had already flowed (old)");
+		}
 		if (palette != 0) {
-			paletteSays(dimension, chunk.getPos().toLong(), palette);
+			paletteOf.put(key, palette);
+			paletteSays(dimension, key, palette);
+			// Still watched for liquid starting to flow, to compare.
+			if (!flowing) pristine.add(key);
 			return;
 		}
-		boolean flowing = hasFlowing(chunk);
 		if (chunk.getPos().toLong() == debugKey) NaughtyOrNiceClient.LOGGER.info("[SELFTEST] chunk {} arrived, flowing liquid in it: {}, in reach: {}", chunk.getPos(), flowing, inReach);
 		arrived(dimension, chunk.getPos().toLong(), flowing, inReach);
 	}
@@ -180,7 +211,6 @@ public final class ChunkTrails {
 
 	/** The palette's reading of a chunk: fresh land is yours (you saw it made); old land is old unless it's your own path. */
 	void paletteSays(String dimension, long key, byte verdict) {
-		pristine.remove(key);
 		if (verdict == NEW) {
 			if (states(dimension).put(key, NEW) != NEW) version++;
 			if (mine(dimension).add(key)) mineDirty = true;
@@ -254,6 +284,7 @@ public final class ChunkTrails {
 
 	public void chunkUnloaded(int x, int z) {
 		pristine.remove(ChunkPos.toLong(x, z));
+		paletteOf.remove(ChunkPos.toLong(x, z));
 	}
 
 	/**
@@ -269,6 +300,12 @@ public final class ChunkTrails {
 			if (Math.abs(player.getBlockX() - pos.getX()) <= 24 && Math.abs(player.getBlockZ() - pos.getZ()) <= 24) return;
 		}
 		pristine.remove(key);
+		reading.liquidNew++;
+		byte palette = paletteOf.get(key);
+		if (palette == NEW) reading.agreeNew++;
+		else if (palette == OLD) disagree(key, "the palette says old, its liquid started to flow (new)");
+		// The palette decided it already.
+		if (palette != 0) return;
 		states(dimension).put(key, NEW);
 		if (mine(dimension).add(key)) mineDirty = true;
 		version++;

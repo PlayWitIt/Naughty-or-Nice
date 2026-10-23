@@ -22,6 +22,8 @@ public final class Profile {
 		KILLED_PLAYER(-3, "Killed a player", 0, 0),
 		HIT_PLAYER(-1, "Attacked a player", 30, -3),
 		RUDE(-1, "Trash talk", 600, -1),
+		/** Each line is kept, never folded, so their own words are on their page. */
+		ABUSE_TALK(-4, "Talked about sexually abusing children", 0, 0),
 		VISITED_BASE(0, "Visited your base", 600, 0),
 		SEEN(0, "First seen", 0, 0),
 		KIND_WORDS(1, "Said something nice", 600, 1),
@@ -69,7 +71,7 @@ public final class Profile {
 				case HIT_PLAYER -> "Attacked " + detail + times;
 				case HURT_PET, KILLED_PET -> base + (detail.isEmpty() ? "" : " (" + detail + ")") + times;
 				case BROKE_IN_BASE, VISITED_BASE -> base + (detail.isEmpty() ? "" : " \"" + detail + "\"") + times;
-				case KIND_WORDS, RUDE -> base + (detail.isEmpty() ? "" : ": \"" + detail + "\"");
+				case KIND_WORDS, RUDE, ABUSE_TALK -> base + (detail.isEmpty() ? "" : ": \"" + detail + "\"");
 				case PEACEFUL -> "Spent " + count * 10 + " minutes near you without trouble";
 				default -> base + times;
 			};

@@ -388,6 +388,30 @@ public final class ChatLogger {
 		return sb.toString();
 	}
 
+	/**
+	 * Chat tab lines as plain text, to copy and send in: each with its date and time, which list the speaker is on,
+	 * and any alert it set off. {@code listOf} gives a speaker's list ("" for none).
+	 */
+	public static String formatFeed(String server, String shown, List<Profile.Line> lines, java.util.function.Function<Profile.Line, String> listOf) {
+		ZoneId zone = ZoneId.systemDefault();
+		String nl = System.lineSeparator();
+		StringBuilder sb = new StringBuilder();
+		sb.append("Naughty or Nice chat log · ").append(server).append(" · ").append(shown).append(nl);
+		for (Profile.Line line : lines) {
+			if (isMarker(line)) {
+				sb.append("--- ").append(line.text).append(" ---").append(nl);
+				continue;
+			}
+			var at = Instant.ofEpochMilli(line.time).atZone(zone);
+			sb.append('[').append(FILE_DAY.format(at)).append(' ').append(FILE_TIME.format(at)).append("] ").append(describe(line));
+			String list = listOf.apply(line);
+			if (!list.isEmpty()) sb.append("   [").append(list).append(']');
+			if (line.alert != null) sb.append("   (alert: ").append(line.alert).append(')');
+			sb.append(nl);
+		}
+		return sb.toString();
+	}
+
 	/** "&lt;Name&gt; text", "Name whispers: text", "* Name left the game"... */
 	public static String describe(Profile.Line line) {
 		if (line.system) return "* " + line.sender + " " + line.text;

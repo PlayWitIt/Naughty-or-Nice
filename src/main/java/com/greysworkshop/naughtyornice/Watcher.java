@@ -432,7 +432,28 @@ public final class Watcher {
 			return;
 		}
 		offerShareLink(null, raw);
+		// Decoration ("---- ----"), and the welcome text servers (and mods like JEI) send as you join: no player in it.
+		if (DECORATION.matcher(raw).matches()) {
+			diagnostics.understood(Diagnostics.Kind.IGNORED, raw, "decoration");
+			return;
+		}
+		if (client.player.age < 400 && !namesPlayer(client, raw)) {
+			diagnostics.understood(Diagnostics.Kind.IGNORED, raw, "a notice as you joined");
+			return;
+		}
 		diagnostics.notUnderstood(raw, onlineNames(client));
+	}
+
+	/** A line of only symbols and spaces. */
+	private static final Pattern DECORATION = Pattern.compile("^[\\p{Punct}\\p{So}\\s]+$");
+
+	/** Whether a line has a player's name in it. */
+	private boolean namesPlayer(MinecraftClient client, String line) {
+		Matcher w = WORD.matcher(line);
+		while (w.find()) {
+			if (playerId(client, w.group()) != null || w.group().equalsIgnoreCase(client.player.getGameProfile().name())) return true;
+		}
+		return false;
 	}
 
 	/** Share links already offered, so a repeated message doesn't offer one twice. */
@@ -466,6 +487,9 @@ public final class Watcher {
 			+ "died|blew up|was killed|went off|tried to swim|walked into|experienced kinetic|suffocated|starved|exploded|eliminated|clapped|ended|"
 			+ "popped|crystalled|crystaled|wrecked)\\b");
 
+	/** Joke death messages plugins use, like constantiam.net's "Steve became epstein'd". */
+	private static final Pattern BECAME_D = Pattern.compile("^became\\s+[a-z]+'d\\b");
+
 	/**
 	 * A death message the server sent as plain text (plugins often reword them): it starts with a player's name and
 	 * uses a death word. If another player is named after it, they're the killer. Returns whether it was one.
@@ -479,7 +503,7 @@ public final class Watcher {
 		// The death wording comes straight after the name ("Steve was slain by", "Steve fell from"), within a few words.
 		String[] next = rest.strip().toLowerCase(Locale.ROOT).split("\\s+", 5);
 		String head = String.join(" ", java.util.Arrays.copyOf(next, Math.min(next.length, 4)));
-		if (!DEATH_WORDS.matcher(head).find()) return false;
+		if (!DEATH_WORDS.matcher(head).find() && !BECAME_D.matcher(head).find()) return false;
 		String killer = null;
 		UUID killerId = null;
 		while (words.find()) {
@@ -744,6 +768,7 @@ public final class Watcher {
 		String quote = body.length() > 40 ? body.substring(0, 40) + "..." : body;
 		switch (ChatIntel.tone(body, onlineNames(MinecraftClient.getInstance()))) {
 			case RUDE -> record(profile, Profile.Kind.RUDE, quote);
+			case ABUSE -> record(profile, Profile.Kind.ABUSE_TALK, body.length() > 120 ? body.substring(0, 120) + "..." : body);
 			case KIND -> record(profile, Profile.Kind.KIND_WORDS, quote);
 			case NONE -> {}
 		}

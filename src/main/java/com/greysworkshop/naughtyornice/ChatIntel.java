@@ -341,7 +341,24 @@ public final class ChatIntel {
 
 	// ---- Tone ----
 
-	public enum Tone { NONE, KIND, RUDE }
+	public enum Tone { NONE, KIND, RUDE, ABUSE }
+
+	/** Children, as the object of the words below. Not "kid": on anarchy servers that's any young-sounding player. */
+	private static final String MINOR = "(?:child|children|kiddies|minors?|bab(?:y|ies)|toddlers?|lolis?|little (?:girls?|boys?)|(?:\\w+ )?year olds?)";
+	private static final Pattern ABUSE_DOING = Pattern.compile("\\b(?:rap(?:e|ed|es|ing)|molest\\w*|diddl\\w*|grop\\w*|plap\\w*|groom(?:ing)?)\\s+"
+			+ "(?:(?:an?|the|some|this|that|little|all|my|your|ur|these|those|anime)\\s+){0,3}" + MINOR + "\\b");
+	/** "babies are plap meat". */
+	private static final Pattern ABUSE_ARE = Pattern.compile("\\b" + MINOR + "\\s+(?:are|is|r)\\s+(?:\\w+\\s+){0,2}(?:plap\\w*|rap(?:e|eable)|fuckable|sexy|hot)\\b");
+	/** Saying they are one: "i am a genuine predator", "im a pedo", "i am a danger to all the anime children". */
+	private static final Pattern ABUSE_SELF = Pattern.compile("\\b(?:i am|i'?m|im)\\s+(?:a|an)\\s+(?:\\w+\\s+){0,2}(?:pedo\\w*|paedo\\w*|(?<!apex\\s)predator|child predator|"
+			+ "danger to (?:all\\s+)?(?:the\\s+)?(?:\\w+\\s+)?" + MINOR + ")\\b");
+	/**
+	 * Someone speaking against it, or saying it of someone else ("sexualizing children is gross", "pedos should be banned",
+	 * "she's grooming little girls"), isn't saying it of themselves.
+	 */
+	private static final Pattern ABUSE_AGAINST = Pattern.compile("\\b(?:gross|disgusting|sick|wrong|vile|evil|report(?:ed)?|ban(?:ned)?|jail|prison|police|cops|"
+			+ "should(?:n'?t)? (?:be|go)|not okay|not ok|stop|groomer|(?:he|she|they|he'?s|she'?s|they'?re|is|are|was|were)\\s+(?:\\w+\\s+){0,2}"
+			+ "(?:rap(?:e|ed|ing)|molest\\w*|groom\\w*|diddl\\w*))\\b");
 
 	private static final Pattern RUDE_STRONG = Pattern.compile("\\b(?:kys|kill (?:your ?self|urself|yourself)|stfu|shut (?:the fuck |tf )?up|fuck (?:you|u|off|ur)|"
 			+ "f(?:u|ck) off|cry about it|skill issue|cope harder|cope and seethe|seethe|get good|get gud|retard(?:ed)?|ratio'?d|l bozo|"
@@ -361,9 +378,13 @@ public final class ChatIntel {
 			+ "ggs?|good game|wp|well played|gl|good luck|have fun|here you go|have this|take this|gift for you|appreciate (?:it|you|u))\\b");
 	private static final Pattern NOT_KIND = Pattern.compile("\\bno (?:thanks|thank you|ty)\\b|\\bthanks for nothing\\b|\\bgg ez\\b");
 
-	/** Friendly, trash talk, or neither. Trash talk wins when a line has both ("gg ez"). {@code names}: known players, lower case. */
+	/**
+	 * Friendly, trash talk, talk of sexually abusing children (ABUSE), or neither. ABUSE comes first, then trash talk
+	 * wins when a line has both ("gg ez"). {@code names}: known players, lower case.
+	 */
 	public static Tone tone(String text, Set<String> names) {
 		String s = normal(text).strip();
+		if ((ABUSE_DOING.matcher(s).find() || ABUSE_ARE.matcher(s).find() || ABUSE_SELF.matcher(s).find()) && !ABUSE_AGAINST.matcher(s).find()) return Tone.ABUSE;
 		Matcher named = NAMED_INSULT.matcher(s);
 		if (RUDE_STRONG.matcher(s).find() || RUDE_DIRECTED.matcher(s).find() || RUDE_YOUR.matcher(s).find() || RUDE_ALONE.matcher(s).matches()
 				|| named.matches() && names.contains(named.group(1)) || s.matches(".*\\bgg\\s+ez+\\b.*")) return Tone.RUDE;
