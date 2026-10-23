@@ -44,6 +44,19 @@ public class BaritoneScreen extends Screen {
 		super(Text.literal("Baritone"));
 	}
 
+	/** Where Esc goes back to (the game when there's none), e.g. Naughty or Nice when opened from its Baritone tab. */
+	private Screen parent;
+
+	public BaritoneScreen withParent(Screen parent) {
+		this.parent = parent;
+		return this;
+	}
+
+	@Override
+	public void close() {
+		client.setScreen(parent);
+	}
+
 	@Override
 	protected void init() {
 		int x = width / 2 - 200;
@@ -222,7 +235,8 @@ public class BaritoneScreen extends Screen {
 		boolean ok = said.startsWith("Going");
 		status = said;
 		statusColor = ok ? 0xFF7CE0A0 : 0xFFFF8A80;
-		if (ok) close();
+		// Back to the game to watch it go, not to whatever screen opened this one.
+		if (ok) client.setScreen(null);
 	}
 
 	// ---- Go to… ----
