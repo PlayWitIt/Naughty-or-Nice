@@ -32,7 +32,7 @@ public final class TrailRadar {
 		MinecraftClient client = MinecraftClient.getInstance();
 		NaughtyOrNiceClient mod = NaughtyOrNiceClient.INSTANCE;
 		if (mod == null || !NNConfig.INSTANCE.chunkTrails || !NNConfig.INSTANCE.trailRadar || client.world == null || client.player == null
-				|| client.options.hudHidden || client.getDebugHud().shouldShowDebugHud()) return;
+				|| client.options.hudHidden || CoordsHud.f3Open(client)) return;
 		ChunkTrails trails = mod.ledger.chunkTrails;
 		String dim = client.world.getRegistryKey().getValue().toString();
 		float delta = tickCounter.getTickProgress(true);
@@ -121,7 +121,7 @@ public final class TrailRadar {
 			lines.add("§7No trail here");
 			lines.add("§8Fly through fresh land to find one");
 		}
-		lines.add(String.format(java.util.Locale.ROOT, "§8Around you: §9%d new §8· §7%d old §8· %d can't tell", fresh, old, unclear));
+		lines.add(String.format(java.util.Locale.ROOT, "§8Around you: §c%d new §8· §a%d old §8· %d can't tell", fresh, old, unclear));
 		int ty = y0 + SIZE + 4;
 		for (String line : lines) {
 			int w = font.getWidth(line);
@@ -130,8 +130,8 @@ public final class TrailRadar {
 		}
 		// The key.
 		// The key, in words.
-		context.drawTextWithShadow(font, "§9■§7 new to you  §7■§7 loaded before", x0, y0 - 20, 0xFFFFFFFF);
-		context.drawTextWithShadow(font, "§f·§7 can't tell  §6■§7 trail", x0, y0 - 10, 0xFFFFFFFF);
+		context.drawTextWithShadow(font, "§c■§7 new  §a■§7 old (someone was here)", x0, y0 - 20, 0xFFFFFFFF);
+		context.drawTextWithShadow(font, "§f·§7 can't tell  §e■§7 trail", x0, y0 - 10, 0xFFFFFFFF);
 	}
 
 	/** Old land all around and no fresh land in sight: you can't see where it ends. */

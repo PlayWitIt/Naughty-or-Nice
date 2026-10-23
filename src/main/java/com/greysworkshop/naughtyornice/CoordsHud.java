@@ -17,8 +17,16 @@ public final class CoordsHud {
 	public static void render(DrawContext context, RenderTickCounter tickCounter) {
 		MinecraftClient client = MinecraftClient.getInstance();
 		if (!NNConfig.on() || !NNConfig.INSTANCE.showCoords || client.player == null || client.world == null || client.options.hudHidden
-				|| client.getDebugHud().shouldShowDebugHud() || ModsPanel.streamSafe()) return;
+				|| CoordsHud.f3Open(client) || ModsPanel.streamSafe()) return;
 		context.drawTextWithShadow(client.textRenderer, line(client), 4, context.getScaledWindowHeight() - 12, 0xFFFFFFFF);
+	}
+
+	/**
+	 * Whether the F3 screen is open. Not the game's own "debug HUD showing", which since 1.21.9 is also true whenever any
+	 * F3 entry is set to always on (hitboxes, say), F3 closed or not, and would hide everything here for good.
+	 */
+	public static boolean f3Open(MinecraftClient client) {
+		return client.debugHudEntryList.isF3Enabled();
 	}
 
 	static String line(MinecraftClient client) {
