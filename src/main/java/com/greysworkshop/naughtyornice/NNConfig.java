@@ -70,14 +70,10 @@ public final class NNConfig {
 	public int chatQuietSeconds = 180;
 	/** Chat from this long before they first spoke is kept, so you can see what they were answering. */
 	public int chatContextSeconds = 60;
-	/** Conversations older than this are dropped from the in-game log (the text files are kept). */
-	public int chatKeepDays = 30;
 	/** Most conversations kept in-game per player. */
 	public int chatKeepConversations = 100;
 	/** Also append every finished conversation to a text file per player. */
 	public boolean chatFiles = true;
-	/** The Chat tab keeps this many days of chat between sessions. */
-	public int chatHistoryDays = 7;
 	/** Also write everything said on the server to a text file a day. */
 	public boolean chatAllFiles = true;
 

@@ -108,6 +108,12 @@ public final class SelfTest {
 				// The same starting spot every run (the test world remembers where the player last was).
 				IntegratedServer server = client.getServer();
 				server.execute(() -> server.getCommandManager().parseAndExecute(server.getCommandSource(), "tp @a 0.5 -60 0.5 -90 0"));
+				// Nothing left from earlier runs: water (the chunk-trail test needs land with none), crops, farmland and
+				// dropped items (the farm test needs nothing to farm at first).
+				for (String cmd : new String[] {"fill -90 -60 -90 90 -60 90 air replace water", "fill -90 -60 -90 90 -60 90 air replace wheat",
+						"fill -90 -61 -90 90 -61 90 grass_block replace farmland", "kill @e[type=item]"}) {
+					server.execute(() -> server.getCommandManager().parseAndExecute(server.getCommandSource(), cmd));
+				}
 			}
 			case 60 -> {
 				log("Clearing old lists and seeding players");
@@ -382,7 +388,11 @@ public final class SelfTest {
 				screenshot(client, "11_chat_log");
 				client.currentScreen.mouseScrolled(200, 200, 0, -8);
 			}
-			case 548 -> screenshot(client, "11b_chat_log_lines");
+			case 548 -> {
+				screenshot(client, "11b_chat_log_lines");
+				// Back up to the section tabs (the page is long: it has everything she said).
+				client.currentScreen.mouseScrolled(200, 200, 0, 100);
+			}
 			case 550 -> {
 				check("chat log tab clickable", screen(client).testClick("section:CHAT"));
 				screen(client).testSearch("");
@@ -416,8 +426,26 @@ public final class SelfTest {
 			}
 			case 615 -> {
 				screenshot(client, "15_settings_chat");
-				// Everything is logged now, so there's no conversation length to set.
+				// Everything is logged now, so there's no conversation length, or how long chat is kept, to set.
 				check("no conversation-length setting", !screen(client).testClick("step+:A conversation ends after"));
+				check("no how-long-to-keep-chat settings", !screen(client).testClick("step+:Chat tab keeps") && !screen(client).testClick("step+:Keep chat logs for"));
+				boolean trails = NNConfig.INSTANCE.chunkTrails;
+				check("chunk trails turn off and on from their own card", screen(client).testClick("chunks-main") && NNConfig.INSTANCE.chunkTrails != trails
+						&& screen(client).testClick("chunks-main") && NNConfig.INSTANCE.chunkTrails == trails);
+				Profile.Line one = new Profile.Line();
+				one.time = System.currentTimeMillis();
+				one.sender = "Steve_Builder";
+				one.text = "anyone selling diamonds?";
+				check("a chat line for Details says when it was said (" + ChatLogger.whenSaid(one) + ")",
+						ChatLogger.whenSaid(one).matches("in chat on \\w{3} \\d{1,2} \\w{3} \\d{4} at \\d\\d:\\d\\d"));
+				Profile steve = ledger.byName("Steve_Builder");
+				int detailsBefore = steve.details.size();
+				check("+ Details puts what they said into their Details", screen(client).lineToDetails(one) == steve
+						&& steve.details.size() == detailsBefore + 1 && steve.details.get(steve.details.size() - 1).text.endsWith(": \"anyone selling diamonds?\"")
+						&& screen(client).lineToDetails(one) == null);
+				steve.details.remove(steve.details.size() - 1);
+				check("a copied chat line has its date, time and who said it (" + ChatLogger.formatLine(one) + ")",
+						ChatLogger.formatLine(one).matches("\\[\\w{3} \\d{1,2} \\w{3} \\d{4} \\d\\d:\\d\\d:\\d\\d\\] <Steve_Builder> anyone selling diamonds\\?"));
 				ShopScreen shop = screen(client);
 				check("Baritone tab opens Baritone", shop.testClick("tab:BARITONE") && client.currentScreen instanceof BaritoneScreen);
 				client.currentScreen.close();
@@ -795,7 +823,18 @@ public final class SelfTest {
 						.distance(1050, -1950) == 0 && new BaseInsuranceBridge.BaseArea("Home", "minecraft:overworld", 1000, 1100, -2000, -1900).distance(1300, -1950) == 200);
 				client.setScreen(new ShopScreen(ShopScreen.Tab.CHAT, null));
 			}
-			case 916 -> screenshot(client, "37_chat_alerts");
+			case 913 -> {
+				// Everything a player said is on their page, listed or not: read from the all-chat files.
+				mod.chatLogger.saveFeed(true);
+				mod.chatLogger.everything(ledger.byName("Steve_Builder"));
+			}
+			case 916 -> {
+				Profile steve = ledger.byName("Steve_Builder");
+				List<Profile.Line> said = mod.chatLogger.everything(steve);
+				check("an unlisted player's page has everything they said (" + (said == null ? "still reading" : said.size() + " lines") + ")",
+						steve.verdict == Profile.Verdict.NONE && said != null && said.stream().anyMatch(l -> l.them && l.text.equals("anyone selling diamonds?")));
+				screenshot(client, "37_chat_alerts");
+			}
 			// ---- Sightings and evidence ----
 			case 918 -> {
 				Profile gary = ledger.get(id(GRIEFER));
@@ -1319,6 +1358,10 @@ public final class SelfTest {
 				String dim = client.world.getRegistryKey().getValue().toString();
 				int cx = waterAt.getX() >> 4, cz = waterAt.getZ() >> 4;
 				check("liquid starting to flow marks the chunk fresh (" + ledger.chunkTrails.state(dim, cx, cz) + ")", ledger.chunkTrails.state(dim, cx, cz) == ChunkTrails.NEW);
+				IntegratedServer cleanup = client.getServer();
+				int wx = waterAt.getX(), wz = waterAt.getZ();
+				cleanup.execute(() -> cleanup.getCommandManager().parseAndExecute(cleanup.getCommandSource(),
+						"fill " + (wx - 12) + " -60 " + (wz - 12) + " " + (wx + 12) + " -59 " + (wz + 12) + " air replace water"));
 				ChunkTrails probe = new ChunkTrails();
 				probe.chunkLoaded(dim, client.world.getChunk(cx, cz), false);
 				check("...and arriving with liquid already flowed reads as old", probe.state(dim, cx, cz) == ChunkTrails.OLD);
@@ -1820,6 +1863,11 @@ public final class SelfTest {
 				b.testPress("Paste coordinates");
 				check("Paste coordinates reads the clipboard", "120".equals(b.testField("x")) && "-60".equals(b.testField("y (optional)"))
 						&& "-45".equals(b.testField("z")));
+				b.testPress("Overworld → Nether");
+				check("the nether calculator divides by 8 (" + b.testStatus() + ")", "15".equals(b.testField("x")) && "-6".equals(b.testField("z"))
+						&& "-60".equals(b.testField("y (optional)")));
+				b.testPress("Nether → Overworld");
+				check("...and multiplies back", "120".equals(b.testField("x")) && "-48".equals(b.testField("z")));
 				b.testPress("Latest place given away");
 				String place = b.testStatus();
 				check("Latest place given away (" + place + ")", place.startsWith("Filled in") || place.startsWith("Nobody has"));
@@ -1873,7 +1921,8 @@ public final class SelfTest {
 			}
 			case 115 -> {
 				// Baritone takes a moment to give up; the screen notices as soon as it does.
-				if (System.currentTimeMillis() - baritonePressed < 4000) {
+				long since = System.currentTimeMillis() - baritonePressed;
+				if (since < 2000 || since < 15_000 && BaritoneBridge.processActive("getFarmProcess")) {
 					baritoneStep--;
 					return;
 				}

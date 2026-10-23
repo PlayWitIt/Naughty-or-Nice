@@ -2029,7 +2029,9 @@ public class ShopScreen extends Screen {
 		// Section tabs: what they've done, and their chat log.
 		int lineY = Math.max(ty, y + img + 30);
 		context.fill(left, lineY + 14, right, lineY + 15, BORDER);
-		int conversations = p.conversations.size();
+		// What they've said, all of it (the conversations until it's been read).
+		List<Profile.Line> said = mod.chatLogger.everything(p);
+		int conversations = said == null ? p.conversations.size() : (int) said.stream().filter(l -> !l.me).count();
 		String live = mod.chatLogger.isOpen(p) ? " ● live" : "";
 		int links = mod.ledger.links.of(p.id).size();
 		String[] labels = {"Details (" + p.details.size() + ")", "What they've done", "Stats", "Where & when (" + p.sightings.size() + ")",
@@ -2579,51 +2581,30 @@ public class ShopScreen extends Screen {
 		Path file = mod.chatLogger.file(p);
 		int lx = x;
 		if (Files.exists(file)) lx = link(context, mouseX, mouseY, lx, y, "Open log file", "open-log", () -> Util.getOperatingSystem().open(file)) + 12;
-		if (!p.conversations.isEmpty()) {
+		// Everything they've said, from the all-chat files: whenever it was, listed or not.
+		List<Profile.Line> all = mod.chatLogger.everything(p);
+		if (all != null && !all.isEmpty()) {
 			lx = link(context, mouseX, mouseY, lx, y, "Copy all", "copy-all", () -> {
-				StringBuilder sb = new StringBuilder();
-				for (Profile.Conversation c : p.conversations) sb.append(ChatLogger.format(p, c)).append(System.lineSeparator());
-				client.keyboard.setClipboard(sb.toString());
-				flash("Copied " + p.conversations.size() + " conversations", NICE, null);
+				client.keyboard.setClipboard(ChatLogger.formatFeed(Sharing.placeName(mod.ledger.key()), "everything " + p.name + " said", all, l -> ""));
+				flash("Copied " + all.size() + " lines", NICE, null);
 			}) + 12;
 		}
 		if (lx > x) y += 14;
 
-		if (p.conversations.isEmpty()) {
-			String why = !NNConfig.INSTANCE.chatLog ? "Chat logging is off (Settings)."
-					: p.verdict == Profile.Verdict.NONE ? "Put them on your Nice or Naughty list and everything they say in chat is logged here."
-					: "Nothing yet. Next time they talk in chat, the conversation is logged here.";
+		if (all == null) {
+			text(context, "Reading what they've said...", x, y, MUTED);
+			y += 14;
+		} else if (all.isEmpty() && p.conversations.isEmpty()) {
+			String why = !NNConfig.INSTANCE.chatAllFiles ? "Saving all chat is off (Settings), so there's nothing to show."
+					: "Nothing from them in chat yet.";
 			for (var line : textRenderer.wrapLines(Text.literal(why), w)) {
 				context.drawText(textRenderer, line, x, y, MUTED, false);
 				y += 10;
 			}
-			// What they've said in the Chat tab's history (the last days), newest first.
-			List<Profile.Line> theirs = new ArrayList<>();
-			for (Profile.Line line : mod.chatLogger.feed()) {
-				if (!line.me && !ChatLogger.isMarker(line) && (line.sender.equalsIgnoreCase(p.name) || p.pastNames.stream().anyMatch(line.sender::equalsIgnoreCase))) {
-					theirs.add(line);
-				}
-			}
-			if (!theirs.isEmpty()) {
-				y += 6;
-				context.drawText(textRenderer, Text.literal("Seen in chat lately (" + theirs.size() + ")").styled(s -> s.withBold(true)), x, y, TEXT, false);
-				y += 12;
-				for (int i = theirs.size() - 1; i >= 0 && i >= theirs.size() - 60; i--) {
-					Profile.Line line = theirs.get(i);
-					y = chatRow(context, line, x, y, w, true);
-				}
-			} else if (!p.recentChat.isEmpty()) {
-				y += 6;
-				context.drawText(textRenderer, Text.literal("Recently said").styled(s -> s.withBold(true)), x, y, TEXT, false);
-				y += 12;
-				for (int i = p.recentChat.size() - 1; i >= 0; i--) {
-					textTrim(context, "\"" + p.recentChat.get(i) + "\"", x + 4, y, w - 4, MUTED);
-					y += 10;
-				}
-			}
 			return y;
 		}
 
+		// Conversations (with what others said around them), for players on a list.
 		for (int c = p.conversations.size() - 1; c >= 0; c--) {
 			Profile.Conversation conversation = p.conversations.get(c);
 			boolean open = isExpanded(p, conversation);
@@ -2657,14 +2638,70 @@ public class ShopScreen extends Screen {
 			});
 			y += 18;
 			if (!open) continue;
-			for (Profile.Line line : conversation.lines) y = chatRow(context, line, x, y, w, false);
+			for (Profile.Line line : conversation.lines) y = chatRow(context, mouseX, mouseY, line, x, y, w, false);
 			y += 6;
+		}
+		if (all != null && !all.isEmpty()) {
+			int theirs = (int) all.stream().filter(l -> !l.me).count();
+			y += 6;
+			context.drawText(textRenderer, Text.literal("Everything they've said (" + theirs + ")").styled(s -> s.withBold(true)), x, y, TEXT, false);
+			y += 12;
+			int shown = Math.min(all.size(), 300);
+			for (int i = all.size() - 1; i >= all.size() - shown; i--) y = chatRow(context, mouseX, mouseY, all.get(i), x, y, w, true);
+			if (shown < all.size()) {
+				text(context, "The latest " + shown + " of " + all.size() + ". Copy all copies every one.", x, y + 2, MUTED);
+				y += 14;
+			}
 		}
 		return y;
 	}
 
-	/** One chat line: time, who, what. Their lines are highlighted. */
-	private int chatRow(DrawContext context, Profile.Line line, int x, int y, int w, boolean withDay) {
+	/**
+	 * Buttons for one chat line, ending at {@code right}: "+ Details" (someone else's line goes into their Details, with
+	 * when they said it) and Copy (to the clipboard, with its date and time). Returns the x where they start.
+	 */
+	private int lineButtons(DrawContext context, int mouseX, int mouseY, int right, int y, int top, int bottom, Profile.Line line) {
+		int bx = right - (textRenderer.getWidth("Copy") + 8);
+		smallButton(context, mouseX, mouseY, bx, y, top, bottom, "Copy", "copy-line", () -> {
+			client.keyboard.setClipboard(ChatLogger.formatLine(line));
+			flash("Copied: " + ChatLogger.describe(line), NICE, null);
+		});
+		if (line.me || line.system || line.sender.isEmpty()) return bx;
+		bx -= textRenderer.getWidth("+ Details") + 8 + 4;
+		smallButton(context, mouseX, mouseY, bx, y, top, bottom, "+ Details", "detail-line", () -> lineToDetails(line));
+		return bx;
+	}
+
+	/** Puts what someone said into their Details, with when; returns whose, or null if it was already there. */
+	Profile lineToDetails(Profile.Line line) {
+		Profile p = mod.ledger.byName(line.sender);
+		if (p == null) p = addByName(line.sender);
+		if (p == null) return null;
+		Profile who = p;
+		Profile.Detail d = p.addDetail("Said " + ChatLogger.whenSaid(line) + (line.whisper ? " (whispered)" : "") + ": \"" + line.text + "\"", "", false);
+		if (d == null) {
+			flash("That's already in " + p.name + "'s details", MUTED, null);
+			return null;
+		}
+		mod.ledger.markDirty();
+		flash("Added to " + p.name + "'s details", NICE, () -> {
+			who.details.remove(d);
+			mod.ledger.markDirty();
+			flash("Undone", MUTED, null);
+		});
+		return p;
+	}
+
+	private void smallButton(DrawContext context, int mouseX, int mouseY, int bx, int y, int top, int bottom, String label, String hitLabel, Runnable run) {
+		int bw = textRenderer.getWidth(label) + 8;
+		boolean bHover = over(mouseX, mouseY, bx, y, bw, 11);
+		roundedBorder(context, bx, y, bw, 11, bHover ? SOFT_HOVER : CARD, BORDER);
+		text(context, label, bx + 4, y + 2, LINK);
+		hits.add(new Hit(bx, Math.max(y, top), bx + bw, Math.min(y + 11, bottom), hitLabel, run));
+	}
+
+	/** One chat line: time, who, what. Their lines are highlighted; the one you point at can be copied. */
+	private int chatRow(DrawContext context, int mouseX, int mouseY, Profile.Line line, int x, int y, int w, boolean withDay) {
 		String time = withDay ? day(line.time) + " " + clock(line.time) : clock(line.time);
 		int timeW = textRenderer.getWidth(withDay ? "Wed 30 Sep 00:00" : "00:00") + 6;
 		int textX = x + 4 + timeW;
@@ -2688,6 +2725,7 @@ public class ShopScreen extends Screen {
 			context.drawText(textRenderer, part, textX, ly, TEXT, false);
 			ly += 10;
 		}
+		if (!line.system && over(mouseX, mouseY, x, y - 1, w, h)) lineButtons(context, mouseX, mouseY, x + w - 2, y, BODY, height, line);
 		return y + h;
 	}
 
@@ -3760,9 +3798,8 @@ public class ShopScreen extends Screen {
 		int textW = right - textX - 4;
 		List<ChatRow> rows = chatRows(textW);
 		int total = mod.chatLogger.feed().size();
-		int days = NNConfig.INSTANCE.chatHistoryDays;
-		String summary = rows.size() == total ? total + (total == 1 ? " line" : " lines") + " from the last " + (days == 1 ? "day" : days + " days")
-				: rows.size() + " of " + total + " lines";
+		String summary = rows.size() == total ? "The latest " + total + (total == 1 ? " line" : " lines") + " (everything is in the chat logs)"
+				: rows.size() + " of the latest " + total + " lines";
 		if (chatFilter != ChatFilter.ALL || chatGroup != null) {
 			summary += " · " + (chatGroup != null ? chatGroup + (chatFilter != ChatFilter.ALL ? ", " + chatFilter.label : "") : chatFilter.label);
 		}
@@ -3900,11 +3937,13 @@ public class ShopScreen extends Screen {
 			context.drawText(textRenderer, part, bx + badgeW, ty, TEXT, false);
 			ty += 10;
 		}
-		if (!hover || me) return;
+		if (!hover) return;
+		Profile.Verdict[] order = {Profile.Verdict.FRIEND, Profile.Verdict.NICE, Profile.Verdict.LOOK, Profile.Verdict.NAUGHTY};
+		int qx = me ? x + w : x + w - order.length * 14 - 4;
+		int copyX = lineButtons(context, mouseX, mouseY, qx - 5, y, viewTop, viewBottom, line);
+		if (me) return;
 		// Quick buttons on the right: Friend, Nice, Look Into, Naughty, for whoever said it.
 		String name = who != null ? who.name : line.sender;
-		Profile.Verdict[] order = {Profile.Verdict.FRIEND, Profile.Verdict.NICE, Profile.Verdict.LOOK, Profile.Verdict.NAUGHTY};
-		int qx = x + w - order.length * 14 - 4;
 		rounded(context, qx - 3, y, order.length * 14 + 6, Math.min(row.h, 12), CARD);
 		for (int i = 0; i < order.length; i++) {
 			Profile.Verdict target = order[i];
@@ -3932,7 +3971,7 @@ public class ShopScreen extends Screen {
 			}));
 		}
 		// Anywhere else on the line opens their page.
-		hits.add(new Hit(x, Math.max(y, viewTop), qx - 3, Math.min(y + row.h, viewBottom), "chat-line:" + name, () -> {
+		hits.add(new Hit(x, Math.max(y, viewTop), copyX - 2, Math.min(y + row.h, viewBottom), "chat-line:" + name, () -> {
 			Profile p = who != null ? who : mod.ledger.byName(name);
 			if (p != null) open(p);
 		}));
@@ -4128,21 +4167,8 @@ public class ShopScreen extends Screen {
 				() -> c.logoutSpots, v -> c.logoutSpots = v));
 		options.add(new Option("Death recap", "On the death screen: who hit you in your last 30 seconds, with what, the totems you popped and your last few hits, "
 				+ "with a button to save the fight.", () -> c.deathRecap, v -> c.deathRecap = v));
-		options.add(new Option("Find chunk trails", "Tells old land (someone was there) from new land by how each chunk arrives, and finds "
-				+ "the paths players left through new land. Turning it on shows the radar too (J hides or shows it; K the squares in the world).", () -> c.chunkTrails, v -> {
-					c.chunkTrails = v;
-					if (v) c.trailRadar = true;
-				}));
 		options.add(new Option("My coordinates", "Your x y z, which way you face, and the matching nether (or overworld) spot in the bottom "
 				+ "left, so you don't need F3. Hidden while stream-safe mode is on.", () -> c.showCoords, v -> c.showCoords = v));
-		options.add(new Option("Chunk trail radar", "A small map on the right that turns with you: new land red, old land green, trails yellow with "
-				+ "an arrow away from spawn, and how to turn to follow. J shows or hides it.", () -> c.trailRadar, v -> c.trailRadar = v));
-		options.add(new Option("Chunks in the world", "Every chunk that's been read drawn as a square in the world: new land red, old land green, "
-				+ "trail chunks yellow, and a line at the top saying which you're in. K shows or hides it; the height and fill are below.",
-				() -> c.chunkOverlay, v -> {
-					c.chunkOverlay = v;
-					if (v) c.chunkTrails = true;
-				}));
 		options.add(new Option("Note new chunk trails in chat", "Where a new trail is, which way it runs, and its far end.", () -> c.trailAlerts, v -> c.trailAlerts = v));
 		options.add(new Option("Ping on any coordinates", "A ping whenever anyone posts coordinates. They're always listed on the Intel tab either way.",
 				() -> c.pingAllCoords, v -> c.pingAllCoords = v));
@@ -4197,18 +4223,62 @@ public class ShopScreen extends Screen {
 	private List<Stepper> steppers() {
 		NNConfig c = NNConfig.INSTANCE;
 		return List.of(
-				new Stepper("Chat tab keeps", new int[] {1, 3, 7, 14, 30},
-						() -> c.chatHistoryDays, v -> c.chatHistoryDays = v, v -> v + (v == 1 ? " day" : " days") + " of chat"),
-				new Stepper("Keep chat logs for", new int[] {1, 3, 7, 14, 30, 60, 90, 180, 365},
-						() -> c.chatKeepDays, v -> c.chatKeepDays = v, v -> v + (v == 1 ? " day" : " days")),
 				new Stepper("Forget unlisted players after", new int[] {0, 7, 30, 90, 180, 365},
 						() -> c.forgetAfterDays, v -> c.forgetAfterDays = v, v -> v == 0 ? "never" : v + " days unseen"),
 				new Stepper("\"Near you\" means within", new int[] {8, 16, 24, 32, 48, 64, 96, 128},
-						() -> c.nearRadius, v -> c.nearRadius = v, v -> v + " blocks"),
-				new Stepper("Chunks in the world are drawn at", new int[] {ChunkOverlay.FOLLOW, -64, 0, 32, 62, 64, 100, 120, 128, 200, 256, 320},
+						() -> c.nearRadius, v -> c.nearRadius = v, v -> v + " blocks"));
+	}
+
+	/** How the squares of chunks in the world are drawn, for the Chunk trails card. */
+	private List<Stepper> chunkSteppers() {
+		NNConfig c = NNConfig.INSTANCE;
+		return List.of(
+				new Stepper("Squares are drawn at", new int[] {ChunkOverlay.FOLLOW, -64, 0, 32, 62, 64, 100, 120, 128, 200, 256, 320},
 						() -> c.chunkOverlayY, v -> c.chunkOverlayY = v, v -> v == ChunkOverlay.FOLLOW ? "your feet" : "height " + v),
-				new Stepper("Chunks in the world are filled", new int[] {0, 10, 25, 40, 60},
+				new Stepper("Squares are filled", new int[] {0, 10, 25, 40, 60},
 						() -> c.chunkOverlayFill, v -> c.chunkOverlayFill = v, v -> v == 0 ? "outline only" : v + "%"));
+	}
+
+	/**
+	 * Chunk trails in one place: on or off, the squares in the world and the radar, and how the squares are drawn.
+	 * Returns where it ends.
+	 */
+	private int chunkTrailsCard(DrawContext context, int mouseX, int mouseY, int x, int y, int w) {
+		NNConfig c = NNConfig.INSTANCE;
+		int h = 98;
+		roundedBorder(context, x, y, w, h, CARD, c.chunkTrails ? NICE : BORDER);
+		context.drawText(textRenderer, Text.literal("Chunk trails").styled(s -> s.withBold(true)), x + 10, y + 7, TEXT, false);
+		textTrim(context, c.chunkTrails ? "On: as chunks load, new land shows red, old land green (someone was there), trails yellow."
+				: "Off: no chunks are read and nothing is drawn.", x + 10, y + 19, w - 20, c.chunkTrails ? NICE : MUTED);
+		int bx = x + 10, by = y + 33;
+		String main = c.chunkTrails ? "Turn chunk trails off" : "Turn chunk trails on";
+		int mw = textRenderer.getWidth(main) + 14;
+		pill(context, mouseX, mouseY, bx, by, mw, 14, main, YELLOW, YELLOW_EDGE, BUTTON_TEXT, "chunks-main", () -> {
+			c.chunkTrails = !c.chunkTrails;
+			NNConfig.save();
+		});
+		bx += mw + 6;
+		String squares = "Squares in the world: " + (c.chunkOverlay ? "on" : "off") + " (K)";
+		int sw = textRenderer.getWidth(squares) + 14;
+		pill(context, mouseX, mouseY, bx, by, sw, 14, squares, SOFT, BORDER, c.chunkTrails ? TEXT : MUTED, "chunks-squares", () -> {
+			c.chunkOverlay = !c.chunkOverlay;
+			if (c.chunkOverlay) c.chunkTrails = true;
+			NNConfig.save();
+		});
+		bx += sw + 6;
+		String radar = "Radar: " + (c.trailRadar ? "on" : "off") + " (J)";
+		int rw = textRenderer.getWidth(radar) + 14;
+		pill(context, mouseX, mouseY, bx, by, rw, 14, radar, SOFT, BORDER, c.chunkTrails ? TEXT : MUTED, "chunks-radar", () -> {
+			c.trailRadar = !c.trailRadar;
+			if (c.trailRadar) c.chunkTrails = true;
+			NNConfig.save();
+		});
+		int ty = by + 22;
+		for (Stepper stepper : chunkSteppers()) {
+			stepper(context, mouseX, mouseY, x + 10, ty, stepper);
+			ty += 18;
+		}
+		return y + h;
 	}
 
 	/** Shown first in Settings: the one to reach for if the screen feels too big or too small. */
@@ -4295,6 +4365,7 @@ public class ShopScreen extends Screen {
 			scrollToDisconnects = false;
 			scroll = Math.max(0, disconnectsAt - y0 - 4);
 		}
+		y = chunkTrailsCard(context, mouseX, mouseY, x, y, w) + 10;
 		int circlesAt = y;
 		y = circlesCard(context, mouseX, mouseY, x, y, w) + 10;
 		if (scrollToCircles) {

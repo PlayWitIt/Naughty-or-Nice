@@ -139,6 +139,10 @@ public class BaritoneScreen extends Screen {
 			zField.setText(String.valueOf(p.getBlockZ()));
 		});
 		y += 24;
+		// The nether calculator: one nether block is eight overworld blocks across (y stays as it is).
+		button(x, y, 198, "Overworld → Nether (÷8)", () -> convert(true));
+		button(x + 202, y, 198, "Nether → Overworld (×8)", () -> convert(false));
+		y += 24;
 		button(x, y, 132, "Latest trail's far end", () -> {
 			List<ChunkTrails.Trail> trails = NaughtyOrNiceClient.INSTANCE.ledger.chunkTrails.trails;
 			if (trails.isEmpty()) {
@@ -226,6 +230,17 @@ public class BaritoneScreen extends Screen {
 			}
 			clearAndInit();
 		});
+	}
+
+	/** Turns the typed x and z into the matching spot in the nether (or back), in the boxes, ready for Go. */
+	private void convert(boolean toNether) {
+		Integer[] at = typed();
+		if (at == null) return;
+		int x = toNether ? Math.floorDiv(at[0], 8) : at[0] * 8, z = toNether ? Math.floorDiv(at[2], 8) : at[2] * 8;
+		xField.setText(String.valueOf(x));
+		zField.setText(String.valueOf(z));
+		status = (toNether ? "Nether " : "Overworld ") + x + ", " + z + " (from " + (toNether ? "overworld " : "nether ") + at[0] + ", " + at[2] + ")";
+		statusColor = 0xFFDDDDDD;
 	}
 
 	private void fill(int x, Integer y, int z) {
@@ -506,8 +521,8 @@ public class BaritoneScreen extends Screen {
 			context.drawTextWithShadow(textRenderer, "x", x + 2, y + 5, 0xFFAAAAAA);
 			context.drawTextWithShadow(textRenderer, "y", x + 90, y + 5, 0xFFAAAAAA);
 			context.drawTextWithShadow(textRenderer, "z", x + 154, y + 5, 0xFFAAAAAA);
-			context.drawTextWithShadow(textRenderer, "Player", x, y + 59, 0xFFAAAAAA);
-			context.drawTextWithShadow(textRenderer, "Block", x, y + 83, 0xFFAAAAAA);
+			context.drawTextWithShadow(textRenderer, "Player", x, y + 83, 0xFFAAAAAA);
+			context.drawTextWithShadow(textRenderer, "Block", x, y + 107, 0xFFAAAAAA);
 		} else if (page == Page.HIGHWAY) {
 			int y = 70;
 			context.drawTextWithShadow(textRenderer, "Height", x + 108, y + 5, 0xFFAAAAAA);
