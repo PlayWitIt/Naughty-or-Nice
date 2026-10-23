@@ -56,7 +56,6 @@ public final class HighwayRoam {
 	public static String start(MinecraftClient client) {
 		if (!BaritoneBridge.present()) return "Baritone isn't installed";
 		if (client.player == null || client.world == null) return "Join a world first";
-		if (SmartTravel.riding(client)) return SmartTravel.RIDING;
 		boolean nether = client.world.getRegistryKey().getValue().toString().endsWith("the_nether");
 		if (elytra && !nether) return "Baritone only flies elytra in the nether";
 		double px = client.player.getX(), pz = client.player.getZ();

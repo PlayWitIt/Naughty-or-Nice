@@ -71,19 +71,10 @@ public final class SmartTravel {
 		return false;
 	}
 
-	/** Why Baritone can't move you while you ride something. */
-	public static final String RIDING = "You're riding: Baritone can only walk you, not steer a horse (or boat, pig...), so it runs into walls. Get off first.";
-
-	/** Whether you're on a horse, boat, minecart or anything else Baritone can't steer. */
-	public static boolean riding(MinecraftClient client) {
-		return client.player != null && client.player.hasVehicle();
-	}
-
 	/** Sets off. Returns what it's doing (for the screen), or why it can't. */
 	public static String go(MinecraftClient client, Destinations.Destination d) {
 		if (!BaritoneBridge.present()) return "Baritone isn't installed";
 		if (client.player == null || client.world == null) return "Join a world first";
-		if (riding(client)) return RIDING;
 		Plan plan = plan(client, d);
 		if (plan == null) return "That's in another dimension that can't be reached from here (the end)";
 		double distance = Math.hypot(plan.x() - client.player.getX(), plan.z() - client.player.getZ());
@@ -110,12 +101,6 @@ public final class SmartTravel {
 	/** Once a second: progress, arrival, strangers, health. */
 	public static void tick(MinecraftClient client) {
 		if (trip == null || client.player == null || client.world == null) return;
-		// Got on something mid-trip: Baritone would steer it into the walls, so the trip stops.
-		if (riding(client)) {
-			stop();
-			Alerts.warn(Text.literal("Trip stopped: " + RIDING).formatted(Formatting.RED));
-			return;
-		}
 		long now = System.currentTimeMillis();
 		double left = Math.hypot(trip.x() - client.player.getX(), trip.z() - client.player.getZ());
 		progress.addLast(new double[] {now, left});
