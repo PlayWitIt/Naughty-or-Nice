@@ -38,11 +38,13 @@ public final class ChatLogger {
 	private final Deque<Profile.Line> recent = new ArrayDeque<>();
 	private final Map<UUID, Profile.Conversation> open = new LinkedHashMap<>();
 	/**
-	 * Everything said on this server lately (up to {@link #FEED_MAX} lines, kept {@link NNConfig#chatHistoryDays} days,
-	 * saved between sessions), for the Chat tab.
+	 * Everything said on this server lately (the latest {@link #FEED_MAX} lines, up to {@link #FEED_DAYS} days old, saved
+	 * between sessions), for the Chat tab. Everything ever said is in the all-chat files.
 	 */
 	private final Deque<Profile.Line> feed = new ArrayDeque<>();
 	public static final int FEED_MAX = 3000;
+	static final int FEED_DAYS = 7;
+	private final ChatHistory history = new ChatHistory();
 	private static final com.google.gson.Gson GSON = new com.google.gson.GsonBuilder().create();
 	private static final DateTimeFormatter DAY_FILE = DateTimeFormatter.ofPattern("yyyy-MM-dd", Locale.ROOT);
 	/** The feed has lines not saved yet. */
@@ -160,7 +162,7 @@ public final class ChatLogger {
 		try (java.io.Reader reader = Files.newBufferedReader(file)) {
 			List<Profile.Line> lines = GSON.fromJson(reader, new com.google.gson.reflect.TypeToken<List<Profile.Line>>() {}.getType());
 			if (lines == null) return;
-			long oldest = System.currentTimeMillis() - NNConfig.INSTANCE.chatHistoryDays * 86_400_000L;
+			long oldest = System.currentTimeMillis() - FEED_DAYS * 86_400_000L;
 			for (Profile.Line line : lines) {
 				if (line == null || line.text == null || line.time < oldest) continue;
 				if (line.sender == null) line.sender = "";
@@ -210,6 +212,18 @@ public final class ChatLogger {
 				NaughtyOrNiceClient.LOGGER.error("Could not write {}", file, e);
 			}
 		}
+	}
+
+	/**
+	 * Everything a player has said on this server (and whispers between you), oldest first, from the all-chat files,
+	 * whenever it was, listed or not; null while it's first being read.
+	 */
+	public List<Profile.Line> everything(Profile profile) {
+		writeAllChat();
+		java.util.Set<String> names = new java.util.HashSet<>();
+		names.add(profile.name.toLowerCase(Locale.ROOT));
+		for (String past : profile.pastNames) names.add(past.toLowerCase(Locale.ROOT));
+		return history.said(folder().resolve("all-chat"), names);
 	}
 
 	/** The Chat tab's lines, oldest first. */
@@ -328,11 +342,9 @@ public final class ChatLogger {
 		ledger.markDirty();
 	}
 
-	/** Applies the keep limits to a player's in-game log. */
+	/** Keeps a player's in-game conversations to the latest ones (everything is in the all-chat files, for good). */
 	public static void prune(Profile profile) {
 		NNConfig config = NNConfig.INSTANCE;
-		long oldest = System.currentTimeMillis() - config.chatKeepDays * 86_400_000L;
-		profile.conversations.removeIf(c -> !c.open && c.end < oldest);
 		while (profile.conversations.size() > config.chatKeepConversations) {
 			Profile.Conversation first = profile.conversations.get(0);
 			if (first.open) break;
@@ -410,6 +422,18 @@ public final class ChatLogger {
 			sb.append(nl);
 		}
 		return sb.toString();
+	}
+
+	/** When a line was said, for a detail: "in chat on Fri 23 Oct 2026 at 08:47". */
+	public static String whenSaid(Profile.Line line) {
+		var at = Instant.ofEpochMilli(line.time).atZone(ZoneId.systemDefault());
+		return "in chat on " + FILE_DAY.format(at) + " at " + FILE_TIME.format(at).substring(0, 5);
+	}
+
+	/** One line as copied: "[Fri 23 Oct 2026 08:47:49] &lt;Name&gt; text". */
+	public static String formatLine(Profile.Line line) {
+		var at = Instant.ofEpochMilli(line.time).atZone(ZoneId.systemDefault());
+		return "[" + FILE_DAY.format(at) + " " + FILE_TIME.format(at) + "] " + describe(line);
 	}
 
 	/** "&lt;Name&gt; text", "Name whispers: text", "* Name left the game"... */
