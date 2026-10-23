@@ -39,7 +39,7 @@ import java.util.function.Consumer;
 public class ShopScreen extends Screen {
 	public enum Tab {
 		ALL("All"), NEARBY("Nearby"), ONLINE("Online"), OFFLINE("Offline"), FRIENDS("Friends"), NICE("Nice list"), LOOK("Look Into"), NAUGHTY("Naughty list"),
-		GROUPS("Groups"), ACTIVITY("Activity"), INTEL("Intel"), CHAT("Chat"), SETTINGS("Settings");
+		GROUPS("Groups"), ACTIVITY("Activity"), INTEL("Intel"), CHAT("Chat"), BARITONE("Baritone"), SETTINGS("Settings");
 
 		final String label;
 
@@ -847,6 +847,11 @@ public class ShopScreen extends Screen {
 	}
 
 	private void showTab(Tab t) {
+		if (t == Tab.BARITONE) {
+			// Its own screen; Esc comes back here.
+			client.setScreen(new BaritoneScreen().withParent(this));
+			return;
+		}
 		tab = t;
 		lastTab = t == Tab.SETTINGS ? lastTab : t;
 		openGroup = null;
@@ -1288,6 +1293,7 @@ public class ShopScreen extends Screen {
 				case ACTIVITY -> "Activity";
 				case INTEL -> "Intel";
 				case CHAT -> "Chat";
+				case BARITONE -> "Baritone";
 				case SETTINGS -> "Settings";
 			};
 			return t == Tab.ALL ? "☰ All" : shortLabel;
@@ -4164,10 +4170,6 @@ public class ShopScreen extends Screen {
 	private List<Stepper> steppers() {
 		NNConfig c = NNConfig.INSTANCE;
 		return List.of(
-				new Stepper("A conversation ends after", new int[] {30, 60, 120, 180, 300, 600, 900, 1800},
-						() -> c.chatQuietSeconds, v -> c.chatQuietSeconds = v, v -> (v < 60 ? v + " s" : v / 60 + " min") + " of quiet"),
-				new Stepper("Context kept from before", new int[] {0, 15, 30, 60, 120, 300},
-						() -> c.chatContextSeconds, v -> c.chatContextSeconds = v, v -> v == 0 ? "none" : v < 60 ? v + " s" : v / 60 + " min"),
 				new Stepper("Chat tab keeps", new int[] {1, 3, 7, 14, 30},
 						() -> c.chatHistoryDays, v -> c.chatHistoryDays = v, v -> v + (v == 1 ? " day" : " days") + " of chat"),
 				new Stepper("Keep chat logs for", new int[] {1, 3, 7, 14, 30, 60, 90, 180, 365},

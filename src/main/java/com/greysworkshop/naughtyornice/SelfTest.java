@@ -407,10 +407,12 @@ public final class SelfTest {
 			}
 			case 615 -> {
 				screenshot(client, "15_settings_chat");
-				int before = NNConfig.INSTANCE.chatQuietSeconds;
-				check("quiet-time stepper works", screen(client).testClick("step+:A conversation ends after") && NNConfig.INSTANCE.chatQuietSeconds > before);
-				NNConfig.INSTANCE.chatQuietSeconds = 180;
-				NNConfig.save();
+				// Everything is logged now, so there's no conversation length to set.
+				check("no conversation-length setting", !screen(client).testClick("step+:A conversation ends after"));
+				ShopScreen shop = screen(client);
+				check("Baritone tab opens Baritone", shop.testClick("tab:BARITONE") && client.currentScreen instanceof BaritoneScreen);
+				client.currentScreen.close();
+				check("Esc from Baritone comes back", client.currentScreen == shop);
 			}
 			case 625 -> {
 				client.setScreen(null);
