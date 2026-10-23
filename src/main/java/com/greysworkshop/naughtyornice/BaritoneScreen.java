@@ -118,19 +118,8 @@ public class BaritoneScreen extends Screen {
 	private long ranAt;
 
 	/** Runs a command and shows whether Baritone took it; Baritone's own answer replaces that once it comes. */
-	/** Commands that don't move you: fine while riding. */
-	private static final java.util.Set<String> STILL = java.util.Set.of("stop", "cancel", "forcecancel", "pause", "resume", "paused", "set", "help",
-			"version", "sel", "selection", "s", "wp", "waypoints", "waypoint", "proc", "eta", "gc", "render", "repack", "rescan", "find", "blacklist",
-			"modified", "mod", "baritone", "reset", "goal", "invert");
-
 	private void run(String command, String said) {
 		watchProcess = null;
-		if (SmartTravel.riding(client) && !STILL.contains(command.strip().split("\\s+")[0].toLowerCase(java.util.Locale.ROOT))) {
-			status = SmartTravel.RIDING;
-			statusColor = 0xFFFF8A80;
-			replyMark = -1;
-			return;
-		}
 		BaritoneBridge.listen();
 		replyMark = BaritoneBridge.replyCount();
 		ranAt = System.currentTimeMillis();

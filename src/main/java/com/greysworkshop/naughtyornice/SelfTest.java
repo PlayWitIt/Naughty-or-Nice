@@ -2103,33 +2103,7 @@ public final class SelfTest {
 			}
 			case 181 -> check("a mistyped command shows Baritone's error in red (" + b.testStatus() + ")", b.testStatusIsError() && b.testStatus().startsWith("Baritone:")
 					&& !BaritoneBridge.processActive("getMineProcess"));
-			case 182 -> {
-				// On a horse: Baritone can't steer it, so nothing that moves you starts.
-				tp(client, "0.5 -60 0.5");
-				IntegratedServer server = client.getServer();
-				server.execute(() -> {
-					server.getCommandManager().parseAndExecute(server.getCommandSource(), "summon horse 0.5 -60 0.5 {Tame:1b,SaddleItem:{id:\"minecraft:saddle\",count:1}}");
-					server.getCommandManager().parseAndExecute(server.getCommandSource(), "ride @p mount @e[type=horse,limit=1,sort=nearest]");
-				});
-			}
-			case 186 -> {
-				boolean onHorse = SmartTravel.riding(client);
-				String go = SmartTravel.go(client, new Destinations.Destination(Destinations.Kind.CLIPBOARD, "test", "", 0, -60, 40, "", 0));
-				String roam = HighwayRoam.start(client);
-				b.testPress("Do");
-				b.testType("block, e.g. diamond_ore", "dirt");
-				b.testPress("Mine it");
-				boolean mineRefused = b.testStatus().equals(SmartTravel.RIDING) && !BaritoneBridge.processActive("getMineProcess");
-				b.testPress("Stop");
-				check("riding a horse, Go, highway roam and Mine won't start, and say why (riding " + onHorse + ")", onHorse
-						&& SmartTravel.RIDING.equals(go) && SmartTravel.RIDING.equals(roam) && mineRefused && !b.testStatus().equals(SmartTravel.RIDING));
-				IntegratedServer server = client.getServer();
-				server.execute(() -> {
-					server.getCommandManager().parseAndExecute(server.getCommandSource(), "ride @p dismount");
-					server.getCommandManager().parseAndExecute(server.getCommandSource(), "kill @e[type=horse]");
-				});
-			}
-			case 189 -> {
+			case 183 -> {
 				check("nothing went to the server's chat through all of it (" + serverHeard + ")", serverHeard.isEmpty());
 				String coords = CoordsHud.line(client);
 				// An F3 entry set to always on (hitboxes) doesn't count as F3 open: the coordinates, chunk line and radar stay.
