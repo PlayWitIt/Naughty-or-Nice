@@ -38,6 +38,12 @@ import java.util.function.Predicate;
  * liquids already flowed. Chunks without any liquid can't be told either way and are left unknown, never guessed.
  * Chunks you generated yourself are remembered (per server), so your own old paths are never taken for someone else's.
  * <p>
+ * Only land the server couldn't have run for you is read as old. Land within your simulation distance runs its liquids
+ * for you, so if it reaches you late (the server was busy) it can arrive already flowed though it's fresh, and land
+ * you were close to while it flowed (that flow is left out, as it could be yours) would read as old when you came back.
+ * So a chunk that arrives flowing within your reach is left unknown, and land that was still unknown while it was
+ * within your reach is remembered and never read as old later: your own path can't turn into a trail.
+ * <p>
  * A trail is a long, narrow strip of old land with fresh land on both sides: someone travelled through there. It's
  * only called one when that shape is clear.
  */
@@ -60,6 +66,10 @@ public final class ChunkTrails {
 	private final Map<String, Long2ByteOpenHashMap> states = new HashMap<>();
 	/** Chunks you've seen generated (they were fresh when you got there), per dimension. Saved. */
 	private final Map<String, LongOpenHashSet> mine = new HashMap<>();
+	/** Chunks that were within your reach while still unknown, per dimension: never read as old later. Saved. */
+	private final Map<String, LongOpenHashSet> walked = new HashMap<>();
+	/** Chunks beyond your simulation distance by this much can't have been run for you (the server's idea of where you are lags a little). */
+	static final int REACH_MARGIN = 2;
 	/** Loaded chunks that arrived with no flowing liquid: the only ones a flowing update can show to be fresh. */
 	private final LongOpenHashSet pristine = new LongOpenHashSet();
 	/** Trails found, saved per server. */
@@ -102,21 +112,54 @@ public final class ChunkTrails {
 		return mine.computeIfAbsent(dimension, d -> new LongOpenHashSet());
 	}
 
-	/** A chunk arrived. Flowing liquid already in it means it's old land (unless you generated it yourself). */
+	private LongOpenHashSet walked(String dimension) {
+		return walked.computeIfAbsent(dimension, d -> new LongOpenHashSet());
+	}
+
 	/** For the self-test: one chunk whose every reading is written to the log. */
 	static long debugKey = Long.MIN_VALUE;
 
-	public void chunkLoaded(String dimension, WorldChunk chunk) {
-		long key = chunk.getPos().toLong();
-		if (key == debugKey) NaughtyOrNiceClient.LOGGER.info("[SELFTEST] chunk {} arrived, flowing liquid in it: {}", chunk.getPos(), hasFlowing(chunk));
-		if (hasFlowing(chunk)) {
-			pristine.remove(key);
-			if (!mine(dimension).contains(key) && states(dimension).get(key) != NEW && states(dimension).put(key, OLD) != OLD) {
-				mineDirty = true;
-				version++;
-			}
-		} else {
+	/** Whether a chunk is close enough to you that the server may have run its liquids for you. */
+	public static boolean inReach(MinecraftClient client, int x, int z) {
+		if (client.player == null || client.world == null) return true;
+		int d = Math.max(Math.abs((client.player.getBlockX() >> 4) - x), Math.abs((client.player.getBlockZ() >> 4) - z));
+		return d <= client.world.getSimulationDistance() + REACH_MARGIN;
+	}
+
+	/**
+	 * A chunk arrived. Flowing liquid already in it means it's old land, unless you generated it yourself, were near it
+	 * while it was unknown, or it's within your reach (it may have flowed for you before it was sent).
+	 */
+	public void chunkLoaded(String dimension, WorldChunk chunk, boolean inReach) {
+		boolean flowing = hasFlowing(chunk);
+		if (chunk.getPos().toLong() == debugKey) NaughtyOrNiceClient.LOGGER.info("[SELFTEST] chunk {} arrived, flowing liquid in it: {}, in reach: {}", chunk.getPos(), flowing, inReach);
+		arrived(dimension, chunk.getPos().toLong(), flowing, inReach);
+	}
+
+	void arrived(String dimension, long key, boolean flowing, boolean inReach) {
+		if (!flowing) {
 			pristine.add(key);
+			return;
+		}
+		pristine.remove(key);
+		if (inReach || mine(dimension).contains(key) || walked(dimension).contains(key)) return;
+		if (states(dimension).get(key) != NEW && states(dimension).put(key, OLD) != OLD) {
+			mineDirty = true;
+			version++;
+		}
+	}
+
+	/**
+	 * You're near these chunks (within {@code r} of chunk cx, cz): the loaded ones that are still unknown are
+	 * remembered, so they're never read as old when you come back (their liquids flowed while you were here).
+	 */
+	public void walk(String dimension, int cx, int cz, int r, java.util.function.LongPredicate loaded) {
+		LongOpenHashSet set = walked(dimension);
+		for (int i = -r; i <= r; i++) {
+			for (int j = -r; j <= r; j++) {
+				long key = ChunkPos.toLong(cx + i, cz + j);
+				if (state(dimension, cx + i, cz + j) == 0 && loaded.test(key) && set.add(key)) mineDirty = true;
+			}
 		}
 	}
 
@@ -473,8 +516,10 @@ public final class ChunkTrails {
 
 	// ---- Saving, per server ----
 
-	/** The chunk file's format: chunks you generated, then old chunks, per dimension. */
-	private static final int FORMAT = 0x4E4E4302;
+	/** The chunk file's format: chunks you generated, old chunks, then chunks you were near, per dimension. */
+	private static final int FORMAT = 0x4E4E4303;
+	/** The format before chunks you were near were kept. */
+	private static final int FORMAT_2 = 0x4E4E4302;
 	private static final java.util.concurrent.ExecutorService WRITER = java.util.concurrent.Executors.newSingleThreadExecutor(r -> {
 		Thread t = new Thread(r, "Naughty or Nice chunk saving");
 		t.setDaemon(true);
@@ -518,6 +563,7 @@ public final class ChunkTrails {
 	public void clear() {
 		states.clear();
 		mine.clear();
+		walked.clear();
 		// Not the chunks watched for flowing: that's about what's loaded right now, not saved data, and every chunk
 		// that arrives sets its own entry anyway.
 		trails = new ArrayList<>();
@@ -543,7 +589,7 @@ public final class ChunkTrails {
 		if (Files.exists(mineFile)) {
 			try (DataInputStream in = new DataInputStream(new java.io.BufferedInputStream(Files.newInputStream(mineFile)))) {
 				int first = in.readInt();
-				boolean withOld = first == FORMAT;
+				boolean withOld = first == FORMAT || first == FORMAT_2, withWalked = first == FORMAT;
 				int dims = withOld ? in.readInt() : first;
 				for (int d = 0; d < dims; d++) {
 					String dim = in.readUTF();
@@ -554,6 +600,10 @@ public final class ChunkTrails {
 					int o = in.readInt();
 					Long2ByteOpenHashMap map = states(dim);
 					for (int i = 0; i < o; i++) map.put(in.readLong(), OLD);
+					if (!withWalked) continue;
+					int w = in.readInt();
+					LongOpenHashSet near = walked(dim);
+					for (int i = 0; i < w; i++) near.add(in.readLong());
 				}
 			} catch (IOException | RuntimeException e) {
 				NaughtyOrNiceClient.LOGGER.error("Could not read {}", mineFile, e);
@@ -573,17 +623,20 @@ public final class ChunkTrails {
 				dirty = false;
 			}
 			long now = System.currentTimeMillis();
-			boolean anything = !mine.isEmpty() || !states.isEmpty();
+			boolean anything = !mine.isEmpty() || !states.isEmpty() || !walked.isEmpty();
 			if (force && anything || mineDirty && now - lastMineSave > 300_000) {
 				// Copied here (quick), written in the background (the slow part), into a temporary file first.
 				Map<String, long[][]> copy = new HashMap<>();
-				for (String dim : mine.keySet()) copy.put(dim, new long[][] {mine.get(dim).toLongArray(), new long[0]});
+				for (String dim : mine.keySet()) copy.put(dim, new long[][] {mine.get(dim).toLongArray(), new long[0], new long[0]});
 				for (Map.Entry<String, Long2ByteOpenHashMap> e : states.entrySet()) {
 					LongOpenHashSet old = new LongOpenHashSet();
 					e.getValue().long2ByteEntrySet().forEach(en -> {
 						if (en.getByteValue() == OLD) old.add(en.getLongKey());
 					});
-					copy.computeIfAbsent(e.getKey(), d -> new long[][] {new long[0], new long[0]})[1] = old.toLongArray();
+					copy.computeIfAbsent(e.getKey(), d -> new long[][] {new long[0], new long[0], new long[0]})[1] = old.toLongArray();
+				}
+				for (Map.Entry<String, LongOpenHashSet> e : walked.entrySet()) {
+					copy.computeIfAbsent(e.getKey(), d -> new long[][] {new long[0], new long[0], new long[0]})[2] = e.getValue().toLongArray();
 				}
 				Runnable write = () -> writeChunks(mineFile, copy);
 				if (force) {
