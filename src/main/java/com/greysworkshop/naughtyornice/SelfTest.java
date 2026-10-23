@@ -1289,8 +1289,11 @@ public final class SelfTest {
 				int cx = waterAt.getX() >> 4, cz = waterAt.getZ() >> 4;
 				check("liquid starting to flow marks the chunk fresh (" + ledger.chunkTrails.state(dim, cx, cz) + ")", ledger.chunkTrails.state(dim, cx, cz) == ChunkTrails.NEW);
 				ChunkTrails probe = new ChunkTrails();
-				probe.chunkLoaded(dim, client.world.getChunk(cx, cz));
+				probe.chunkLoaded(dim, client.world.getChunk(cx, cz), false);
 				check("...and arriving with liquid already flowed reads as old", probe.state(dim, cx, cz) == ChunkTrails.OLD);
+				ChunkTrails close = new ChunkTrails();
+				close.chunkLoaded(dim, client.world.getChunk(cx, cz), ChunkTrails.inReach(client, cx, cz));
+				check("...but not when it arrives within your reach (it may have flowed for you)", close.state(dim, cx, cz) == 0);
 				// A trail beside the player, for the radar.
 				ChunkTrails trails = ledger.chunkTrails;
 				int pcx = client.player.getBlockX() >> 4, pcz = client.player.getBlockZ() >> 4;
@@ -1506,8 +1509,35 @@ public final class SelfTest {
 		back.load(trailsFile, chunksFile);
 		boolean savedOk = back.trails.size() == 1 && back.state(dim, 100, 99) == ChunkTrails.OLD && back.state(dim, 100, 80) == ChunkTrails.NEW
 				&& back.state(dim, 10, 10) == 0;
-		log("Trail tests: corridor " + ok + ", square " + squareOk + ", edge " + edgeOk + ", own path " + ownOk + ", saved " + savedOk);
-		return ok && squareOk && edgeOk && ownOk && savedOk;
+		// Your own path again, flown faster than the server makes land: a strip beside you stayed unknown (its liquid
+		// flowed with you right there, or before it was sent). Coming back later it arrives flowed, far from you: still
+		// not old, so it's no trail.
+		ChunkTrails fast = new ChunkTrails();
+		for (int x = 60; x <= 140; x++) {
+			for (int z = 60; z <= 140; z++) {
+				if (Math.abs(z - 100) > 1) fast.set(dim, x, z, ChunkTrails.NEW);
+			}
+		}
+		for (int x = 60; x <= 140; x += 2) fast.walk(dim, x, 100, 2, k -> true);
+		for (int x = 60; x <= 140; x++) {
+			for (int z = 99; z <= 101; z++) fast.arrived(dim, net.minecraft.util.math.ChunkPos.toLong(x, z), true, false);
+		}
+		boolean fastOk = fast.analyse(dim, 100, 100, 1000, null).isEmpty() && fast.state(dim, 100, 100) == 0;
+		// Arriving flowed within your reach can't be told; far from you, it's old. And what you were near is saved.
+		ChunkTrails reach = new ChunkTrails();
+		reach.arrived(dim, net.minecraft.util.math.ChunkPos.toLong(1, 1), true, true);
+		reach.walk(dim, 50, 50, 1, k -> true);
+		reach.arrived(dim, net.minecraft.util.math.ChunkPos.toLong(50, 51), true, false);
+		reach.arrived(dim, net.minecraft.util.math.ChunkPos.toLong(90, 90), true, false);
+		reach.save(dir.resolve("r.trails.json"), dir.resolve("r.chunks.bin"), true);
+		ChunkTrails reachBack = new ChunkTrails();
+		reachBack.load(dir.resolve("r.trails.json"), dir.resolve("r.chunks.bin"));
+		reachBack.arrived(dim, net.minecraft.util.math.ChunkPos.toLong(50, 49), true, false);
+		boolean reachOk = reach.state(dim, 1, 1) == 0 && reach.state(dim, 50, 51) == 0 && reach.state(dim, 90, 90) == ChunkTrails.OLD
+				&& reachBack.state(dim, 50, 49) == 0 && reachBack.state(dim, 90, 90) == ChunkTrails.OLD;
+		log("Trail tests: corridor " + ok + ", square " + squareOk + ", edge " + edgeOk + ", own path " + ownOk + ", saved " + savedOk
+				+ ", fast own path " + fastOk + ", reach " + reachOk);
+		return ok && squareOk && edgeOk && ownOk && savedOk && fastOk && reachOk;
 	}
 
 	private static String shareLink;

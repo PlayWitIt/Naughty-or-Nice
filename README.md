@@ -222,7 +222,10 @@ How it knows: land generated for the first time gets its water and lava flowing 
 sends flowing-liquid updates for it. Land that already existed arrives with its liquids already flowed. Chunks without
 liquid can't be told either way and are left out, never guessed. The nether, with its lava, shows the most; the end
 shows nothing. Chunks you generated yourself are remembered per server, so your own old paths never show up as someone
-else's. A patch of old land only becomes a trail when it's at least 8 chunks long, twice as long as it is wide, and has
+else's. Land within your simulation distance has its liquids run for you, so it's never read as old when it arrives
+(a busy server can send fresh land late, after it has flowed), and land that was still unknown while you were that
+close is remembered and never read as old when you come back. So flying faster than the server makes land can't turn
+your own path into a trail. A patch of old land only becomes a trail when it's at least 8 chunks long, twice as long as it is wide, and has
 fresh land on both sides. The edge of explored land, or a big explored area, never counts. Things that can go wrong
 only ever hide trails, never invent them: if a server lets fresh land flow before sending it, everything reads as old
 and no trail shows; a liquid poured by a player out of your sight marks one chunk fresh, which can't make a trail. If

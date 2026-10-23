@@ -1,5 +1,6 @@
 package com.greysworkshop.naughtyornice.mixin;
 
+import com.greysworkshop.naughtyornice.ChunkTrails;
 import com.greysworkshop.naughtyornice.NaughtyOrNiceClient;
 import com.greysworkshop.naughtyornice.Safe;
 import net.minecraft.client.MinecraftClient;
@@ -86,7 +87,7 @@ public abstract class ClientPlayNetworkHandlerMixin {
 		if (WorldDownload.active()) Safe.run("downloading a chunk", () -> WorldDownload.chunk(client, client.world.getChunk(packet.getChunkX(), packet.getChunkZ())));
 		if (!NNConfig.INSTANCE.chunkTrails) return;
 		Safe.run("reading a chunk", () -> mod.ledger.chunkTrails.chunkLoaded(client.world.getRegistryKey().getValue().toString(),
-				client.world.getChunk(packet.getChunkX(), packet.getChunkZ())));
+				client.world.getChunk(packet.getChunkX(), packet.getChunkZ()), ChunkTrails.inReach(client, packet.getChunkX(), packet.getChunkZ())));
 	}
 
 	@Inject(method = "onUnloadChunk", at = @At("HEAD"))

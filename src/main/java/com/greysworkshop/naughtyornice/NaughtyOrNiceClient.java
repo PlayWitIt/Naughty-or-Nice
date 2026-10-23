@@ -49,6 +49,7 @@ public class NaughtyOrNiceClient implements ClientModInitializer {
 	private KeyBinding stopKey;
 	private int roamTimer;
 	private int trailTimer;
+	private int walkTimer;
 	private Screen pendingScreen;
 	private int saveTimer;
 	private int tipTimer;
@@ -304,6 +305,14 @@ public class NaughtyOrNiceClient implements ClientModInitializer {
 			if (NNConfig.INSTANCE.trailRadar) NNConfig.INSTANCE.chunkTrails = true;
 			NNConfig.save();
 			client.inGameHud.setOverlayMessage(Text.literal("Chunk trail radar " + (NNConfig.INSTANCE.trailRadar ? "on" : "off")), false);
+		}
+		// Every half second: land around you that's still unknown is remembered, so it's never read as old later.
+		if (NNConfig.INSTANCE.chunkTrails && client.world != null && client.player != null && ++walkTimer >= 10) {
+			walkTimer = 0;
+			int r = client.world.getSimulationDistance() + 1;
+			var chunks = client.world.getChunkManager();
+			ledger.chunkTrails.walk(client.world.getRegistryKey().getValue().toString(), client.player.getBlockX() >> 4, client.player.getBlockZ() >> 4, r,
+					k -> chunks.isChunkLoaded(net.minecraft.util.math.ChunkPos.getPackedX(k), net.minecraft.util.math.ChunkPos.getPackedZ(k)));
 		}
 		if (NNConfig.INSTANCE.chunkTrails && ++trailTimer >= 40) {
 			trailTimer = 0;
