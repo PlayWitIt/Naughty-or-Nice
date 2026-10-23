@@ -4111,10 +4111,13 @@ public class ShopScreen extends Screen {
 					c.chunkTrails = v;
 					if (v) c.trailRadar = true;
 				}));
-		options.add(new Option("Chunk trail radar", "A small map on the right that turns with you: fresh land blue, old land grey, trails amber with "
+		options.add(new Option("My coordinates", "Your x y z, which way you face, and the matching nether (or overworld) spot in the bottom "
+				+ "left, so you don't need F3. Hidden while stream-safe mode is on.", () -> c.showCoords, v -> c.showCoords = v));
+		options.add(new Option("Chunk trail radar", "A small map on the right that turns with you: new land red, old land green, trails yellow with "
 				+ "an arrow away from spawn, and how to turn to follow. J shows or hides it.", () -> c.trailRadar, v -> c.trailRadar = v));
-		options.add(new Option("Chunks in the world", "Every chunk that's been read drawn as a square in the world: fresh land blue, old land grey, "
-				+ "trail chunks amber. K shows or hides it; the height and fill are below.", () -> c.chunkOverlay, v -> {
+		options.add(new Option("Chunks in the world", "Every chunk that's been read drawn as a square in the world: new land red, old land green, "
+				+ "trail chunks yellow, and a line at the top saying which you're in. K shows or hides it; the height and fill are below.",
+				() -> c.chunkOverlay, v -> {
 					c.chunkOverlay = v;
 					if (v) c.chunkTrails = true;
 				}));

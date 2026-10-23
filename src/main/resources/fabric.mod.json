@@ -20,6 +20,7 @@
 			"com.greysworkshop.naughtyornice.ModMenuIntegration"
 		]
 	},
+	"accessWidener": "naughtyornice.accesswidener",
 	"mixins": [
 		"naughtyornice.mixins.json"
 	],

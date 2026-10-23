@@ -102,6 +102,8 @@ public final class NNConfig {
 	public boolean chunkTrails = true;
 	/** Show the chunk-trail radar (J toggles it). */
 	public boolean trailRadar = false;
+	/** Your coordinates in the bottom left (hidden in stream-safe mode). */
+	public boolean showCoords = true;
 	/** A chat note when a new chunk trail is found. */
 	public boolean trailAlerts = true;
 	/** Draw the chunks that have been read in the world, as coloured squares (K toggles it). */
