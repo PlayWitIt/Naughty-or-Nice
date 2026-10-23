@@ -389,7 +389,7 @@ public class NaughtyOrNiceClient implements ClientModInitializer {
 				ModsPanel.toggle("Death recap", "On the death screen: who hit you in your last 30 seconds, with what, and the totems you popped.",
 						() -> c.deathRecap, v -> c.deathRecap = v),
 				ModsPanel.section("Chunk trails"),
-				ModsPanel.toggle("Find chunk trails", "Tells old land from fresh land by how its water and lava flow, and finds the paths players left.",
+				ModsPanel.toggle("Find chunk trails", "Tells old land from new land by how each chunk arrives, and finds the paths players left. K shows the squares in the world.",
 						() -> c.chunkTrails, v -> {
 							c.chunkTrails = v;
 							// The radar is what you see: on with it, so turning trails on is never "nothing happened".

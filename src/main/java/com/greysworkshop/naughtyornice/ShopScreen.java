@@ -4128,8 +4128,8 @@ public class ShopScreen extends Screen {
 				() -> c.logoutSpots, v -> c.logoutSpots = v));
 		options.add(new Option("Death recap", "On the death screen: who hit you in your last 30 seconds, with what, the totems you popped and your last few hits, "
 				+ "with a button to save the fight.", () -> c.deathRecap, v -> c.deathRecap = v));
-		options.add(new Option("Find chunk trails", "Tells old land (someone was there) from fresh land by how its water and lava flow, and finds "
-				+ "the paths players left through fresh land. Turning it on shows the radar too (J hides or shows it).", () -> c.chunkTrails, v -> {
+		options.add(new Option("Find chunk trails", "Tells old land (someone was there) from new land by how each chunk arrives, and finds "
+				+ "the paths players left through new land. Turning it on shows the radar too (J hides or shows it; K the squares in the world).", () -> c.chunkTrails, v -> {
 					c.chunkTrails = v;
 					if (v) c.trailRadar = true;
 				}));
