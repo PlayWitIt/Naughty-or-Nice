@@ -28,7 +28,7 @@ It also has:
   Insurance's minimap and map, and the coordinates in F3, while you record or stream.
 
 ## How to use it
-- Press **N** to open it. If you're looking at a player, it opens their page. Press **J** for the chunk trail radar, **B** for Baritone, **Z** to stop Baritone.
+- Press **N** to open it. If you're looking at a player, it opens their page. Press **J** for the chunk trail radar, **K** for chunks in the world, **B** for Baritone, **Z** to stop Baritone.
 - Every player is shown as a card with their face, a star rating, a **☆** in the corner to make them a friend, and three buttons: **✔ Nice**, **? Look Into** (not
   sure yet, keep an eye on them) and **✖ Naughty**. Click again to take them off. Moving someone who's already on a list
   (or taking them off) asks first: the button says **Sure?** and the banner asks with a **Yes**, so a slip of the mouse
@@ -203,6 +203,11 @@ ahead is always up:
 
 When a new trail turns up you get a chat note with its far end. Every trail is kept on the **Intel** tab (Chunk trails),
 with Copy for the far end, and its far end is pinned on Base Insurance's map.
+
+**Chunks in the world** (**K**): every chunk that's been read is drawn as a flat square in the world, the same
+colours as the radar: fresh land blue, old land grey, and the chunks of a trail amber. They're drawn at your feet by
+default, or at a height you pick (Settings: "Chunks in the world are drawn at"), with the fill from outline only to
+60%.
 
 **The Intel map** (Intel → Map) shows it all on one big map, north up: fresh and old land, trails with their arrows,
 your bases, places players gave away (where they logged out in front of you, where they summoned a wither,

@@ -102,6 +102,12 @@ public final class NNConfig {
 	public boolean trailRadar = false;
 	/** A chat note when a new chunk trail is found. */
 	public boolean trailAlerts = true;
+	/** Draw the chunks that have been read in the world, as coloured squares (K toggles it). */
+	public boolean chunkOverlay = true;
+	/** The height the squares are drawn at, or {@link ChunkOverlay#FOLLOW} for at your feet. */
+	public int chunkOverlayY = ChunkOverlay.FOLLOW;
+	/** How see-through the squares' fill is: 0 (outline only) to 100 (solid). */
+	public int chunkOverlayFill = 25;
 	/** On a Baritone trip: pause and ask when someone who isn't a friend (or on your Nice list) shows up. */
 	public boolean tripStopForStrangers = true;
 	/** On a Baritone trip: stop when your health is at or below this (half-hearts; 0 = never). */

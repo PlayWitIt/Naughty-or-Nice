@@ -8,6 +8,7 @@ import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper;
 import net.fabricmc.fabric.api.client.message.v1.ClientReceiveMessageEvents;
 import net.fabricmc.fabric.api.client.message.v1.ClientSendMessageEvents;
 import net.fabricmc.fabric.api.client.rendering.v1.hud.HudElementRegistry;
+import net.fabricmc.fabric.api.client.rendering.v1.world.WorldRenderEvents;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.screen.Screen;
@@ -45,6 +46,7 @@ public class NaughtyOrNiceClient implements ClientModInitializer {
 
 	private KeyBinding openKey;
 	private KeyBinding radarKey;
+	private KeyBinding chunksKey;
 	private KeyBinding baritoneKey;
 	private KeyBinding stopKey;
 	private int roamTimer;
@@ -64,6 +66,8 @@ public class NaughtyOrNiceClient implements ClientModInitializer {
 		radarKey = KeyBindingHelper.registerKeyBinding(new KeyBinding("key.naughtyornice.radar", InputUtil.Type.KEYSYM, GLFW.GLFW_KEY_J, category));
 		baritoneKey = KeyBindingHelper.registerKeyBinding(new KeyBinding("key.naughtyornice.baritone", InputUtil.Type.KEYSYM, GLFW.GLFW_KEY_B, category));
 		stopKey = KeyBindingHelper.registerKeyBinding(new KeyBinding("key.naughtyornice.stop", InputUtil.Type.KEYSYM, GLFW.GLFW_KEY_Z, category));
+		chunksKey = KeyBindingHelper.registerKeyBinding(new KeyBinding("key.naughtyornice.chunks", InputUtil.Type.KEYSYM, GLFW.GLFW_KEY_K, category));
+		WorldRenderEvents.BEFORE_DEBUG_RENDER.register(context -> Safe.run("drawing chunks in the world", () -> ChunkOverlay.render(context)));
 		HudElementRegistry.addLast(Identifier.of(MOD_ID, "trip"), (context, tickCounter) -> Safe.run("drawing the trip line", () -> SmartTravel.render(context, tickCounter)));
 		HudElementRegistry.addLast(Identifier.of(MOD_ID, "logout_spots"), (context, tickCounter) -> Safe.run("drawing logout spots", () -> LogoutSpots.render(context, tickCounter)));
 		HudElementRegistry.addLast(Identifier.of(MOD_ID, "trail_radar"), (context, tickCounter) -> Safe.run("drawing the trail radar", () -> TrailRadar.render(context, tickCounter)));
@@ -305,6 +309,12 @@ public class NaughtyOrNiceClient implements ClientModInitializer {
 			if (NNConfig.INSTANCE.trailRadar) NNConfig.INSTANCE.chunkTrails = true;
 			NNConfig.save();
 			client.inGameHud.setOverlayMessage(Text.literal("Chunk trail radar " + (NNConfig.INSTANCE.trailRadar ? "on" : "off")), false);
+		}
+		while (chunksKey.wasPressed()) {
+			NNConfig.INSTANCE.chunkOverlay = !NNConfig.INSTANCE.chunkOverlay;
+			if (NNConfig.INSTANCE.chunkOverlay) NNConfig.INSTANCE.chunkTrails = true;
+			NNConfig.save();
+			client.inGameHud.setOverlayMessage(Text.literal("Chunks in the world " + (NNConfig.INSTANCE.chunkOverlay ? "on" : "off")), false);
 		}
 		// Every half second: land around you that's still unknown is remembered, so it's never read as old later.
 		if (NNConfig.INSTANCE.chunkTrails && client.world != null && client.player != null && ++walkTimer >= 10) {

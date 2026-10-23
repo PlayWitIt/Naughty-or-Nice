@@ -1311,6 +1311,12 @@ public final class SelfTest {
 				log("Radar says: " + (say == null ? "nothing" : say[0] + " / " + say[1]));
 				check("the radar finds the trail beside you and says how to follow it", say != null && say[0].startsWith("Trail:"));
 				screenshot(client, "59_trail_radar");
+				client.player.setPitch(55);
+			}
+			case 1322 -> {
+				check("the chunks are drawn in the world (" + ChunkOverlay.shown() + " squares)", ChunkOverlay.shown() > 100);
+				screenshot(client, "59b_chunks_in_world");
+				client.player.setPitch(0);
 			}
 			case 1323 -> {
 				NNConfig.INSTANCE.trailRadar = false;
