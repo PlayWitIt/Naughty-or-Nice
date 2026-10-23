@@ -4105,6 +4105,11 @@ public class ShopScreen extends Screen {
 				}));
 		options.add(new Option("Chunk trail radar", "A small map on the right that turns with you: fresh land blue, old land grey, trails amber with "
 				+ "an arrow away from spawn, and how to turn to follow. J shows or hides it.", () -> c.trailRadar, v -> c.trailRadar = v));
+		options.add(new Option("Chunks in the world", "Every chunk that's been read drawn as a square in the world: fresh land blue, old land grey, "
+				+ "trail chunks amber. K shows or hides it; the height and fill are below.", () -> c.chunkOverlay, v -> {
+					c.chunkOverlay = v;
+					if (v) c.chunkTrails = true;
+				}));
 		options.add(new Option("Note new chunk trails in chat", "Where a new trail is, which way it runs, and its far end.", () -> c.trailAlerts, v -> c.trailAlerts = v));
 		options.add(new Option("Ping on any coordinates", "A ping whenever anyone posts coordinates. They're always listed on the Intel tab either way.",
 				() -> c.pingAllCoords, v -> c.pingAllCoords = v));
@@ -4170,7 +4175,11 @@ public class ShopScreen extends Screen {
 				new Stepper("Forget unlisted players after", new int[] {0, 7, 30, 90, 180, 365},
 						() -> c.forgetAfterDays, v -> c.forgetAfterDays = v, v -> v == 0 ? "never" : v + " days unseen"),
 				new Stepper("\"Near you\" means within", new int[] {8, 16, 24, 32, 48, 64, 96, 128},
-						() -> c.nearRadius, v -> c.nearRadius = v, v -> v + " blocks"));
+						() -> c.nearRadius, v -> c.nearRadius = v, v -> v + " blocks"),
+				new Stepper("Chunks in the world are drawn at", new int[] {ChunkOverlay.FOLLOW, -64, 0, 32, 62, 64, 100, 120, 128, 200, 256, 320},
+						() -> c.chunkOverlayY, v -> c.chunkOverlayY = v, v -> v == ChunkOverlay.FOLLOW ? "your feet" : "height " + v),
+				new Stepper("Chunks in the world are filled", new int[] {0, 10, 25, 40, 60},
+						() -> c.chunkOverlayFill, v -> c.chunkOverlayFill = v, v -> v == 0 ? "outline only" : v + "%"));
 	}
 
 	/** Shown first in Settings: the one to reach for if the screen feels too big or too small. */
