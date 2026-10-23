@@ -367,6 +367,8 @@ public class NaughtyOrNiceClient implements ClientModInitializer {
 				ModsPanel.section("Your safety"),
 				ModsPanel.toggle("Guard my coordinates", "Holds your own message back when it gives away coordinates, a base name or your own x or z.",
 						() -> c.guardMyCoords, v -> c.guardMyCoords = v),
+				ModsPanel.toggle("Ask before sending any message", "Every chat message or whisper waits for you to press [Send] first.",
+						() -> c.askBeforeSending, v -> c.askBeforeSending = v),
 				ModsPanel.toggle("Warn when a naughty player joins", "When someone on your Naughty list joins the server.", () -> c.warnNaughtyJoin, v -> c.warnNaughtyJoin = v),
 				ModsPanel.toggle("Warn when a naughty player is near", "When someone on your Naughty list comes into view.", () -> c.warnNaughtyNearby, v -> c.warnNaughtyNearby = v),
 				ModsPanel.toggle("Alert on threats against you", "A ping when someone threatens you or your base in chat.", () -> c.alertThreats, v -> c.alertThreats = v),

@@ -4096,6 +4096,8 @@ public class ShopScreen extends Screen {
 				+ "\"gg ez\") counts against them. Ordinary words like \"trash can\" never do.", () -> c.watchChat, v -> c.watchChat = v));
 		options.add(new Option("Guard my coordinates", "Holds your own chat message or whisper back when it gives away coordinates, a base name or your own "
 				+ "x or z, with [Send anyway] and [Edit].", () -> c.guardMyCoords, v -> c.guardMyCoords = v));
+		options.add(new Option("Ask before sending any message", "Every chat message or whisper you send waits for you to press [Send] first, "
+				+ "even with no coordinates in it.", () -> c.askBeforeSending, v -> c.askBeforeSending = v));
 		options.add(new Option("Alert on threats against you", "A ping when someone threatens you or your base in chat (\"gonna grief your base\", "
 				+ "\"found your stash\") or whispers you a threat.", () -> c.alertThreats, v -> c.alertThreats = v));
 		options.add(new Option("Totems popped on names", "\"Steve [3 pops]\" on nametags and the tab list: totems they've popped in front of you since they last died.",

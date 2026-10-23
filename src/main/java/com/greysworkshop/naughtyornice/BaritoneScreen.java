@@ -24,11 +24,16 @@ public class BaritoneScreen extends Screen {
 	private TextFieldWidget searchField, waypointField;
 	private static Destinations.Kind kindFilter;
 	private double listScroll;
-	/** Rows drawn this frame, for clicks: x0, y0, x1, y1, and what a click does. */
+	/** Rows drawn this frame, for clicks: x0, y0, x1, y1, what a click does, the place's name, and whether it's the ×. */
 	private final java.util.List<Object[]> rowHits = new java.util.ArrayList<>();
 	private TextFieldWidget xField, yField, zField, playerField, blockField, heightField, distanceField;
 	private String status = "";
 	private int statusColor = 0xFFAAAAAA;
+	/**
+	 * The job last handed to Baritone, watched while this screen is open: when Baritone stops it (done, or given up:
+	 * nothing to farm, nobody to follow), the status says so rather than still saying it's working.
+	 */
+	private String watchProcess, watchFailed;
 
 	/** Baritone's switches shown on the Settings page: setting name, label. */
 	private static final String[][] SWITCHES = {
@@ -105,9 +110,18 @@ public class BaritoneScreen extends Screen {
 
 	/** Runs a command and shows whether Baritone took it. */
 	private void run(String command, String said) {
+		watchProcess = null;
 		boolean ok = BaritoneBridge.run(command);
 		status = ok ? said : "Baritone didn't take that (see its message in chat)";
 		statusColor = ok ? 0xFF7CE0A0 : 0xFFFF8A80;
+	}
+
+	/** Runs a command, then checks a moment later that Baritone's {@code process} really is at it. */
+	private void runWatched(String command, String said, String process, String failed) {
+		run(command, said);
+		if (!status.equals(said)) return;
+		watchProcess = process;
+		watchFailed = failed;
 	}
 
 	// ---- Go ----
@@ -164,21 +178,34 @@ public class BaritoneScreen extends Screen {
 		playerField = field(x + 46, y, 190, "player name", playerField == null ? "" : playerField.getText());
 		button(x + 240, y, 160, "Follow them", () -> {
 			String name = playerField.getText().strip();
-			if (!name.isEmpty()) run("follow player " + name, "Following " + name);
+			if (!name.isEmpty()) runWatched("follow player " + name, "Following " + name, "getFollowProcess",
+					"Stopped following " + name + " (out of sight, or see Baritone's message in chat)");
 		});
 		y += 24;
 		blockField = field(x + 46, y, 190, "block, e.g. diamond_ore", blockField == null ? "" : blockField.getText());
 		button(x + 240, y, 160, "Mine it", () -> {
 			String block = blockField.getText().strip().toLowerCase(java.util.Locale.ROOT).replace(' ', '_');
-			if (!block.isEmpty()) run("mine " + block, "Mining " + block);
+			if (!block.isEmpty()) runWatched("mine " + block, "Mining " + block, "getMineProcess",
+					"Stopped mining " + block + " (see Baritone's message in chat)");
 		});
 		y += 30;
-		button(x, y, 96, "Explore", () -> run("explore", "Exploring from here"));
-		button(x + 100, y, 96, "Farm nearby", () -> run("farm", "Farming nearby"));
+		button(x, y, 96, "Explore", () -> runWatched("explore", "Exploring from here", "getExploreProcess",
+				"Stopped exploring (see Baritone's message in chat)"));
+		button(x + 100, y, 96, "Farm nearby", () -> runWatched("farm", "Farming nearby", "getFarmProcess",
+				"Farming stopped: nothing (more) to harvest or plant nearby"));
 		button(x + 200, y, 200, "Fly there by elytra (nether)", () -> {
 			Integer[] at = typed();
 			if (at == null) return;
-			if (BaritoneBridge.run("goal " + at[0] + " " + at[2])) run("elytra", "Flying to " + at[0] + ", " + at[2]);
+			if (client.world == null || client.world.getRegistryKey() != net.minecraft.world.World.NETHER) {
+				watchProcess = null;
+				status = "Elytra flying only works in the nether";
+				statusColor = 0xFFFF8A80;
+				return;
+			}
+			if (BaritoneBridge.run("goal " + at[0] + " " + at[2])) {
+				runWatched("elytra", "Flying to " + at[0] + ", " + at[2], "getElytraProcess",
+						"Flying stopped (there, or see Baritone's message in chat)");
+			}
 		});
 		y += 24;
 		button(x, y, 130, "Stop", () -> {
@@ -315,7 +342,7 @@ public class BaritoneScreen extends Screen {
 				boolean overGo = mouseX >= gx && mouseX < gx + 34 && mouseY >= y + 2 && mouseY < y + rowH - 4;
 				context.fill(gx, y + 2, gx + 34, y + rowH - 4, overGo ? 0xFF4CA0FF : 0xFF2E6BBF);
 				context.drawTextWithShadow(textRenderer, "Go", gx + 17 - textRenderer.getWidth("Go") / 2, y + 6, 0xFFFFFFFF);
-				rowHits.add(new Object[] {gx, Math.max(y + 2, top), gx + 34, Math.min(y + rowH - 4, bottom), (Runnable) () -> go(d)});
+				rowHits.add(new Object[] {gx, Math.max(y + 2, top), gx + 34, Math.min(y + rowH - 4, bottom), (Runnable) () -> go(d), d.name(), false});
 				if (d.kind() == Destinations.Kind.WAYPOINT) {
 					int rx = x + w - 16;
 					context.drawTextWithShadow(textRenderer, "×", rx + 3, y + 6, mouseX >= rx && mouseX < rx + 14 && mouseY >= y && mouseY < y + rowH ? 0xFFFF8080 : 0xFF999999);
@@ -323,7 +350,7 @@ public class BaritoneScreen extends Screen {
 						Destinations.remove(d.name());
 						status = "Removed \"" + d.name() + "\"";
 						statusColor = 0xFFDDDDDD;
-					}});
+					}, d.name(), true});
 				}
 			}
 			y += rowH;
@@ -466,6 +493,11 @@ public class BaritoneScreen extends Screen {
 		String goal = BaritoneBridge.goal();
 		state = BaritoneBridge.isPathing() ? "Moving" + (goal.isEmpty() ? "" : " · " + goal) : HighwayRoam.active() ? "Roaming (paused or working out a path)" : "Idle";
 		context.drawTextWithShadow(textRenderer, "Baritone: " + state, x, 30, 0xFFFFFFFF);
+		if (watchProcess != null && !BaritoneBridge.processActive(watchProcess)) {
+			status = watchFailed;
+			statusColor = 0xFFFFC14D;
+			watchProcess = null;
+		}
 		if (!status.isEmpty()) context.drawTextWithShadow(textRenderer, status, x, height - 14, statusColor);
 		if (page == Page.PLACES) {
 			renderPlaces(context, mouseX, mouseY);
@@ -492,6 +524,73 @@ public class BaritoneScreen extends Screen {
 	public void testPage(int index) {
 		page = Page.values()[index];
 		clearAndInit();
+	}
+
+	/** For the self-test: clicks the button or switch whose label starts with {@code label}, as the mouse would. */
+	public boolean testPress(String label) {
+		// The exact label first, so "Go" isn't taken for "Go to…" or "Stop" for "Stop at 2 hearts".
+		for (boolean exact : new boolean[] {true, false}) {
+			for (var e : List.copyOf(children())) {
+				if (!(e instanceof net.minecraft.client.gui.widget.ClickableWidget w) || !w.visible || w instanceof TextFieldWidget) continue;
+				String shown = w.getMessage().getString().replaceFirst("^› ?", "");
+				if (exact ? shown.equals(label) : shown.startsWith(label)) {
+					testClickAt(w.getX() + w.getWidth() / 2.0, w.getY() + w.getHeight() / 2.0);
+					return true;
+				}
+			}
+		}
+		return false;
+	}
+
+	/** For the self-test: whether a button or switch whose label starts with {@code label} is showing. */
+	public boolean testHas(String label) {
+		return children().stream().anyMatch(e -> e instanceof net.minecraft.client.gui.widget.ClickableWidget w && w.visible
+				&& w.getMessage().getString().replaceFirst("^› ?", "").startsWith(label));
+	}
+
+	/** For the self-test: which page is showing (0 Go to…, 1 Do, 2 Highway roam, 3 Settings). */
+	public int testPageShown() {
+		return page.ordinal();
+	}
+
+	/** For the self-test: types into the box whose hint is {@code hint}. */
+	public boolean testType(String hint, String text) {
+		for (var e : children()) {
+			if (e instanceof TextFieldWidget f && f.getMessage().getString().equals(hint)) {
+				f.setText(text);
+				return true;
+			}
+		}
+		return false;
+	}
+
+	/** For the self-test: what a box on screen holds, or null if there's no such box. */
+	public String testField(String hint) {
+		for (var e : children()) {
+			if (e instanceof TextFieldWidget f && f.getMessage().getString().equals(hint)) return f.getText();
+		}
+		return null;
+	}
+
+	/** For the self-test: clicks a place's Go (or its ×) on the Go to… list as last drawn. */
+	public boolean testRow(String name, boolean remove) {
+		for (Object[] hit : List.copyOf(rowHits)) {
+			if (name.equals(hit[5]) && remove == (boolean) hit[6]) {
+				testClickAt(((int) hit[0] + (int) hit[2]) / 2.0, ((int) hit[1] + (int) hit[3]) / 2.0);
+				return true;
+			}
+		}
+		return false;
+	}
+
+	private void testClickAt(double x, double y) {
+		net.minecraft.client.gui.Click click = new net.minecraft.client.gui.Click(x, y, new net.minecraft.client.input.MouseInput(0, 0));
+		mouseClicked(click, false);
+		mouseReleased(click);
+	}
+
+	public String testStatus() {
+		return status;
 	}
 
 	@Override
