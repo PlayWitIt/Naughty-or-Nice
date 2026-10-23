@@ -17,7 +17,7 @@ import java.util.function.Supplier;
  * settings as switches. Opened with B or /nn baritone.
  */
 public class BaritoneScreen extends Screen {
-	private enum Page { PLACES, GO, HIGHWAY, SETTINGS }
+	private enum Page { PLACES, GO, HIGHWAY, SETTINGS, COMMANDS }
 
 	private static Page page = Page.PLACES;
 	/** Go to…: the search, which kinds are shown, how far the list is scrolled. */
@@ -35,15 +35,17 @@ public class BaritoneScreen extends Screen {
 	 */
 	private String watchProcess, watchFailed;
 
-	/** Baritone's switches shown on the Settings page: setting name, label. */
-	private static final String[][] SWITCHES = {
-			{"allowBreak", "Break blocks in the way"}, {"allowPlace", "Place blocks (bridges, pillars)"},
-			{"allowSprint", "Sprint"}, {"allowParkour", "Parkour jumps"}, {"allowParkourPlace", "Place blocks while jumping"},
-			{"allowInventory", "Use the inventory for blocks"}, {"allowDiagonalAscend", "Climb diagonally"},
-			{"allowDiagonalDescend", "Drop down diagonally"}, {"assumeWalkOnLava", "Walk on lava (Fire Resistance)"},
-			{"avoidance", "Keep away from mobs"}, {"freeLook", "Look around freely while it walks"},
-			{"antiCheatCompatibility", "Gentle on anti-cheat"}, {"renderPath", "Show the path"},
-			{"elytraAutoJump", "Elytra: take off by itself"}, {"elytraTermsAccepted", "Elytra: I accept the risks"}};
+	/** Every command: the search, the one picked, what to add after it, and what Baritone suggests for that. */
+	private TextFieldWidget commandSearch, argsField;
+	private static String pickedCommand;
+	private List<BaritoneBridge.Command> commands = List.of();
+	private String suggestedFor;
+	private List<String> suggestions = List.of();
+	/** Settings: the search, the one picked (to type a value for), and Baritone's settings as last read. */
+	private TextFieldWidget settingSearch, valueField;
+	private static String pickedSetting;
+	private List<BaritoneBridge.Setting> settings = List.of();
+	private long settingsReadAt;
 
 	public BaritoneScreen() {
 		super(Text.literal("Baritone"));
@@ -72,12 +74,14 @@ public class BaritoneScreen extends Screen {
 				case GO -> "Do";
 				case HIGHWAY -> "Highway roam";
 				case SETTINGS -> "Settings";
+				case COMMANDS -> "Every command";
 			};
 			addDrawableChild(ButtonWidget.builder(Text.literal((p == page ? "› " : "") + label), b -> {
 				page = p;
+				listScroll = 0;
 				clearAndInit();
-			}).dimensions(x, y, 98, 18).build());
-			x += 101;
+			}).dimensions(x, y, 77, 18).build());
+			x += 80;
 		}
 		x = width / 2 - 200;
 		y = 46;
@@ -87,6 +91,7 @@ public class BaritoneScreen extends Screen {
 			case GO -> initGo(x, y);
 			case HIGHWAY -> initHighway(x, y);
 			case SETTINGS -> initSettings(x, y);
+			case COMMANDS -> initCommands(x, y);
 		}
 	}
 
@@ -108,9 +113,16 @@ public class BaritoneScreen extends Screen {
 				.callback((box, checked) -> set.accept(checked)).build());
 	}
 
-	/** Runs a command and shows whether Baritone took it. */
+	/** What Baritone had said before the last command run here; what it says after is its answer. */
+	private int replyMark = -1;
+	private long ranAt;
+
+	/** Runs a command and shows whether Baritone took it; Baritone's own answer replaces that once it comes. */
 	private void run(String command, String said) {
 		watchProcess = null;
+		BaritoneBridge.listen();
+		replyMark = BaritoneBridge.replyCount();
+		ranAt = System.currentTimeMillis();
 		boolean ok = BaritoneBridge.run(command);
 		status = ok ? said : "Baritone didn't take that (see its message in chat)";
 		statusColor = ok ? 0xFF7CE0A0 : 0xFFFF8A80;
@@ -341,23 +353,42 @@ public class BaritoneScreen extends Screen {
 					case CLIPBOARD -> 0xFFDDDDDD;
 				};
 				context.fill(x, y, x + 3, y + rowH - 2, color);
-				context.drawTextWithShadow(textRenderer, textRenderer.trimToWidth(d.name(), 230), x + 7, y + 2, 0xFFFFFFFF);
-				context.drawText(textRenderer, textRenderer.trimToWidth(d.kind().label + " · " + d.detail(), 230), x + 7, y + 11, 0xFF999999, false);
-				// Distance and direction, or the dimension it's in.
-				String where;
-				if (client.player != null && (d.dimension().isEmpty() || d.dimension().equals(here))) {
-					double dx = d.x() - client.player.getX(), dz = d.z() - client.player.getZ();
-					where = String.format(java.util.Locale.ROOT, "%,d %s", (int) Math.hypot(dx, dz), ChunkTrails.compass(dx, dz));
-				} else {
-					where = ShopScreen.dimensionName(d.dimension());
+				// Both: its overworld and its nether coordinates (one nether block is eight overworld ones), each with a Go.
+				boolean end = d.dimension().endsWith("the_end"), inNether = d.dimension().endsWith("the_nether");
+				int ox = inNether ? d.x() * 8 : d.x(), oz = inNether ? d.z() * 8 : d.z();
+				int nx = inNether ? d.x() : Math.floorDiv(d.x(), 8), nz = inNether ? d.z() : Math.floorDiv(d.z(), 8);
+				Destinations.Destination overworld = new Destinations.Destination(d.kind(), d.name(), d.detail(), ox, inNether ? Integer.MIN_VALUE : d.y(), oz,
+						"minecraft:overworld", d.time());
+				Destinations.Destination nether = new Destinations.Destination(d.kind(), d.name(), d.detail(), nx, inNether ? d.y() : Integer.MIN_VALUE, nz,
+						"minecraft:the_nether", d.time());
+				String name = textRenderer.trimToWidth(d.name(), 170);
+				context.drawTextWithShadow(textRenderer, name, x + 7, y + 2, 0xFFFFFFFF);
+				context.drawText(textRenderer, textRenderer.trimToWidth(" · " + d.kind().label + " · " + d.detail(), 290 - 7 - textRenderer.getWidth(name)),
+						x + 7 + textRenderer.getWidth(name), y + 2, 0xFF999999, false);
+				String coords = end ? String.format(java.util.Locale.ROOT, "End %,d %,d", d.x(), d.z())
+						: String.format(java.util.Locale.ROOT, "OW %,d %,d   Nether %,d %,d", ox, oz, nx, nz);
+				context.drawText(textRenderer, coords, x + 7, y + 11, 0xFFBBBBBB, false);
+				// How far, and which way, from where you are.
+				String where = null;
+				if (client.player != null) {
+					boolean hereNether = here.endsWith("the_nether"), hereEnd = here.endsWith("the_end");
+					if (end == hereEnd) {
+						double dx = (end ? d.x() : hereNether ? nx : ox) - client.player.getX(), dz = (end ? d.z() : hereNether ? nz : oz) - client.player.getZ();
+						where = String.format(java.util.Locale.ROOT, "%,d %s", (int) Math.hypot(dx, dz), ChunkTrails.compass(dx, dz));
+					} else {
+						where = ShopScreen.dimensionName(d.dimension());
+					}
 				}
-				context.drawTextWithShadow(textRenderer, where, x + w - 92 - textRenderer.getWidth(where), y + 6, 0xFFDDDDDD);
-				// Go (and × for your own waypoints).
-				int gx = x + w - 54;
-				boolean overGo = mouseX >= gx && mouseX < gx + 34 && mouseY >= y + 2 && mouseY < y + rowH - 4;
-				context.fill(gx, y + 2, gx + 34, y + rowH - 4, overGo ? 0xFF4CA0FF : 0xFF2E6BBF);
-				context.drawTextWithShadow(textRenderer, "Go", gx + 17 - textRenderer.getWidth("Go") / 2, y + 6, 0xFFFFFFFF);
-				rowHits.add(new Object[] {gx, Math.max(y + 2, top), gx + 34, Math.min(y + rowH - 4, bottom), (Runnable) () -> go(d), d.name(), false});
+				int right = x + w - 18;
+				if (end) {
+					goButton(context, mouseX, mouseY, right - 34, y, top, bottom, rowH, "Go", d, d.name());
+					right -= 34;
+				} else {
+					goButton(context, mouseX, mouseY, right - 44, y, top, bottom, rowH, "Nether", nether, d.name() + " (nether)");
+					goButton(context, mouseX, mouseY, right - 44 - 3 - 30, y, top, bottom, rowH, "OW", overworld, d.name());
+					right -= 44 + 3 + 30;
+				}
+				if (where != null) context.drawText(textRenderer, where, right - 4 - textRenderer.getWidth(where), y + 11, 0xFFDDDDDD, false);
 				if (d.kind() == Destinations.Kind.WAYPOINT) {
 					int rx = x + w - 16;
 					context.drawTextWithShadow(textRenderer, "×", rx + 3, y + 6, mouseX >= rx && mouseX < rx + 14 && mouseY >= y && mouseY < y + rowH ? 0xFFFF8080 : 0xFF999999);
@@ -378,9 +409,19 @@ public class BaritoneScreen extends Screen {
 		}
 	}
 
+	/** A Go button on a place's row; {@code key} is what the self-test clicks it by. */
+	private void goButton(DrawContext context, int mouseX, int mouseY, int gx, int y, int top, int bottom, int rowH, String label, Destinations.Destination to, String key) {
+		int gw = label.equals("Nether") ? 44 : label.equals("OW") ? 30 : 34;
+		boolean over = mouseX >= gx && mouseX < gx + gw && mouseY >= y + 2 && mouseY < y + rowH - 4;
+		int base = label.equals("Nether") ? 0xFF8F2B2B : 0xFF2E6BBF, lit = label.equals("Nether") ? 0xFFC0453F : 0xFF4CA0FF;
+		context.fill(gx, y + 2, gx + gw, y + rowH - 4, over ? lit : base);
+		context.drawTextWithShadow(textRenderer, label, gx + gw / 2 - textRenderer.getWidth(label) / 2, y + 6, 0xFFFFFFFF);
+		rowHits.add(new Object[] {gx, Math.max(y + 2, top), gx + gw, Math.min(y + rowH - 4, bottom), (Runnable) () -> go(to), key, false});
+	}
+
 	@Override
 	public boolean mouseClicked(net.minecraft.client.gui.Click click, boolean doubled) {
-		if (page == Page.PLACES) {
+		if (page == Page.PLACES || page == Page.SETTINGS || page == Page.COMMANDS) {
 			for (Object[] hit : java.util.List.copyOf(rowHits)) {
 				if (click.x() >= (int) hit[0] && click.x() < (int) hit[2] && click.y() >= (int) hit[1] && click.y() < (int) hit[3]) {
 					((Runnable) hit[4]).run();
@@ -393,7 +434,7 @@ public class BaritoneScreen extends Screen {
 
 	@Override
 	public boolean mouseScrolled(double mouseX, double mouseY, double horizontalAmount, double verticalAmount) {
-		if (page == Page.PLACES) {
+		if (page == Page.PLACES || page == Page.SETTINGS || page == Page.COMMANDS) {
 			listScroll -= verticalAmount * 22;
 			return true;
 		}
@@ -471,16 +512,197 @@ public class BaritoneScreen extends Screen {
 			NNConfig.save();
 			clearAndInit();
 		});
-		y += 26;
-		for (int i = 0; i < SWITCHES.length; i++) {
-			String[] s = SWITCHES[i];
-			int cx = x + (i % 2) * 205, cy = y + (i / 2) * 22;
-			if (BaritoneBridge.bool(s[0]) == null) continue;
-			check(cx, cy, s[1], () -> BaritoneBridge.bool(s[0]), v -> {
-				BaritoneBridge.setBool(s[0], v);
-				status = s[1] + (v ? ": on" : ": off");
-				statusColor = 0xFFDDDDDD;
+		y += 24;
+		settingSearch = field(x, y, 400, "Search Baritone's settings (all of them)", settingSearch == null ? "" : settingSearch.getText());
+		settingSearch.setChangedListener(t -> listScroll = 0);
+		// A picked setting that isn't on/off: type its value, Set, or put it back.
+		BaritoneBridge.Setting picked = setting(pickedSetting);
+		if (picked != null && !picked.bool()) {
+			int by = height - 40;
+			valueField = field(x, by, 250, picked.name(), valueField != null && picked.name().equals(valueField.getMessage().getString()) ? valueField.getText() : picked.value());
+			valueField.setMaxLength(2000);
+			button(x + 254, by, 70, "Set", () -> {
+				run("set " + picked.name() + " " + valueField.getText().strip(), picked.name() + " set to " + valueField.getText().strip());
+				settingsReadAt = 0;
 			});
+			button(x + 328, by, 72, "Reset", () -> {
+				BaritoneBridge.reset(picked.name());
+				status = picked.name() + " back to " + picked.defaultValue();
+				statusColor = 0xFFDDDDDD;
+				settingsReadAt = 0;
+				valueField.setText(picked.defaultValue());
+			});
+		}
+	}
+
+	private BaritoneBridge.Setting setting(String name) {
+		if (name == null) return null;
+		for (BaritoneBridge.Setting s : currentSettings()) {
+			if (s.name().equals(name)) return s;
+		}
+		return null;
+	}
+
+	/** Baritone's settings, read again twice a second (or straight after a change here). */
+	private List<BaritoneBridge.Setting> currentSettings() {
+		long now = System.currentTimeMillis();
+		if (now - settingsReadAt > 500) {
+			settings = BaritoneBridge.settings();
+			settingsReadAt = now;
+		}
+		return settings;
+	}
+
+	/** The settings list, drawn by hand: on/off ones switch with a click, the rest are picked to type a value. */
+	private void renderSettings(DrawContext context, int mouseX, int mouseY) {
+		int x = width / 2 - 200, top = 116, bottom = setting(pickedSetting) != null && !setting(pickedSetting).bool() ? height - 58 : height - 20;
+		String q = settingSearch == null ? "" : settingSearch.getText().strip().toLowerCase(java.util.Locale.ROOT);
+		List<BaritoneBridge.Setting> shown = new java.util.ArrayList<>();
+		for (BaritoneBridge.Setting s : currentSettings()) {
+			if (q.isEmpty() || s.name().toLowerCase(java.util.Locale.ROOT).contains(q)) shown.add(s);
+		}
+		context.drawTextWithShadow(textRenderer, shown.size() + " settings · changed ones in green · click an on/off one to switch it, any other to set it",
+				x, top - 12, 0xFF888888);
+		List<Row> rows = new java.util.ArrayList<>();
+		for (BaritoneBridge.Setting s : shown) {
+			String value = s.bool() ? (s.value().equals("true") ? "on" : "off") : s.value();
+			rows.add(new Row(s.name(), s.name(), value + (s.changed() ? "  (default " + (s.bool() ? (s.defaultValue().equals("true") ? "on" : "off") : s.defaultValue()) + ")" : ""),
+					s.changed() ? 0xFF7CE0A0 : 0xFFDDDDDD, s.name().equals(pickedSetting), () -> {
+						if (s.bool()) {
+							boolean on = !s.value().equals("true");
+							BaritoneBridge.setBool(s.name(), on);
+							status = s.name() + (on ? ": on" : ": off");
+							statusColor = 0xFFDDDDDD;
+							settingsReadAt = 0;
+						} else {
+							pickedSetting = s.name();
+							valueField = null;
+							clearAndInit();
+						}
+					}));
+		}
+		drawRows(context, mouseX, mouseY, x, top, bottom, rows);
+		BaritoneBridge.Setting picked = setting(pickedSetting);
+		if (picked != null && !picked.bool()) {
+			context.drawTextWithShadow(textRenderer, picked.name() + " (default " + picked.defaultValue() + "): type a value, then Set", x, height - 52, 0xFFDDDDDD);
+		}
+	}
+
+	// ---- Every command ----
+
+	private void initCommands(int x, int y) {
+		commands = BaritoneBridge.commands();
+		commandSearch = field(x, y, 400, "Search Baritone's commands", commandSearch == null ? "" : commandSearch.getText());
+		commandSearch.setChangedListener(t -> listScroll = 0);
+		BaritoneBridge.Command picked = command(pickedCommand);
+		if (picked != null) {
+			int by = height - 70;
+			argsField = field(x, by, 296, "what to add after " + picked.name() + " (or nothing)", argsField == null ? "" : argsField.getText());
+			argsField.setMaxLength(500);
+			button(x + 300, by, 100, "Run " + picked.name(), () -> {
+				String line = (picked.name() + " " + argsField.getText().strip()).strip();
+				run(line, "Ran: " + line);
+			});
+		}
+	}
+
+	private BaritoneBridge.Command command(String name) {
+		if (name == null) return null;
+		for (BaritoneBridge.Command c : commands) {
+			if (c.name().equals(name)) return c;
+		}
+		return null;
+	}
+
+	/** The commands list, then the picked one: how it's used, what to add, and Baritone's suggestions to click. */
+	private void renderCommands(DrawContext context, int mouseX, int mouseY) {
+		int x = width / 2 - 200;
+		BaritoneBridge.Command picked = command(pickedCommand);
+		int top = 82, bottom = picked == null ? height - 20 : height - 132;
+		String q = commandSearch == null ? "" : commandSearch.getText().strip().toLowerCase(java.util.Locale.ROOT);
+		List<Row> rows = new java.util.ArrayList<>();
+		for (BaritoneBridge.Command c : commands) {
+			boolean match = q.isEmpty() || c.shortDesc().toLowerCase(java.util.Locale.ROOT).contains(q)
+					|| c.names().stream().anyMatch(n -> n.toLowerCase(java.util.Locale.ROOT).contains(q));
+			if (!match) continue;
+			String also = c.names().size() > 1 ? "  (also " + String.join(", ", c.names().subList(1, c.names().size())) + ")" : "";
+			rows.add(new Row(c.name(), c.name() + also, c.shortDesc(), 0xFFFFFFFF, c.name().equals(pickedCommand), () -> {
+				pickedCommand = c.name();
+				if (argsField != null) argsField.setText("");
+				suggestedFor = null;
+				clearAndInit();
+			}));
+		}
+		context.drawTextWithShadow(textRenderer, rows.size() + " of Baritone's commands · click one", x, top - 12, 0xFF888888);
+		drawRows(context, mouseX, mouseY, x, top, bottom, rows);
+		if (picked == null) return;
+		// How it's used: Baritone's own lines ("> goto <x> <y> <z>").
+		int uy = bottom + 4;
+		context.drawTextWithShadow(textRenderer, picked.name() + ": " + picked.shortDesc(), x, uy, 0xFFFFFFFF);
+		uy += 11;
+		int shownLines = 0;
+		for (String line : picked.longDesc()) {
+			if (!line.startsWith(">") || shownLines >= 4) continue;
+			context.drawTextWithShadow(textRenderer, textRenderer.trimToWidth(line.substring(1).strip(), 400), x, uy, 0xFFAAAAAA);
+			uy += 10;
+			shownLines++;
+		}
+		// What Baritone suggests next, for what's typed so far: click to add it (no typos).
+		String typed = argsField == null ? "" : argsField.getText();
+		String line = picked.name() + " " + typed;
+		if (!line.equals(suggestedFor)) {
+			suggestedFor = line;
+			suggestions = BaritoneBridge.suggest(line);
+		}
+		int cx = x, cy = height - 48;
+		for (String s : suggestions) {
+			int w = textRenderer.getWidth(s) + 8;
+			if (cx + w > x + 400) {
+				cx = x;
+				cy += 13;
+				if (cy > height - 26) break;
+			}
+			boolean hover = mouseX >= cx && mouseX < cx + w && mouseY >= cy && mouseY < cy + 11;
+			context.fill(cx, cy, cx + w, cy + 11, hover ? 0xFF4CA0FF : 0xFF2E4E7F);
+			context.drawTextWithShadow(textRenderer, s, cx + 4, cy + 2, 0xFFFFFFFF);
+			String pick = s;
+			rowHits.add(new Object[] {cx, cy, cx + w, cy + 11, (Runnable) () -> addSuggestion(pick), "suggest:" + s, false});
+			cx += w + 3;
+		}
+	}
+
+	/** A suggestion replaces the word being typed (or follows the last whole one). */
+	private void addSuggestion(String s) {
+		String typed = argsField.getText();
+		int cut = typed.endsWith(" ") || typed.isEmpty() ? typed.length() : typed.lastIndexOf(' ') + 1;
+		argsField.setText(typed.substring(0, cut) + s + " ");
+		suggestedFor = null;
+	}
+
+	/** One row of a hand-drawn list: the key it's clicked by, its two lines, colour of the second, picked or not. */
+	private record Row(String key, String main, String sub, int subColor, boolean picked, Runnable click) {}
+
+	private void drawRows(DrawContext context, int mouseX, int mouseY, int x, int top, int bottom, List<Row> rows) {
+		int w = 400, rowH = 22;
+		int maxScroll = Math.max(0, rows.size() * rowH - (bottom - top));
+		listScroll = Math.max(0, Math.min(listScroll, maxScroll));
+		context.enableScissor(x, top, x + w, bottom);
+		int y = top - (int) listScroll;
+		for (Row r : rows) {
+			if (y + rowH >= top && y <= bottom) {
+				boolean hover = mouseX >= x && mouseX < x + w && mouseY >= Math.max(y, top) && mouseY < Math.min(y + rowH - 2, bottom);
+				context.fill(x, y, x + w, y + rowH - 2, r.picked ? 0x803A6FBF : hover ? 0x60FFFFFF : 0x40000000);
+				context.drawTextWithShadow(textRenderer, textRenderer.trimToWidth(r.main, w - 10), x + 5, y + 2, 0xFFFFFFFF);
+				context.drawText(textRenderer, textRenderer.trimToWidth(r.sub, w - 10), x + 5, y + 11, r.subColor, false);
+				rowHits.add(new Object[] {x, Math.max(y, top), x + w, Math.min(y + rowH - 2, bottom), r.click, r.key, false});
+			}
+			y += rowH;
+		}
+		context.disableScissor();
+		if (maxScroll > 0) {
+			int bar = Math.max(12, (bottom - top) * (bottom - top) / (rows.size() * rowH));
+			int by = top + (int) ((bottom - top - bar) * (listScroll / maxScroll));
+			context.fill(x + w + 3, by, x + w + 5, by + bar, 0xFF888888);
 		}
 	}
 
@@ -509,11 +731,28 @@ public class BaritoneScreen extends Screen {
 		state = BaritoneBridge.isPathing() ? "Moving" + (goal.isEmpty() ? "" : " · " + goal) : HighwayRoam.active() ? "Roaming (paused or working out a path)" : "Idle";
 		context.drawTextWithShadow(textRenderer, "Baritone: " + state, x, 30, 0xFFFFFFFF);
 		if (watchProcess != null && !BaritoneBridge.processActive(watchProcess)) {
+			replyMark = -1;
 			status = watchFailed;
 			statusColor = 0xFFFFC14D;
 			watchProcess = null;
 		}
-		if (!status.isEmpty()) context.drawTextWithShadow(textRenderer, status, x, height - 14, statusColor);
+		// Baritone's answer to the last command: an error (in red) if it said one, otherwise the last thing it said.
+		// Only what it says in the few seconds after, each thing once, so it never covers a newer message.
+		if (replyMark >= 0 && System.currentTimeMillis() - ranAt > 3000) replyMark = -1;
+		if (replyMark >= 0) {
+			List<BaritoneBridge.Reply> said = BaritoneBridge.repliesSince(replyMark);
+			BaritoneBridge.Reply shown = said.stream().filter(BaritoneBridge.Reply::error).findFirst().orElse(said.isEmpty() ? null : said.get(said.size() - 1));
+			if (shown != null) {
+				status = "Baritone: " + shown.text();
+				statusColor = shown.error() ? 0xFFFF8A80 : 0xFFDDDDDD;
+				if (shown.error()) replyMark = -1;
+				else replyMark = BaritoneBridge.replyCount();
+			}
+		}
+		if (!status.isEmpty()) context.drawTextWithShadow(textRenderer, textRenderer.trimToWidth(status, width - x - 4), x, height - 14, statusColor);
+		if (page != Page.PLACES) rowHits.clear();
+		if (page == Page.SETTINGS) renderSettings(context, mouseX, mouseY);
+		if (page == Page.COMMANDS) renderCommands(context, mouseX, mouseY);
 		if (page == Page.PLACES) {
 			renderPlaces(context, mouseX, mouseY);
 		} else if (page == Page.GO) {
@@ -535,7 +774,12 @@ public class BaritoneScreen extends Screen {
 		}
 	}
 
-	/** For the self-test: shows a page (0 Go to…, 1 Do, 2 Highway roam, 3 Settings). */
+	/** For the self-test: what Baritone suggests for what's typed on the Every command page. */
+	public List<String> testSuggestions() {
+		return suggestions;
+	}
+
+	/** For the self-test: shows a page (0 Go to…, 1 Do, 2 Highway roam, 3 Settings, 4 Every command). */
 	public void testPage(int index) {
 		page = Page.values()[index];
 		clearAndInit();
@@ -587,6 +831,11 @@ public class BaritoneScreen extends Screen {
 		return null;
 	}
 
+	/** For the self-test: whether a row button with this key was drawn. */
+	public boolean testHasRow(String key) {
+		return rowHits.stream().anyMatch(h -> key.equals(h[5]));
+	}
+
 	/** For the self-test: clicks a place's Go (or its ×) on the Go to… list as last drawn. */
 	public boolean testRow(String name, boolean remove) {
 		for (Object[] hit : List.copyOf(rowHits)) {
@@ -602,6 +851,11 @@ public class BaritoneScreen extends Screen {
 		net.minecraft.client.gui.Click click = new net.minecraft.client.gui.Click(x, y, new net.minecraft.client.input.MouseInput(0, 0));
 		mouseClicked(click, false);
 		mouseReleased(click);
+	}
+
+	/** For the self-test: whether the status is shown as an error (in red). */
+	public boolean testStatusIsError() {
+		return statusColor == 0xFFFF8A80;
 	}
 
 	public String testStatus() {

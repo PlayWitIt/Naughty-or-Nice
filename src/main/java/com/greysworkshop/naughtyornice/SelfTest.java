@@ -1551,6 +1551,8 @@ public final class SelfTest {
 	private static BlockPos tripFrom;
 	/** Where the Baritone button walk-through is (0 when it isn't running). */
 	private static int baritoneStep;
+	/** What Baritone had said before the every-setting round trip. */
+	private static int settingsMark;
 	/** When the last Baritone button was pressed, for steps that must wait a while by the clock. */
 	private static long baritonePressed;
 	/** Where the test wheat was planted (x of the first of three, and z). */
@@ -1835,7 +1837,8 @@ public final class SelfTest {
 				tp(client, "0.5 -60 30.5");
 			}
 			case 16 -> {
-				check("its row's Go sets off", b.testRow("NN test spot", false) && client.currentScreen == null);
+				check("each place has a Go for its overworld and one for its nether coordinates", b.testHasRow("NN test spot") && b.testHasRow("NN test spot (nether)"));
+				check("its row's Go (OW) sets off", b.testRow("NN test spot", false) && client.currentScreen == null);
 			}
 			case 19 -> {
 				log("Goal: " + BaritoneBridge.goal());
@@ -1907,11 +1910,11 @@ public final class SelfTest {
 				b.testPress("Pause");
 			}
 			case 80 -> {
-				check("Pause stops it moving (" + b.testStatus() + ")", !BaritoneBridge.isPathing() && b.testStatus().equals("Paused"));
+				check("Pause stops it moving (" + b.testStatus() + ")", !BaritoneBridge.isPathing() && b.testStatus().contains("Paused"));
 				b.testPress("Resume");
 			}
 			case 88 -> {
-				check("Resume carries on exploring", BaritoneBridge.processActive("getExploreProcess") && b.testStatus().equals("Going again"));
+				check("Resume carries on exploring", BaritoneBridge.processActive("getExploreProcess") && (b.testStatus().contains("Resumed") || b.testStatus().equals("Going again")));
 				b.testPress("Stop");
 			}
 			case 91 -> {
@@ -2015,13 +2018,8 @@ public final class SelfTest {
 				check("Stop stops the roam", !HighwayRoam.active() && !BaritoneBridge.isPathing());
 				HighwayRoam.stopForStrangers = true;
 				HighwayRoam.axis = HighwayRoam.AXES[0];
-				// ---- Settings ----
+				// ---- Settings: all of Baritone's, searched and clicked ----
 				b.testPress("Settings");
-				Boolean sprint = BaritoneBridge.bool("allowSprint");
-				b.testPress("Sprint");
-				boolean sprintFlipped = !java.util.Objects.equals(sprint, BaritoneBridge.bool("allowSprint"));
-				b.testPress("Sprint");
-				check("its Baritone switches switch Baritone (sprint)", sprint != null && sprintFlipped && sprint.equals(BaritoneBridge.bool("allowSprint")));
 				int health = NNConfig.INSTANCE.tripStopHealth;
 				b.testPress("Stop at");
 				boolean healthChanged = NNConfig.INSTANCE.tripStopHealth != health;
@@ -2029,8 +2027,83 @@ public final class SelfTest {
 				check("the low-health button goes round its choices", healthChanged && NNConfig.INSTANCE.tripStopHealth == health);
 				b.testPress("On trips: pause when a stranger");
 				check("the strangers switch switches", NNConfig.INSTANCE.tripStopForStrangers);
+				b.testType("Search Baritone's settings (all of them)", "allowSprint");
 			}
 			case 159 -> {
+				int count = BaritoneBridge.settings().size();
+				Boolean sprint = BaritoneBridge.bool("allowSprint");
+				boolean clicked = b.testRow("allowSprint", false);
+				boolean flipped = !java.util.Objects.equals(sprint, BaritoneBridge.bool("allowSprint"));
+				BaritoneBridge.setBool("allowSprint", Boolean.TRUE.equals(sprint));
+				check("Settings has all of Baritone's (" + count + "), and an on/off one switches with a click", count > 100 && clicked && flipped);
+				check("...backfill among them", BaritoneBridge.settings().stream().anyMatch(st -> st.name().equals("backfill") && st.bool()));
+				// Every setting that isn't on/off, Set to what it shows: each must come back exactly the same, with no error.
+				BaritoneBridge.listen();
+				settingsMark = BaritoneBridge.replyCount();
+				List<String> wrong = new java.util.ArrayList<>();
+				int tried = 0;
+				for (BaritoneBridge.Setting st : BaritoneBridge.settings()) {
+					if (st.bool() || st.value().isEmpty()) continue;
+					tried++;
+					BaritoneBridge.run("set " + st.name() + " " + st.value());
+					String after = BaritoneBridge.settings().stream().filter(x -> x.name().equals(st.name())).findFirst().map(BaritoneBridge.Setting::value).orElse("?");
+					if (!after.equals(st.value())) wrong.add(st.name() + ": " + st.value() + " -> " + after);
+				}
+				log("Set " + tried + " settings to what they show; changed: " + wrong);
+				check("every setting (" + tried + ") Sets back exactly as it shows (" + wrong + ")", tried > 50 && wrong.isEmpty());
+				b.testType("Search Baritone's settings (all of them)", "followRadius");
+			}
+			case 161 -> {
+				List<String> errors = BaritoneBridge.repliesSince(settingsMark).stream().filter(BaritoneBridge.Reply::error).map(BaritoneBridge.Reply::text).toList();
+				check("...and Baritone took every one without an error (" + errors + ")", errors.isEmpty());
+				check("a setting with a value is picked with a click", b.testRow("followRadius", false) && b.testField("followRadius") != null);
+			}
+			case 163 -> {
+				b.testType("followRadius", "7");
+				b.testPress("Set");
+				String set = BaritoneBridge.settings().stream().filter(st -> st.name().equals("followRadius")).findFirst().map(BaritoneBridge.Setting::value).orElse("?");
+				b.testPress("Reset");
+				BaritoneBridge.Setting after = BaritoneBridge.settings().stream().filter(st -> st.name().equals("followRadius")).findFirst().orElse(null);
+				check("...Set gives it the typed value (" + set + "), Reset puts it back", "7".equals(set) && after != null && !after.changed());
+				// ---- Every command ----
+				b.testPress("Every command");
+				List<String> names = BaritoneBridge.commands().stream().flatMap(c -> c.names().stream()).toList();
+				check("Every command lists all of Baritone's (" + BaritoneBridge.commands().size() + ")", BaritoneBridge.commands().size() > 30
+						&& names.containsAll(List.of("goto", "mine", "tunnel", "sel", "come", "follow", "farm", "explore", "set", "stop")));
+				b.testType("Search Baritone's commands", "mine");
+			}
+			case 165 -> {
+				check("a command is picked with a click", b.testRow("mine", false) && b.testField("what to add after mine (or nothing)") != null);
+				b.testType("what to add after mine (or nothing)", "dir");
+			}
+			case 168 -> {
+				check("Baritone's suggestions show for what's typed (" + b.testSuggestions().size() + ")", b.testSuggestions().contains("dirt"));
+				b.testRow("suggest:dirt", false);
+				check("...and clicking one fills it in, spelled right", "dirt ".equals(b.testField("what to add after mine (or nothing)")));
+				b.testPress("Run mine");
+			}
+			case 172 -> {
+				check("Run runs it (" + b.testStatus() + ")", BaritoneBridge.processActive("getMineProcess") && !b.testStatusIsError());
+				b.testType("Search Baritone's commands", "stop");
+			}
+			case 174 -> {
+				String stopName = BaritoneBridge.commands().stream().filter(c -> c.names().contains("stop")).findFirst().map(BaritoneBridge.Command::name).orElse("stop");
+				b.testRow(stopName, false);
+				b.testPress("Run " + stopName);
+			}
+			case 177 -> {
+				check("...and stop from the list stops it", !BaritoneBridge.processActive("getMineProcess"));
+				// Typed wrong: Baritone's own error shows, in red, not "Ran".
+				b.testType("Search Baritone's commands", "mine");
+			}
+			case 178 -> {
+				b.testRow("mine", false);
+				b.testType("what to add after mine (or nothing)", "dir");
+				b.testPress("Run mine");
+			}
+			case 181 -> check("a mistyped command shows Baritone's error in red (" + b.testStatus() + ")", b.testStatusIsError() && b.testStatus().startsWith("Baritone:")
+					&& !BaritoneBridge.processActive("getMineProcess"));
+			case 183 -> {
 				check("nothing went to the server's chat through all of it (" + serverHeard + ")", serverHeard.isEmpty());
 				String coords = CoordsHud.line(client);
 				check("your coordinates show in the bottom left by default (" + coords + ")", NNConfig.INSTANCE.showCoords
