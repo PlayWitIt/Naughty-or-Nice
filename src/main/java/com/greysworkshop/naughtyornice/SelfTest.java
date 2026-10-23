@@ -2106,6 +2106,16 @@ public final class SelfTest {
 			case 183 -> {
 				check("nothing went to the server's chat through all of it (" + serverHeard + ")", serverHeard.isEmpty());
 				String coords = CoordsHud.line(client);
+				// An F3 entry set to always on (hitboxes) doesn't count as F3 open: the coordinates, chunk line and radar stay.
+				var hitboxes = net.minecraft.util.Identifier.of("minecraft", "entity_hitboxes");
+				var was = client.debugHudEntryList.getVisibility(hitboxes);
+				client.debugHudEntryList.setEntryVisibility(hitboxes, net.minecraft.client.gui.hud.debug.DebugHudEntryVisibility.ALWAYS_ON);
+				boolean shownWithHitboxes = !CoordsHud.f3Open(client);
+				client.debugHudEntryList.setF3Enabled(true);
+				boolean hiddenWithF3 = CoordsHud.f3Open(client);
+				client.debugHudEntryList.setF3Enabled(false);
+				client.debugHudEntryList.setEntryVisibility(hitboxes, was);
+				check("on-screen things show with an F3 entry always on, and hide only with F3 open", shownWithHitboxes && hiddenWithF3);
 				check("your coordinates show in the bottom left by default (" + coords + ")", NNConfig.INSTANCE.showCoords
 						&& coords.startsWith("XYZ " + p.getBlockX() + " " + p.getBlockY() + " " + p.getBlockZ())
 						&& coords.contains("Nether " + Math.floorDiv(p.getBlockX(), 8) + " " + Math.floorDiv(p.getBlockZ(), 8)));

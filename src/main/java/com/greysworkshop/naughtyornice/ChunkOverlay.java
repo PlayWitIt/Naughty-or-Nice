@@ -115,7 +115,7 @@ public final class ChunkOverlay {
 		NNConfig c = NNConfig.INSTANCE;
 		NaughtyOrNiceClient mod = NaughtyOrNiceClient.INSTANCE;
 		if (!NNConfig.on() || !c.chunkTrails || !c.chunkOverlay || mod == null || client.world == null || client.player == null
-				|| client.options.hudHidden || client.getDebugHud().shouldShowDebugHud()) return;
+				|| client.options.hudHidden || CoordsHud.f3Open(client)) return;
 		String line = hereLine(mod.ledger.chunkTrails, client.world.getRegistryKey().getValue().toString(), client.player.getX(), client.player.getZ());
 		int rgb = line.startsWith("New") ? FRESH : line.startsWith("Trail") ? TRAIL : line.startsWith("Old") ? OLD : UNKNOWN;
 		var font = client.textRenderer;
