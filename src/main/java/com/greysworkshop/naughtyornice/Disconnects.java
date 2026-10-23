@@ -226,6 +226,9 @@ public final class Disconnects {
 		if (e.kind == Kind.UNKNOWN || e.kind == Kind.CONNECTION) {
 			String lower = e.reason.toLowerCase(Locale.ROOT);
 			if (lower.contains("timed out") || lower.contains("connection reset") || lower.contains("connection lost")) e.kind = Kind.CONNECTION;
+			// A kick while joining comes in on the network thread, so it looks like a dropped connection; its wording
+			// ("You were kicked from the server. Please wait before reconnecting.") says the server sent it.
+			else if (!looksLikeDrop(lower)) e.kind = Kind.SERVER;
 		}
 		e.server = lastServer;
 		e.nearby = new ArrayList<>(lastNearby);
@@ -362,6 +365,13 @@ public final class Disconnects {
 		return null;
 	}
 
+	/** Whether a reason is the client's own words for a lost connection, not something the server said. */
+	static boolean looksLikeDrop(String lower) {
+		return lower.isBlank() || lower.equals("disconnected") || lower.startsWith("internal exception") || lower.contains("timed out")
+				|| lower.contains("connection reset") || lower.contains("connection lost") || lower.contains("connection refused")
+				|| lower.contains("end of stream") || lower.contains("broken pipe");
+	}
+
 	/** What happened, in plain words. */
 	public static String cause(Entry e) {
 		Nearby named = namedInReason(e);
@@ -373,6 +383,7 @@ public final class Disconnects {
 			case ERROR -> "The game hit an error with something the server sent" + (e.culprit.isEmpty() ? "" : ", in " + e.culprit) + ".";
 			case SERVER -> lower.contains("chat") && lower.contains("valid")
 					? "The server rejected chat signing (Minecraft's secure chat). A mod like No Chat Reports usually fixes this."
+					: lower.contains("kicked") ? "The server kicked you: it sent that message, it wasn't your connection."
 					: "The server disconnected you (a kick, a restart, or its anti-cheat).";
 			case YOU -> "You left the game.";
 			case CONNECTION -> "The connection dropped or timed out (internet or server lag).";

@@ -3699,6 +3699,17 @@ public class ShopScreen extends Screen {
 		return out;
 	}
 
+	/** A player's list, in words, for copied chat ("" when on none). */
+	private static String listLabel(Profile p) {
+		return switch (p.verdict) {
+			case NICE -> "Nice";
+			case NAUGHTY -> "Naughty";
+			case LOOK -> "Look Into";
+			case FRIEND -> "Friend";
+			case NONE -> "";
+		};
+	}
+
 	/** The chat rows to draw, redone only when the chat, the filter, the width or the lists change. */
 	private List<ChatRow> chatRows(int textW) {
 		String key = mod.chatLogger.feedVersion() + "/" + chatFilter + "/" + chatGroup + "/" + textW + "/" + query + "/" + mod.ledger.changes()
@@ -3757,7 +3768,18 @@ public class ShopScreen extends Screen {
 		}
 		if (!query.isEmpty()) summary += " · matching \"" + query + "\"";
 		int clearW = chatFilter != ChatFilter.ALL || chatGroup != null ? textRenderer.getWidth("Show all") + 12 : 0;
-		textTrim(context, summary, 8, barY + 4, width - 24 - clearW - (sidebar ? 0 : 0), TEXT);
+		int copyW = textRenderer.getWidth("Copy chat log") + 12;
+		textTrim(context, summary, 8, barY + 4, width - 24 - clearW - copyW, TEXT);
+		String shown = summary;
+		link(context, mouseX, mouseY, right - clearW - copyW + 12, barY + 4, "Copy chat log", "chat-copy", () -> {
+			List<Profile.Line> lines = new ArrayList<>();
+			for (ChatRow row : chatRows) lines.add(row.line());
+			client.keyboard.setClipboard(ChatLogger.formatFeed(Sharing.placeName(mod.ledger.key()), shown, lines, line -> {
+				Profile who = line.me ? null : chatWho(line);
+				return who == null ? "" : listLabel(who);
+			}));
+			flash("Copied " + lines.size() + " lines: paste them anywhere", NICE, null);
+		});
 		if (clearW > 0) {
 			link(context, mouseX, mouseY, right - clearW + 12, barY + 4, "Show all", "chat-all", () -> {
 				chatFilter = ChatFilter.ALL;

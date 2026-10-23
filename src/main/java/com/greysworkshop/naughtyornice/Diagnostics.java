@@ -153,11 +153,33 @@ public final class Diagnostics {
 			sb.append("-- ").append(kind.label).append(nl);
 			for (Sample sample : list) sb.append("  ").append(sample.raw()).append(nl).append("      read as: ").append(sample.reading()).append(nl);
 		}
+		sb.append(nl).append("== Chunk reading on this server ==").append(nl);
+		NaughtyOrNiceClient mod = NaughtyOrNiceClient.INSTANCE;
+		if (mod != null && mod.ledger != null) sb.append(chunkReading(mod.ledger.chunkTrails.reading, nl));
 		sb.append(nl).append("== Disconnects (newest first) ==").append(nl).append(Disconnects.report());
 		sb.append(nl).append("== Errors the mod caught and skipped ==").append(nl);
 		List<Safe.Caught> caught = Safe.caught();
 		if (caught.isEmpty()) sb.append("(none)").append(nl);
 		for (Safe.Caught c : caught) sb.append(c.count).append("×  ").append(c.where).append(": ").append(c.what).append(nl);
+		return sb.toString();
+	}
+
+	/** The two chunk readings compared, and what that says about the palette reading on this server. */
+	static String chunkReading(ChunkTrails.Reading r, String nl) {
+		StringBuilder sb = new StringBuilder();
+		sb.append("By palette: ").append(r.paletteNew).append(" new, ").append(r.paletteOld).append(" old, ").append(r.paletteUndecided).append(" undecided").append(nl);
+		sb.append("By liquid: ").append(r.liquidNew).append(" new, ").append(r.liquidOld).append(" old").append(nl);
+		int both = r.agreeNew + r.agreeOld + r.disagree;
+		sb.append("Read both ways: ").append(both).append(" (agree: ").append(r.agreeNew).append(" new, ").append(r.agreeOld).append(" old; disagree: ")
+				.append(r.disagree).append(")").append(nl);
+		for (String d : r.disagreements) sb.append("  ").append(d).append(nl);
+		if (r.disagree > 0) {
+			sb.append("They disagree, so the palette reading may not work on this server: send this report in.").append(nl);
+		} else if (both >= 20) {
+			sb.append("They agree on every chunk both could read: the palette reading works here.").append(nl);
+		} else {
+			sb.append("Too few chunks read both ways to tell yet (it needs land with water or lava, away from you).").append(nl);
+		}
 		return sb.toString();
 	}
 

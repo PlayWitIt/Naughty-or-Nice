@@ -711,6 +711,9 @@ public final class SelfTest {
 			case 890 -> {
 				boolean sent = mod.chatLogger.feed().stream().anyMatch(l -> l.me && l.text.equals("hello from the chat tab"));
 				check("what you send shows up as yours", sent);
+				check("Copy chat log copies what the Chat tab shows", screen(client).testClick("chat-copy")
+						&& client.keyboard.getClipboard().startsWith("Naughty or Nice chat log")
+						&& client.keyboard.getClipboard().contains("<You> hello from the chat tab"));
 				screenshot(client, "33_chat_sent");
 				screen(client).testClick("theme");
 			}
@@ -750,6 +753,23 @@ public final class SelfTest {
 				mod.watcher.onGameMessage(client, Text.literal("Helpful_Hana left the game"));
 				check("joins (also renamed ones) and plain-text leaves are understood", d.count(Diagnostics.Kind.JOIN_LEAVE) == joins + 2);
 				check("the report lists what wasn't understood", d.report(ledger.key()).contains("[Server] Restarting in # minutes"));
+				// From a real report (constantiam.net, 2026-10-23).
+				int ignored = d.count(Diagnostics.Kind.IGNORED), unknown = d.count(Diagnostics.Kind.UNKNOWN);
+				mod.watcher.onGameMessage(client, Text.literal("---- ----"));
+				check("decoration lines are server messages, not 'not understood'", d.count(Diagnostics.Kind.IGNORED) == ignored + 1
+						&& d.count(Diagnostics.Kind.UNKNOWN) == unknown);
+				int deaths = d.count(Diagnostics.Kind.DEATH);
+				mod.watcher.onGameMessage(client, Text.literal(GRIEFER + " became epstein'd"));
+				check("a joke death message (\"became ...'d\") is a death", d.count(Diagnostics.Kind.DEATH) == deaths + 1);
+				Profile rick = ledger.byName("RandomRick");
+				int abuse = rick.count(Profile.Kind.ABUSE_TALK);
+				mod.watcher.onGameMessage(client, Text.literal("<RandomRick> babies are plap meat"));
+				mod.watcher.onGameMessage(client, Text.literal("<RandomRick> again, sexualizing children is gross"));
+				check("talk of abusing children counts against them, with their words", rick.count(Profile.Kind.ABUSE_TALK) == abuse + 1
+						&& rick.actions.stream().anyMatch(a -> a.kind == Profile.Kind.ABUSE_TALK && a.detail.equals("babies are plap meat")));
+				check("the report compares the two chunk readings", d.report(ledger.key()).contains("== Chunk reading on this server =="));
+				check("a kick sent while joining isn't called a dropped connection",
+						!Disconnects.looksLikeDrop("you were kicked from the server. please wait before reconnecting.") && Disconnects.looksLikeDrop("timed out"));
 				client.setScreen(new ShopScreen().withChatCheck());
 			}
 			case 906 -> screenshot(client, "35_chat_check");

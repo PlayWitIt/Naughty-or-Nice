@@ -176,6 +176,30 @@ public class ChatIntelCheck {
 		tone("you guys are noobs", "RUDE"); tone("you are bosses", "NONE");
 		tone("you all are so bad", "RUDE");
 		tone("are you all ok", "NONE");
+		// --- talk of sexually abusing children (from a real server's chat, 2026-10-23) ---
+		tone("yeah i'm not a perv, i am a genuine predator.", "ABUSE");
+		tone("i am a danger to all the anime children on the internet", "ABUSE");
+		tone("as a matter of fact, i think imma rape an anime child today.", "ABUSE");
+		tone("babies are plap meat", "ABUSE");
+		tone("im a pedo lol", "ABUSE");
+		tone("gonna molest some little girls", "ABUSE");
+		tone("rape a 10 year old", "ABUSE");
+		// ...and lines that aren't: people speaking against it, pvp slang, ordinary kids
+		tone("again, sexualizing children is gross", "NONE");
+		tone("you need help", "NONE");
+		tone("youre beyond change", "NONE");
+		tone("youre just a danger", "NONE");
+		tone("pedos should be banned", "NONE");
+		tone("he said he'd rape a child, report him", "NONE");
+		tone("i raped that kid at spawn", "NONE");
+		tone("this kid raped me with crystals", "NONE");
+		tone("my kids are asleep", "NONE");
+		tone("babies are cute", "NONE");
+		tone("im an apex predator in pvp", "NONE");
+		tone("i got raped by a wither", "NONE");
+		tone("sabrina carpenter is a child groomer, she's grooming little girls into becoming sluts like her.", "NONE");
+		tone("he is raping children", "NONE");
+		tone("i am a proud pedophile, like white pride, but with pedophilia", "ABUSE");
 		System.out.println("ChatIntel: " + pass + " passed, " + fail + " failed");
 		if (fail > 0) System.exit(1);
 	}
