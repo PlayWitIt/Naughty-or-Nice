@@ -15,7 +15,8 @@ import java.util.regex.Pattern;
 /**
  * Stops you giving your own location away by accident. Before a chat message or a whisper leaves, it's read the same
  * strict way other players' chat is: coordinates in it, the name of one of your bases, or a number that's your own
- * current x or z. If any are there, it's held back, with [Send anyway] and [Edit].
+ * current x or z. If any are there, it's held back, with [Send anyway] and [Edit]. With "ask before sending" on, every
+ * message is held that way, with [Send] and [Edit].
  */
 public final class CoordGuard {
 	/** Commands that send what you type to other players. */
@@ -31,8 +32,9 @@ public final class CoordGuard {
 	private CoordGuard() {}
 
 	public static boolean allowChat(String message) {
-		// Baritone reads "#goto 1200 -3400" itself and never sends it, when it's installed.
-		if (message.startsWith("#") && BaritoneBridge.present()) return true;
+		// Baritone reads "#goto 1200 -3400" itself and never sends it, but only while its chat control is on, with its prefix.
+		String prefix = BaritoneBridge.chatPrefix();
+		if (prefix != null && message.startsWith(prefix)) return true;
 		return allow(message, message);
 	}
 
@@ -43,16 +45,18 @@ public final class CoordGuard {
 	}
 
 	private static boolean allow(String whole, String said) {
-		if (!NNConfig.INSTANCE.guardMyCoords) return true;
+		boolean ask = NNConfig.INSTANCE.askBeforeSending;
+		if (!NNConfig.INSTANCE.guardMyCoords && !ask) return true;
 		if (whole.equals(allowOnce)) {
 			allowOnce = null;
 			return true;
 		}
-		List<String> why = reasons(said);
-		if (why.isEmpty()) return true;
+		List<String> why = NNConfig.INSTANCE.guardMyCoords ? reasons(said) : List.of();
+		if (why.isEmpty() && !ask) return true;
 		held = whole;
-		Alerts.chat(Text.literal("Held your message: it gives away " + String.join(" and ", why) + ". ").formatted(Formatting.GOLD)
-				.append(Text.literal("[Send anyway]").styled(s -> s.withColor(Formatting.RED).withUnderline(true)
+		String note = why.isEmpty() ? "Send this? \"" + whole + "\" " : "Held your message: it gives away " + String.join(" and ", why) + ". ";
+		Alerts.chat(Text.literal(note).formatted(Formatting.GOLD)
+				.append(Text.literal(why.isEmpty() ? "[Send]" : "[Send anyway]").styled(s -> s.withColor(why.isEmpty() ? Formatting.GREEN : Formatting.RED).withUnderline(true)
 						.withClickEvent(new ClickEvent.RunCommand("/nn sendanyway"))))
 				.append(Text.literal(" "))
 				.append(Text.literal("[Edit]").styled(s -> s.withColor(Formatting.AQUA).withUnderline(true)

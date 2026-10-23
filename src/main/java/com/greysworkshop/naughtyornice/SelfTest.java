@@ -57,6 +57,11 @@ public final class SelfTest {
 			client.send(() -> openWorld(client));
 		});
 		ClientTickEvents.END_CLIENT_TICK.register(SelfTest::tick);
+		// What actually reaches the server as chat, to prove the Baritone screen and the send guards leak nothing.
+		net.fabricmc.fabric.api.message.v1.ServerMessageEvents.CHAT_MESSAGE.register((message, sender, params) ->
+				serverHeard.add(message.getContent().getString()));
+		net.fabricmc.fabric.api.message.v1.ServerMessageEvents.COMMAND_MESSAGE.register((message, source, params) ->
+				serverHeard.add(message.getContent().getString()));
 		net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents.END_SERVER_TICK.register(server -> {
 			if (walkTicks > 0 && griefer != null) {
 				walkTicks--;
@@ -91,6 +96,10 @@ public final class SelfTest {
 		if (client.player == null || client.world == null || client.getServer() == null) return;
 		if (frames == framesAtLastStep) return;
 		framesAtLastStep = frames;
+		if (baritoneStep > 0) {
+			baritoneButtons(client);
+			return;
+		}
 		tick++;
 		NaughtyOrNiceClient mod = NaughtyOrNiceClient.INSTANCE;
 		Ledger ledger = mod.ledger;
@@ -1361,18 +1370,39 @@ public final class SelfTest {
 				boolean on = Boolean.TRUE.equals(BaritoneBridge.bool("allowParkour"));
 				BaritoneBridge.setBool("allowParkour", false);
 				check("...its settings can be read and changed", on && Boolean.FALSE.equals(BaritoneBridge.bool("allowParkour")));
+				check("a #goto is left to Baritone", CoordGuard.allowChat("#goto 1200 64 -3400"));
+				BaritoneBridge.setBool("prefixControl", false);
+				check("...but held when Baritone isn't reading chat", !CoordGuard.allowChat("#goto 1200 64 -3400"));
+				BaritoneBridge.setBool("prefixControl", true);
+				NNConfig.INSTANCE.askBeforeSending = true;
+				check("ask before sending holds an ordinary message", !CoordGuard.allowChat("hello there") && !CoordGuard.allowCommand("msg Hana hi")
+						&& CoordGuard.allowCommand("nn help"));
+				serverHeard.clear();
+				check("...and [Send] sends it", CoordGuard.allowChat("hello there") == false && CoordGuard.sendHeld());
+				NNConfig.INSTANCE.askBeforeSending = false;
 				client.setScreen(new BaritoneScreen());
 			}
-			case 1347 -> screenshot(client, "62_baritone_go");
+			case 1347 -> {
+				check("...the server got it once you said send", serverHeard.contains("hello there"));
+				screenshot(client, "62_baritone_go");
+			}
 			case 1349 -> ((BaritoneScreen) client.currentScreen).testPage(2);
 			case 1352 -> screenshot(client, "63_baritone_highway");
 			case 1354 -> {
-				client.setScreen(null);
+				// A trip from the screen, no commands typed: fill in x y z and press Go.
 				BlockPos to = client.player.getBlockPos().add(0, 0, 40);
 				tripFrom = client.player.getBlockPos();
-				check("a trip is handed to Baritone", BaritoneBridge.run("goto " + to.getX() + " " + to.getY() + " " + to.getZ()));
+				serverHeard.clear();
+				// The griefer is still standing nearby; that pause is right, but here we want to see it walk.
+				NNConfig.INSTANCE.tripStopForStrangers = false;
+				BaritoneScreen screen = (BaritoneScreen) client.currentScreen;
+				screen.testPage(1);
+				boolean typed = screen.testType("x", String.valueOf(to.getX())) && screen.testType("y (optional)", String.valueOf(to.getY()))
+						&& screen.testType("z", String.valueOf(to.getZ()));
+				check("a trip is handed to Baritone from its screen", typed && screen.testPress("Go") && client.currentScreen == null);
 			}
 			case 1356 -> {
+				check("...without anything reaching the server's chat", serverHeard.isEmpty());
 				log("Baritone goal: " + BaritoneBridge.goal() + ", pathing " + BaritoneBridge.isPathing());
 				check("...with the goal set", BaritoneBridge.goal().contains("z=" + (tripFrom.getZ() + 40)));
 			}
@@ -1381,6 +1411,8 @@ public final class SelfTest {
 				log("Moved " + String.format(java.util.Locale.ROOT, "%.1f", moved) + " blocks");
 				check("...and it walks there (" + (int) moved + " blocks so far)", moved >= 3);
 				BaritoneBridge.run("stop");
+				SmartTravel.stop();
+				NNConfig.INSTANCE.tripStopForStrangers = true;
 				HighwayRoam.axis = HighwayRoam.AXES[0];
 				HighwayRoam.elytra = false;
 				HighwayRoam.distance = 300;
@@ -1393,8 +1425,10 @@ public final class SelfTest {
 				check("...towards a point on the highway", BaritoneBridge.goal().contains(HighwayRoam.target().split(", ")[0]));
 				HighwayRoam.stop("test over");
 				check("...and stops", !HighwayRoam.active());
-				IntegratedServer server = client.getServer();
-				server.execute(() -> server.getCommandManager().parseAndExecute(server.getCommandSource(), "tp @a 0.5 -60 0.5 -90 0"));
+				BaritoneBridge.run("stop");
+				tp(client, "0.5 -60 0.5");
+				// Now every button on the Baritone screen, clicked like a mouse (the main steps wait meanwhile).
+				baritoneStep = 1;
 			}
 			// ---- A real disconnect, by "another mod" (this test): recorded with who did it and who was near ----
 			// ---- The event log: the griefer's fight earlier in this test, read back ----
@@ -1452,6 +1486,13 @@ public final class SelfTest {
 
 	private static BlockPos waterAt;
 	private static BlockPos tripFrom;
+	/** Where the Baritone button walk-through is (0 when it isn't running). */
+	private static int baritoneStep;
+	/** When the last Baritone button was pressed, for steps that must wait a while by the clock. */
+	private static long baritonePressed;
+	/** Where the test wheat was planted (x of the first of three, and z). */
+	private static int wheatX, wheatZ;
+	private static final List<String> serverHeard = new java.util.concurrent.CopyOnWriteArrayList<>();
 
 	/** For the radar test: lets a chunk be old again, though the test marked it fresh first. */
 	private static void unmine(ChunkTrails trails, String dim, int x, int z) {
@@ -1687,6 +1728,247 @@ public final class SelfTest {
 			me.timeUntilRegen = 0;
 			me.damage(me.getEntityWorld(), me.getEntityWorld().getDamageSources().playerAttack(griefer), amount);
 		});
+	}
+
+	private static void tp(MinecraftClient client, String where) {
+		IntegratedServer server = client.getServer();
+		server.execute(() -> server.getCommandManager().parseAndExecute(server.getCommandSource(), "tp @a " + where + " -90 0"));
+	}
+
+	/**
+	 * Every button, switch and box on the Baritone screen, pressed the way a mouse click does, each checked against
+	 * what Baritone is really doing afterwards, and nothing typed into chat or sent to the server all the while.
+	 */
+	private static void baritoneButtons(MinecraftClient client) {
+		int s = baritoneStep++;
+		BaritoneScreen b = client.currentScreen instanceof BaritoneScreen screen ? screen : null;
+		Ledger ledger = NaughtyOrNiceClient.INSTANCE.ledger;
+		var p = client.player;
+		switch (s) {
+			case 1 -> {
+				log("Baritone: every button on its screen");
+				serverHeard.clear();
+				NNConfig.INSTANCE.tripStopForStrangers = false;
+				client.setScreen(new BaritoneScreen());
+			}
+			case 4 -> {
+				boolean ok = b.testPress("Do") && b.testPageShown() == 1;
+				ok &= b.testPress("Highway roam") && b.testPageShown() == 2;
+				ok &= b.testPress("Settings") && b.testPageShown() == 3;
+				ok &= b.testPress("Go to…") && b.testPageShown() == 0;
+				check("its four pages open from their buttons", ok);
+			}
+			// ---- Go to…: save a spot, find it, go there, remove it ----
+			case 6 -> {
+				b.testType("Name this spot, e.g. Home", "NN test spot");
+				b.testPress("Save where I am");
+				check("Save where I am saves a spot (" + b.testStatus() + ")",
+						Destinations.waypoints(ledger).stream().anyMatch(w -> w.name.equals("NN test spot") && w.x == p.getBlockX() && w.z == p.getBlockZ()));
+				int kinds = Destinations.Kind.values().length;
+				boolean filtered = b.testPress("Show:") && !b.testHas("Show: everything");
+				for (int i = 0; i < kinds; i++) b.testPress("Show:");
+				check("the Show filter goes through every kind and back", filtered && b.testHas("Show: everything"));
+				b.testType("Search places", "NN test spot");
+				tp(client, "0.5 -60 30.5");
+			}
+			case 16 -> {
+				check("its row's Go sets off", b.testRow("NN test spot", false) && client.currentScreen == null);
+			}
+			case 19 -> {
+				log("Goal: " + BaritoneBridge.goal());
+				check("...for the saved spot", BaritoneBridge.goal().contains("x=0,y=-60,z=0"));
+			}
+			case 40 -> {
+				double left = Math.hypot(p.getX() - 0.5, p.getZ() - 0.5);
+				check("...and walks there (" + (int) left + " blocks left of 30)", left < 22);
+				SmartTravel.stop();
+				client.setScreen(new BaritoneScreen());
+			}
+			case 43 -> {
+				b.testPress("Go to…");
+				b.testType("Search places", "NN test spot");
+			}
+			case 46 -> check("its × removes the spot", b.testRow("NN test spot", true)
+					&& Destinations.waypoints(ledger).stream().noneMatch(w -> w.name.equals("NN test spot")));
+			// ---- Do: filling in where to go ----
+			case 48 -> {
+				b.testPress("Do");
+				b.testPress("Use my position");
+				check("Use my position fills in where you are", String.valueOf(p.getBlockX()).equals(b.testField("x"))
+						&& String.valueOf(p.getBlockY()).equals(b.testField("y (optional)")) && String.valueOf(p.getBlockZ()).equals(b.testField("z")));
+				client.keyboard.setClipboard("meet me at 120 -60 -45");
+				b.testPress("Paste coordinates");
+				check("Paste coordinates reads the clipboard", "120".equals(b.testField("x")) && "-60".equals(b.testField("y (optional)"))
+						&& "-45".equals(b.testField("z")));
+				b.testPress("Latest place given away");
+				String place = b.testStatus();
+				check("Latest place given away (" + place + ")", place.startsWith("Filled in") || place.startsWith("Nobody has"));
+				b.testPress("Latest trail's far end");
+				String trail = b.testStatus();
+				check("Latest trail's far end (" + trail + ")", trail.startsWith("Filled in") || trail.startsWith("No chunk trails"));
+				b.testType("x", "abc");
+				String goal = BaritoneBridge.goal();
+				b.testPress("Go");
+				check("Go with a bad number says so and goes nowhere", b.testStatus().startsWith("Type whole numbers") && client.currentScreen == b
+						&& BaritoneBridge.goal().equals(goal));
+			}
+			// ---- Do: follow, mine, explore, farm, pause, resume, stop ----
+			case 50 -> {
+				b.testType("player name", GRIEFER);
+				b.testPress("Follow them");
+			}
+			case 56 -> {
+				check("Follow them follows (" + b.testStatus() + ")", BaritoneBridge.processActive("getFollowProcess"));
+				b.testPress("Stop");
+			}
+			case 59 -> {
+				check("Stop stops following", !BaritoneBridge.processActive("getFollowProcess"));
+				b.testType("block, e.g. diamond_ore", "Dirt");
+				b.testPress("Mine it");
+			}
+			case 65 -> {
+				check("Mine it mines (" + b.testStatus() + ")", BaritoneBridge.processActive("getMineProcess"));
+				b.testPress("Stop");
+			}
+			case 68 -> {
+				check("Stop stops mining", !BaritoneBridge.processActive("getMineProcess"));
+				b.testPress("Explore");
+			}
+			case 74 -> {
+				check("Explore explores (" + b.testStatus() + ")", BaritoneBridge.processActive("getExploreProcess"));
+				b.testPress("Pause");
+			}
+			case 80 -> {
+				check("Pause stops it moving (" + b.testStatus() + ")", !BaritoneBridge.isPathing() && b.testStatus().equals("Paused"));
+				b.testPress("Resume");
+			}
+			case 88 -> {
+				check("Resume carries on exploring", BaritoneBridge.processActive("getExploreProcess") && b.testStatus().equals("Going again"));
+				b.testPress("Stop");
+			}
+			case 91 -> {
+				check("Stop stops exploring", !BaritoneBridge.processActive("getExploreProcess"));
+				b.testPress("Farm nearby");
+				baritonePressed = System.currentTimeMillis();
+			}
+			case 115 -> {
+				// Baritone takes a moment to give up; the screen notices as soon as it does.
+				if (System.currentTimeMillis() - baritonePressed < 4000) {
+					baritoneStep--;
+					return;
+				}
+				log("Farm with no crops: " + b.testStatus() + ", active " + BaritoneBridge.processActive("getFarmProcess"));
+				check("Farm nearby with nothing to farm says so (" + b.testStatus() + ")",
+						!BaritoneBridge.processActive("getFarmProcess") && b.testStatus().startsWith("Farming stopped: nothing"));
+				// Now some ripe wheat next to you.
+				IntegratedServer server = client.getServer();
+				int px = p.getBlockX(), pz = p.getBlockZ();
+				wheatX = px + 6;
+				wheatZ = pz;
+				server.execute(() -> {
+					// No wheat left over from an earlier run.
+					server.getCommandManager().parseAndExecute(server.getCommandSource(), "fill -50 -60 -50 50 -60 50 air replace wheat");
+					// Out of reach, so Baritone has to walk to it, as on a real farm.
+					for (int dx = 6; dx <= 8; dx++) {
+						for (String cmd : new String[] {"setblock " + (px + dx) + " -61 " + pz + " farmland", "setblock " + (px + dx) + " -60 " + pz + " wheat[age=7]"}) {
+							server.getCommandManager().parseAndExecute(server.getCommandSource(), cmd);
+						}
+					}
+				});
+			}
+			case 118 -> {
+				StringBuilder seen = new StringBuilder();
+				for (int dx = -2; dx <= 10; dx++) {
+					BlockPos at = BlockPos.ofFloored(p.getX() + dx, -60, p.getZ());
+					seen.append(at.getX()).append(':').append(client.world.getBlockState(at).getBlock().getTranslationKey().replace("block.minecraft.", "")).append(' ');
+				}
+				log("Before farming, at " + p.getBlockPos().toShortString() + ": " + seen + "; Baritone's scanner finds wheat at "
+						+ BaritoneBridge.scan(net.minecraft.block.Blocks.WHEAT));
+				b.testPress("Farm nearby");
+				baritonePressed = System.currentTimeMillis();
+			}
+			case 120, 122, 125, 130 -> log("Farming? active " + BaritoneBridge.processActive("getFarmProcess") + ", goal " + BaritoneBridge.goal()
+					+ ", at " + p.getBlockPos().toShortString() + ", Baritone's scanner finds wheat at " + BaritoneBridge.scan(net.minecraft.block.Blocks.WHEAT));
+			case 140 -> {
+				// Until it's done (or 20 s, if it never is).
+				long since = System.currentTimeMillis() - baritonePressed;
+				if (since < 2500 || since < 20_000 && BaritoneBridge.processActive("getFarmProcess")) {
+					baritoneStep--;
+					return;
+				}
+				log("Farm with wheat: " + b.testStatus() + ", active " + BaritoneBridge.processActive("getFarmProcess"));
+				int ripe = 0;
+				for (int dx = 0; dx < 3; dx++) {
+					var state = client.world.getBlockState(new BlockPos(wheatX + dx, -60, wheatZ));
+					if (state.isOf(net.minecraft.block.Blocks.WHEAT) && state.get(net.minecraft.block.CropBlock.AGE) == 7) ripe++;
+				}
+				check("Farm nearby walks over and harvests the wheat (" + ripe + " of 3 still ripe)", ripe == 0);
+				check("...and says so when it's done (" + b.testStatus() + ")", BaritoneBridge.processActive("getFarmProcess")
+						? b.testStatus().equals("Farming nearby") : b.testStatus().startsWith("Farming stopped: nothing"));
+				b.testPress("Stop");
+			}
+			case 143 -> {
+				check("Stop stops farming", !BaritoneBridge.processActive("getFarmProcess"));
+				b.testType("x", "600");
+				b.testType("y (optional)", "");
+				b.testType("z", "600");
+				b.testPress("Fly there by elytra");
+				check("the elytra button says it only works in the nether (" + b.testStatus() + ")",
+						b.testStatus().startsWith("Elytra flying only works in the nether") && !BaritoneBridge.goal().contains("x=600"));
+			}
+			// ---- Highway roam ----
+			case 146 -> {
+				b.testPress("Highway roam");
+				check("a highway is picked with its button", b.testPress("+Z") && HighwayRoam.axis.name().equals("+Z"));
+				boolean was = HighwayRoam.elytra;
+				b.testPress(was ? "Elytra ▸" : "Walk ▸");
+				boolean flipped = HighwayRoam.elytra != was;
+				b.testPress(HighwayRoam.elytra ? "Elytra ▸" : "Walk ▸");
+				check("Walk / Elytra switches and back", flipped && HighwayRoam.elytra == was);
+				boolean parkour = HighwayRoam.parkour;
+				b.testPress("Parkour jumps");
+				boolean parkourFlipped = HighwayRoam.parkour != parkour;
+				b.testPress("Parkour jumps");
+				check("its switches switch (parkour)", parkourFlipped && HighwayRoam.parkour == parkour);
+				if (HighwayRoam.stopForStrangers) b.testPress("Stop when a stranger shows up");
+				check("...and the stranger one", !HighwayRoam.stopForStrangers);
+				b.testType("here", "");
+				b.testType("blocks", "200");
+				b.testPress("Start roaming");
+			}
+			case 154 -> {
+				log("Roam: " + b.testStatus() + ", goal " + BaritoneBridge.goal() + ", distance " + HighwayRoam.distance);
+				check("Start roaming roams the +Z highway, 200 blocks", HighwayRoam.active() && HighwayRoam.distance == 200
+						&& BaritoneBridge.goal().contains("x=0") && BaritoneBridge.goal().contains("z="));
+				b.testPress("Stop");
+			}
+			case 157 -> {
+				check("Stop stops the roam", !HighwayRoam.active() && !BaritoneBridge.isPathing());
+				HighwayRoam.stopForStrangers = true;
+				HighwayRoam.axis = HighwayRoam.AXES[0];
+				// ---- Settings ----
+				b.testPress("Settings");
+				Boolean sprint = BaritoneBridge.bool("allowSprint");
+				b.testPress("Sprint");
+				boolean sprintFlipped = !java.util.Objects.equals(sprint, BaritoneBridge.bool("allowSprint"));
+				b.testPress("Sprint");
+				check("its Baritone switches switch Baritone (sprint)", sprint != null && sprintFlipped && sprint.equals(BaritoneBridge.bool("allowSprint")));
+				int health = NNConfig.INSTANCE.tripStopHealth;
+				b.testPress("Stop at");
+				boolean healthChanged = NNConfig.INSTANCE.tripStopHealth != health;
+				for (int i = 0; i < 8 && NNConfig.INSTANCE.tripStopHealth != health; i++) b.testPress("Stop at");
+				check("the low-health button goes round its choices", healthChanged && NNConfig.INSTANCE.tripStopHealth == health);
+				b.testPress("On trips: pause when a stranger");
+				check("the strangers switch switches", NNConfig.INSTANCE.tripStopForStrangers);
+			}
+			case 159 -> {
+				check("nothing went to the server's chat through all of it (" + serverHeard + ")", serverHeard.isEmpty());
+				client.setScreen(null);
+				NNConfig.save();
+				baritoneStep = 0;
+			}
+			default -> {}
+		}
 	}
 
 	private static void screenshot(MinecraftClient client, String name) {

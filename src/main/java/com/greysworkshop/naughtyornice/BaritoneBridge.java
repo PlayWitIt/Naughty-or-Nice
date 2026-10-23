@@ -43,6 +43,31 @@ public final class BaritoneBridge {
 		}
 	}
 
+	/** Whether one of Baritone's processes is running, by its getter, e.g. "getFollowProcess". */
+	public static boolean processActive(String getter) {
+		if (!present()) return false;
+		try {
+			Object process = Class.forName("baritone.api.IBaritone").getMethod(getter).invoke(baritone());
+			return Boolean.TRUE.equals(Class.forName("baritone.api.process.IBaritoneProcess").getMethod("isActive").invoke(process));
+		} catch (ReflectiveOperationException | LinkageError | RuntimeException e) {
+			return false;
+		}
+	}
+
+	/** For the self-test: what Baritone's own block scanner finds of {@code block} around you, as the farm uses it. */
+	static Object scan(net.minecraft.block.Block block) {
+		try {
+			Object b = baritone();
+			Object ctx = Class.forName("baritone.api.IBaritone").getMethod("getPlayerContext").invoke(b);
+			Object provider = Class.forName("baritone.api.BaritoneAPI").getMethod("getProvider").invoke(null);
+			Object scanner = Class.forName("baritone.api.IBaritoneProvider").getMethod("getWorldScanner").invoke(provider);
+			return Class.forName("baritone.api.cache.IWorldScanner").getMethod("scanChunkRadius", Class.forName("baritone.api.utils.IPlayerContext"),
+					java.util.List.class, int.class, int.class, int.class).invoke(scanner, ctx, java.util.List.of(block), 256, 10, 10);
+		} catch (ReflectiveOperationException | LinkageError | RuntimeException e) {
+			return "unreadable: " + e;
+		}
+	}
+
 	private static Object pathing() throws ReflectiveOperationException {
 		return Class.forName("baritone.api.IBaritone").getMethod("getPathingBehavior").invoke(baritone());
 	}
@@ -72,6 +97,21 @@ public final class BaritoneBridge {
 		Object settings = Class.forName("baritone.api.BaritoneAPI").getMethod("getSettings").invoke(null);
 		Field f = settings.getClass().getField(name);
 		return f.get(settings);
+	}
+
+	/**
+	 * What Baritone catches in chat ("#" unless changed), or null when it won't catch anything there (no Baritone, or
+	 * its chat control is off), so a message starting with it really would be sent.
+	 */
+	public static String chatPrefix() {
+		if (!present() || !Boolean.TRUE.equals(bool("prefixControl"))) return null;
+		try {
+			Object s = setting("prefix");
+			Object v = s.getClass().getField("value").get(s);
+			return v instanceof String p && !p.isEmpty() ? p : null;
+		} catch (ReflectiveOperationException | LinkageError | RuntimeException e) {
+			return null;
+		}
 	}
 
 	/** A true/false Baritone setting's value, or null if there's no such setting (or no Baritone). */

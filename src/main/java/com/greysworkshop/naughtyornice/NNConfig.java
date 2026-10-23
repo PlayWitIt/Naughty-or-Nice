@@ -96,6 +96,8 @@ public final class NNConfig {
 	public boolean pingAllCoords = false;
 	/** Hold your own chat message when it gives away coordinates or a base name, until you say send anyway. */
 	public boolean guardMyCoords = true;
+	/** Hold every chat message and whisper you send until you confirm it (off: the coordinate guard catches leaks). */
+	public boolean askBeforeSending = false;
 	/** Tell old land from fresh land and look for trails through it. */
 	public boolean chunkTrails = true;
 	/** Show the chunk-trail radar (J toggles it). */
