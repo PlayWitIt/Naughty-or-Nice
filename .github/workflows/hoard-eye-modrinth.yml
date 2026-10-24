@@ -1,0 +1,81 @@
+# Hoard Eye's repo has no Modrinth token of its own, so its Modrinth project is looked after from here:
+# run this by hand with a Hoard Eye release tag, and it makes the project (the first time) and uploads that release's jar.
+name: Publish Hoard Eye to Modrinth
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Hoard Eye release tag (e.g. v3.0.0)
+        required: true
+      game-versions:
+        description: Minecraft version(s) the jar is for (e.g. 1.21.11)
+        required: true
+      jar:
+        description: Which of the release's jars (e.g. hoard-eye-3.0.0+1.21.11.jar)
+        required: true
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    env:
+      TOKEN: ${{ secrets.MODRINTH_TOKEN }}
+      API: https://api.modrinth.com/v2
+      UA: PlayWitIt/Naughty-or-Nice (github actions)
+    steps:
+      - name: The PlayWit projects on Modrinth
+        run: |
+          for p in pp4L2nZU fIRk5dHk hoard-eye; do
+            curl -s -A "$UA" -H "Authorization: $TOKEN" "$API/project/$p" | jq -c '{slug, id, status, requested_status}' || true
+          done
+      - name: Make the Hoard Eye project if it isn't there
+        id: project
+        run: |
+          id=$(curl -s -A "$UA" -H "Authorization: $TOKEN" "$API/project/hoard-eye" | jq -r '.id // empty')
+          if [ -z "$id" ]; then
+            curl -sfL -o icon.png https://raw.githubusercontent.com/PlayWitIt/Hoard-Eye/main/src/main/resources/assets/hoardeye/icon.png
+            curl -sfL https://raw.githubusercontent.com/PlayWitIt/Hoard-Eye/main/README.md | sed '/^## Building/,$d' > body.md
+            jq -n --rawfile body body.md '{
+              slug: "hoard-eye", title: "Hoard Eye", project_type: "mod",
+              description: "Remembers what is in your containers, searches them, and walks you to what you need. Shulker previews too. Client-side.",
+              body: $body, categories: ["storage", "utility"], additional_categories: [],
+              client_side: "required", server_side: "unsupported", license_id: "MIT",
+              source_url: "https://github.com/PlayWitIt/Hoard-Eye", issues_url: "https://github.com/PlayWitIt/Hoard-Eye/issues",
+              initial_versions: [], is_draft: true}' > data.json
+            res=$(curl -s -A "$UA" -H "Authorization: $TOKEN" -F "data=<data.json;type=application/json" -F "icon=@icon.png;type=image/png" "$API/project")
+            echo "$res" | jq -c '{slug, id, status, error, description}'
+            id=$(echo "$res" | jq -r '.id // empty')
+            [ -n "$id" ] || exit 1
+          fi
+          echo "id=$id" >> "$GITHUB_OUTPUT"
+      - name: Get the jar
+        run: |
+          mkdir jars
+          gh release download "${{ inputs.tag }}" -R PlayWitIt/Hoard-Eye -p "${{ inputs.jar }}" -D jars
+          gh release view "${{ inputs.tag }}" -R PlayWitIt/Hoard-Eye --json name,body > release.json
+          echo "NAME=$(jq -r .name release.json)" >> "$GITHUB_ENV"
+          jar="${{ inputs.jar }}"; v="${jar#hoard-eye-}"; echo "VERSION=${v%.jar}" >> "$GITHUB_ENV"
+          { echo 'BODY<<END_OF_BODY'; jq -r .body release.json; echo END_OF_BODY; } >> "$GITHUB_ENV"
+        env:
+          GH_TOKEN: ${{ github.token }}
+      - name: Publish
+        uses: Kir-Antipov/mc-publish@v3.3
+        with:
+          modrinth-id: ${{ steps.project.outputs.id }}
+          modrinth-token: ${{ secrets.MODRINTH_TOKEN }}
+          files: jars/*.jar
+          name: ${{ env.NAME }}
+          version: ${{ env.VERSION }}
+          changelog: ${{ env.BODY }}
+          loaders: fabric
+          game-versions: ${{ inputs.game-versions }}
+          dependencies: fabric-api(required)
+          version-type: release
+      - name: Send a new project for review
+        run: |
+          status=$(curl -s -A "$UA" -H "Authorization: $TOKEN" "$API/project/${{ steps.project.outputs.id }}" | jq -r .status)
+          echo "status: $status"
+          if [ "$status" = "draft" ]; then
+            curl -s -A "$UA" -H "Authorization: $TOKEN" -H "Content-Type: application/json" -X PATCH \
+              -d '{"status":"processing"}' -w "submitted: HTTP %{http_code}\n" "$API/project/${{ steps.project.outputs.id }}"
+          fi
