@@ -225,6 +225,8 @@ public class NaughtyOrNiceClient implements ClientModInitializer {
 					.append(Text.literal(t.away == 0 || ModsPanel.streamSafe() ? "" : "The far end (away from spawn) is at " + end[0] + ", " + end[1] + ". ").formatted(Formatting.GRAY))
 					.append(Text.literal(NNConfig.INSTANCE.trailRadar ? "" : "[Show radar]").styled(st -> st.withColor(Formatting.AQUA).withUnderline(true)
 							.withClickEvent(new ClickEvent.RunCommand("/nn radar")))));
+			// A roam stops at the trail with this sound already.
+			if (!HighwayRoam.active()) Alerts.play(Alerts.Sound.TRAIL);
 		}
 	}
 
@@ -277,6 +279,7 @@ public class NaughtyOrNiceClient implements ClientModInitializer {
 	}
 
 	private void tick(MinecraftClient client) {
+		Alerts.tick();
 		UpdateCheck.tick(client);
 		PhoneAlerts.flush(false);
 		if (NNConfig.on()) ServerDetails.tick(client, ledger);
@@ -378,12 +381,12 @@ public class NaughtyOrNiceClient implements ClientModInitializer {
 				ModsPanel.toggle("Warn when a naughty player joins", "When someone on your Naughty list joins the server.", () -> c.warnNaughtyJoin, v -> c.warnNaughtyJoin = v),
 				ModsPanel.toggle("Warn when a naughty player is near", "When someone on your Naughty list comes into view.", () -> c.warnNaughtyNearby, v -> c.warnNaughtyNearby = v),
 				ModsPanel.toggle("Alert on threats against you", "A ping when someone threatens you or your base in chat.", () -> c.alertThreats, v -> c.alertThreats = v),
-				ModsPanel.toggle("Warning sound", "Play a low note with warnings.", () -> c.warnSounds, v -> c.warnSounds = v),
+				ModsPanel.toggle("Warning sound", "A sound with each alert, a different one for each kind. /nn sounds plays them all with their names.", () -> c.warnSounds, v -> c.warnSounds = v),
 				ModsPanel.section("On screen"),
 				ModsPanel.toggle("My coordinates", "x y z, facing, and the nether/overworld match in the bottom corner, so you don't need F3. "
 						+ "Hidden in stream-safe mode.", () -> c.showCoords, v -> c.showCoords = v),
 				ModsPanel.toggle("Trip bar", "While Baritone takes you somewhere: where to, how far, how long, how fast, at the top.", () -> c.tripBar, v -> c.tripBar = v),
-				ModsPanel.toggle("Coordinates on the right", "In the bottom-right corner, clear of the chat. Off: the bottom left.", () -> c.coordsRight, v -> c.coordsRight = v),
+				ModsPanel.toggle("Coordinates on the right", "In the bottom-right corner. Off: the bottom-left corner, under the chat.", () -> c.coordsRight, v -> c.coordsRight = v),
 				ModsPanel.toggle("Small coordinates", "Draw your coordinates a size smaller than the rest of the screen (still sharp).", () -> c.smallCoords, v -> c.smallCoords = v),
 				ModsPanel.toggle("Marks on nametags", "Green ✔, gold ? or red ✖ before listed players' names above their heads.", () -> c.nametagMarks, v -> c.nametagMarks = v),
 				ModsPanel.toggle("Marks in the tab list", "The same marks in the player list (Tab).", () -> c.tabListMarks, v -> c.tabListMarks = v),

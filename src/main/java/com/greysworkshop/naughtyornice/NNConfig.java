@@ -49,6 +49,8 @@ public final class NNConfig {
 	/** Warn when a Naughty-list player joins the server. */
 	public boolean warnNaughtyJoin = true;
 	public boolean warnSounds = true;
+	/** Notifications whose sound you've turned off, by name (see Alerts.Sound); their messages still come. */
+	public java.util.List<String> mutedSounds = new java.util.ArrayList<>();
 
 	// ---- Watching what people do ----
 	/** Put players who kill you on the Naughty list automatically (if they're not on a list yet). */
@@ -107,8 +109,10 @@ public final class NNConfig {
 	public boolean showCoords = true;
 	/** Draw them one GUI scale step smaller than the rest of the HUD. */
 	public boolean smallCoords = true;
-	/** In the bottom-right corner, clear of the chat; off: the bottom left. */
-	public boolean coordsRight = true;
+	/** In the bottom-right corner; off (the default): the bottom-left corner, under the chat. */
+	public boolean coordsRight = false;
+	/** Set once 1.15.1 has put them back in the bottom left, where they were seen. */
+	public boolean coordsBackLeft = false;
 	/** Set once 1.13.11 has turned the coordinates back on for everyone who'd lost them. */
 	public boolean coordsRestored = false;
 	/** A chat note when a new chunk trail is found. */
@@ -223,6 +227,7 @@ public final class NNConfig {
 		if (!Files.exists(file())) {
 			INSTANCE.coordsRestored = true;
 			INSTANCE.radarPutAway = true;
+			INSTANCE.coordsBackLeft = true;
 			return;
 		}
 		try (Reader reader = Files.newBufferedReader(file())) {
@@ -232,10 +237,16 @@ public final class NNConfig {
 				loaded.alertWords.removeIf(w -> w == null || w.isBlank());
 				if (loaded.topicPings == null) loaded.topicPings = new java.util.ArrayList<>();
 				if (loaded.dismissedSuggestions == null) loaded.dismissedSuggestions = new java.util.ArrayList<>();
+				if (loaded.mutedSounds == null) loaded.mutedSounds = new java.util.ArrayList<>();
 				if (loaded.circles != null) loaded.circles.removeIf(c -> c == null || c.id == null || c.id.isBlank() || c.name == null || c.name.isBlank());
 				if (loaded.circles == null || loaded.circles.isEmpty()) loaded.circles = Friends.defaultCircles();
 				if (loaded.skippedVersion == null) loaded.skippedVersion = "";
 				if (loaded.whisperCommand == null || loaded.whisperCommand.isBlank()) loaded.whisperCommand = "msg";
+				boolean backLeft = !loaded.coordsBackLeft;
+				if (backLeft) {
+					loaded.coordsRight = false;
+					loaded.coordsBackLeft = true;
+				}
 				boolean putAway = !loaded.radarPutAway;
 				if (putAway) {
 					loaded.trailRadar = false;
@@ -252,7 +263,7 @@ public final class NNConfig {
 					if (changed) ModsPanel.saveProfiles(profiles);
 				}
 				INSTANCE = loaded;
-				if (restore || putAway) save();
+				if (restore || putAway || backLeft) save();
 			}
 		} catch (IOException | RuntimeException e) {
 			NaughtyOrNiceClient.LOGGER.error("Could not read {}", file(), e);

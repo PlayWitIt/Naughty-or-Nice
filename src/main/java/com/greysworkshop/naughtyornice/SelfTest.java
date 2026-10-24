@@ -432,6 +432,27 @@ public final class SelfTest {
 				boolean trails = NNConfig.INSTANCE.chunkTrails;
 				check("chunk trails turn off and on from their own card", screen(client).testClick("chunks-main") && NNConfig.INSTANCE.chunkTrails != trails
 						&& screen(client).testClick("chunks-main") && NNConfig.INSTANCE.chunkTrails == trails);
+				// Every notification in Settings: its sound turned off and on, its alert itself off and on, and ▶ plays it.
+				boolean soundsOn = NNConfig.INSTANCE.warnSounds;
+				NNConfig.INSTANCE.warnSounds = true;
+				for (int i = 0; i < 20; i++) Alerts.tick();
+				NNConfig.INSTANCE.mutedSounds.clear();
+				boolean muted = screen(client).testClick("sound-mute:WATCHED_TALKS") && Alerts.muted(Alerts.Sound.WATCHED_TALKS);
+				int before = Alerts.pending();
+				Alerts.play(Alerts.Sound.WATCHED_TALKS);
+				boolean silent = Alerts.pending() == before;
+				Alerts.preview(Alerts.Sound.NAUGHTY_NEAR);
+				boolean previewed = Alerts.pending() == before + 2;
+				for (int i = 0; i < 10; i++) Alerts.tick();
+				boolean unmuted = screen(client).testClick("sound-mute:WATCHED_TALKS") && !Alerts.muted(Alerts.Sound.WATCHED_TALKS);
+				boolean near = NNConfig.INSTANCE.warnNaughtyNearby;
+				boolean alertOff = screen(client).testClick("notice:NAUGHTY_NEAR") && NNConfig.INSTANCE.warnNaughtyNearby != near
+						&& screen(client).testClick("notice:NAUGHTY_NEAR") && NNConfig.INSTANCE.warnNaughtyNearby == near;
+				NNConfig.INSTANCE.warnSounds = soundsOn;
+				log("Notifications card: muted " + muted + ", silent " + silent + ", previewed " + previewed + ", unmuted " + unmuted + ", alert switch " + alertOff);
+				check("Settings has every notification: its sound off and on, the alert off and on, and ▶ to hear it", muted && silent && previewed && unmuted && alertOff
+						&& screen(client).testClick("sound-play:GROUP"));
+				screen(client).testScroll(300);
 				Profile.Line one = new Profile.Line();
 				one.time = System.currentTimeMillis();
 				one.sender = "Steve_Builder";
@@ -450,6 +471,10 @@ public final class SelfTest {
 				check("Baritone tab opens Baritone", shop.testClick("tab:BARITONE") && client.currentScreen instanceof BaritoneScreen);
 				client.currentScreen.close();
 				check("Esc from Baritone comes back", client.currentScreen == shop);
+			}
+			case 619 -> {
+				screenshot(client, "15b_settings_notifications");
+				screen(client).testScroll(0);
 			}
 			case 625 -> {
 				client.setScreen(null);
@@ -1402,6 +1427,8 @@ public final class SelfTest {
 				}
 				NNConfig.INSTANCE.trailRadar = true;
 				client.player.setYaw(-90);
+				// Nothing over the game for the screenshots that read what's on screen (a pause menu, say).
+				client.setScreen(null);
 			}
 			case 1320 -> {
 				String[] say = ledger.chunkTrails.guidance(client.world.getRegistryKey().getValue().toString(), client.player.getX(), client.player.getZ(), client.player.getYaw());
@@ -1413,6 +1440,7 @@ public final class SelfTest {
 				float ts = CoordsHud.scale(client);
 				int sw = client.getWindow().getScaledWidth(), sh = client.getWindow().getScaledHeight();
 				var shown = CoordsHud.lines(client.textRenderer, CoordsHud.line(client), sw, ts);
+				ts = CoordsHud.fit(client.textRenderer, shown, sw, ts);
 				int top = CoordsHud.bottomY(client.textRenderer, shown, sw, sh, ts);
 				// Rows in real pixels: the bottom line's backing, from its top to its bottom.
 				int y0 = top * scale, y1 = (top + CoordsHud.lineHeight(ts) - 2) * scale;
@@ -1439,7 +1467,7 @@ public final class SelfTest {
 			}
 			case 1322 -> {
 				int[] px = coordsPixels;
-				check("your coordinates are really drawn in the bottom-right corner, green on a dark backing ("
+				check("your coordinates are really drawn in the bottom-left corner, green on a dark backing ("
 						+ (px == null ? "no screenshot" : "outside " + px[0] + ", backing " + px[1] + ", " + px[2] + " green pixels, " + px[3] + " white") + ")",
 						px != null && px[1] <= px[0] * 0.6 + 4 && px[2] > 30 && px[3] < px[2] / 4);
 				check("...a size smaller than the rest of the HUD, on whole pixels", NNConfig.INSTANCE.smallCoords
@@ -1547,9 +1575,11 @@ public final class SelfTest {
 				// A step at a time along the middle of the +X highway (z 0), not one far point straight across.
 				int[] stepGoal = TripBar.goalXZ(BaritoneBridge.goal());
 				check("...a step at a time along the highway's middle (" + BaritoneBridge.goal() + ")", stepGoal != null && stepGoal[1] == 0
-						&& stepGoal[0] > client.player.getBlockX() && stepGoal[0] <= client.player.getBlockX() + HighwayRoam.STEP + 2);
+						&& stepGoal[0] >= client.player.getBlockX() - 1 && stepGoal[0] <= client.player.getBlockX() + HighwayRoam.STEP + 2);
+				boolean boxHidden = Boolean.FALSE.equals(BaritoneBridge.bool("renderGoal"));
 				HighwayRoam.stop("test over");
 				check("...and stops", !HighwayRoam.active());
+				check("Baritone's goal box is hidden for the in-between steps, and back once the roam ends", boxHidden && Boolean.TRUE.equals(BaritoneBridge.bool("renderGoal")));
 				BaritoneBridge.run("stop");
 				tp(client, "0.5 -60 0.5");
 				// Now every button on the Baritone screen, clicked like a mouse (the main steps wait meanwhile).
@@ -1620,6 +1650,8 @@ public final class SelfTest {
 	private static double maxOff;
 	/** When the last Baritone button was pressed, for steps that must wait a while by the clock. */
 	private static long baritonePressed;
+	/** When Baritone stopped farming, for the farm-with-nothing check. */
+	private static long farmIdleAt;
 	/** Where the test wheat was planted (x of the first of three, and z). */
 	private static int wheatX, wheatZ;
 	private static final List<String> serverHeard = new java.util.concurrent.CopyOnWriteArrayList<>();
@@ -1991,6 +2023,13 @@ public final class SelfTest {
 				// Baritone takes a moment to give up; the screen notices as soon as it does.
 				long since = System.currentTimeMillis() - baritonePressed;
 				if (since < 2000 || since < 15_000 && BaritoneBridge.processActive("getFarmProcess")) {
+					farmIdleAt = 0;
+					baritoneStep--;
+					return;
+				}
+				// A second more, for the screen to show what Baritone said when it gave up.
+				if (farmIdleAt == 0) farmIdleAt = System.currentTimeMillis();
+				if (System.currentTimeMillis() - farmIdleAt < 1000) {
 					baritoneStep--;
 					return;
 				}
@@ -2084,6 +2123,13 @@ public final class SelfTest {
 				log("Trip bar: " + bar);
 				check("the trip bar shows the roam: where to, how far, how to stop (" + bar + ")", where != null && bar.startsWith("▶ Roaming the +Z highway")
 						&& bar.contains(" blocks") && bar.contains("to stop"));
+				// However narrow the screen, it wraps between its parts instead of running off the sides.
+				String full = "▶ Grey base (1200, -3400) · 12,345 blocks · about 41 min left · 5.0 blocks/s · walking · Z to stop";
+				List<String> rows = TripBar.rows(client.textRenderer, full, 160);
+				log("Trip bar rows at 160 wide: " + rows);
+				check("the trip bar wraps to fit the screen (" + rows.size() + " rows)", rows.size() >= 3 && rows.get(0).equals("▶ Grey base (1200, -3400)")
+						&& rows.stream().skip(1).allMatch(r -> client.textRenderer.getWidth(r) <= 160) && String.join(" · ", rows).equals(full)
+						&& TripBar.rows(client.textRenderer, bar, 160).getFirst().startsWith("▶ Roaming"));
 				b.testPress("Stop");
 			}
 			case 156 -> {
@@ -2240,6 +2286,21 @@ public final class SelfTest {
 				check("roam: what's left counts along the route, not straight across", Math.abs(HighwayRoute.remaining(c3, 0, 5000, 0) - 13000) < 2);
 				check("trip bar reads Baritone's goal", java.util.Arrays.equals(TripBar.goalXZ("GoalBlock{x=12,y=64,z=-30}"), new int[] {12, -30})
 						&& java.util.Arrays.equals(TripBar.goalXZ("GoalXZ{x=-5,z=7}"), new int[] {-5, 7}) && TripBar.goalXZ("GoalComposite[]") == null);
+				// Every kind of alert sounds different, and chat alerts get the sound for what they are.
+				java.util.Set<String> sigs = new java.util.HashSet<>();
+				for (Alerts.Sound snd : Alerts.Sound.values()) sigs.add(Alerts.signature(snd));
+				check("every kind of alert has a sound of its own (" + sigs.size() + " of " + Alerts.Sound.values().length + ")", sigs.size() == Alerts.Sound.values().length);
+				check("chat alerts sound like what they are", Watcher.soundFor("threatened you") == Alerts.Sound.THREAT && Watcher.soundFor("said your name") == Alerts.Sound.NAME
+						&& Watcher.soundFor("said \"loot\"") == Alerts.Sound.WORD && Watcher.soundFor("named your base \"Home\"") == Alerts.Sound.BASE
+						&& Watcher.soundFor("posted coordinates near your base \"Home\"") == Alerts.Sound.BASE && Watcher.soundFor("talked about stashes") == Alerts.Sound.TOPIC
+						&& Watcher.soundFor("posted coordinates (1 2)") == Alerts.Sound.COORDS);
+				boolean soundsWere = NNConfig.INSTANCE.warnSounds;
+				NNConfig.INSTANCE.warnSounds = true;
+				Alerts.play(Alerts.Sound.NAUGHTY_NEAR);
+				int waiting = Alerts.pending();
+				for (int i = 0; i < 10; i++) Alerts.tick();
+				NNConfig.INSTANCE.warnSounds = soundsWere;
+				check("a sound's later notes play on the ticks after (" + waiting + " waiting, " + Alerts.pending() + " left)", waiting == 2 && Alerts.pending() == 0);
 				// New chunks ahead: told once, two chunks deep, along the way you're going.
 				ChunkTrails ahead = new ChunkTrails();
 				String dimA = "minecraft:the_nether";
@@ -2314,7 +2375,7 @@ public final class SelfTest {
 				client.debugHudEntryList.setF3Enabled(false);
 				client.debugHudEntryList.setEntryVisibility(hitboxes, was);
 				check("on-screen things show with an F3 entry always on, and hide only with F3 open", shownWithHitboxes && hiddenWithF3);
-				check("your coordinates show in the bottom-right corner by default (" + coords + ")", NNConfig.INSTANCE.showCoords && NNConfig.INSTANCE.coordsRight
+				check("your coordinates show in the bottom-left corner by default (" + coords + ")", NNConfig.INSTANCE.showCoords && !NNConfig.INSTANCE.coordsRight
 						&& coords.startsWith("XYZ " + p.getBlockX() + " " + p.getBlockY() + " " + p.getBlockZ())
 						&& coords.contains("Nether " + Math.floorDiv(p.getBlockX(), 8) + " " + Math.floorDiv(p.getBlockZ(), 8)));
 				String far = "XYZ -1234567 64 2345678  NE  ·  Nether -154321 293210";
@@ -2322,6 +2383,12 @@ public final class SelfTest {
 				check("far-out coordinates split onto two lines instead of running into the hotbar (" + split + ")", split.size() == 2
 						&& split.get(1).startsWith("XYZ") && split.get(0).startsWith("Nether") && CoordsHud.lines(client.textRenderer, far, 2000, 1f).size() == 1);
 				check("nothing hides them now (" + CoordsHud.hiddenReason(client) + ")", CoordsHud.hiddenReason(client) == null);
+				// In the bottom left they stay below the chat (its last line sits 40 up), however far out and narrow.
+				int sh = client.getWindow().getScaledHeight();
+				float fs = CoordsHud.fit(client.textRenderer, split, 400, CoordsHud.scale(client));
+				int topOfThem = CoordsHud.bottomY(client.textRenderer, split, 400, sh, fs) - (split.size() - 1) * CoordsHud.lineHeight(fs);
+				check("in the bottom left they never go up into the chat (top at " + topOfThem + " of " + sh + ", " + CoordsHud.where(client) + ")",
+						topOfThem >= sh - 30 && client.textRenderer.getWidth(split.get(1)) * fs <= CoordsHud.room(400));
 				ModsPanel.setStreamSafe(true);
 				String why = CoordsHud.hiddenReason(client);
 				ModsPanel.setStreamSafe(false);

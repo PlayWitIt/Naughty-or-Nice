@@ -48,9 +48,9 @@ It also has:
   Settings → **Screen size**: Small fits the most (about 900 wide), Medium is in between (about 680), Large is the
   biggest (about 540, never so big the panels don't fit). Whole-pixel scales are used where they're close, so text
   stays sharp.
-- **Your coordinates** show in green in the bottom-right corner, clear of the chat (x y z, facing, and the matching
-  nether or overworld spot), a size smaller than the rest of the HUD and still sharp, on a dark backing. Settings
-  move them to the bottom left (under the chat) or make them full size. Not showing? `/nn coords` says why and turns
+- **Your coordinates** show in green right down in the bottom-left corner, under the chat (x y z, facing, and the
+  matching nether or overworld spot), a size smaller than the rest of the HUD and still sharp, on a dark backing.
+  They never move up into the chat. Settings move them to the bottom-right corner or make them full size. Not showing? `/nn coords` says why and turns
   them back on.
 - Everything you set (here, in the Baritone screen, highway roam, Baritone's own settings, how the lists are sorted)
   is saved and stays until you change it.
@@ -314,7 +314,10 @@ press **B** (or `/nn baritone`). Naughty or Nice drives it through Baritone's ow
   otherwise.
 - **Trip bar**: whenever Baritone takes you somewhere (a place, a highway roam, or anything from the Do page), a bar at
   the top shows where to, how far is left (along the highways when the route is by them), about how long that is
-  from the speed you're actually making, how fast you're going, and how. Off in Settings (Trip bar).
+  from the speed you're actually making, how fast you're going, and how. It's small, like the coordinates, with where
+  to on its first row and the rest wrapped under it, so it never runs off the screen. Off in Settings (Trip bar).
+- Baritone's green goal box marks only where a trip ends: while it walks a highway in steps, the box is hidden, and
+  your own setting for it comes back when the trip ends.
 - **Z stops everything**: the trip, a highway roam, and Baritone. (Change it in Controls.)
 - **Safety on every trip**: it pauses and asks when someone who isn't a friend or on your Nice list shows up, and stops
   when your health gets low (Settings page).
@@ -422,6 +425,17 @@ sorted by **Most time online** and **Most kills**.
   near.
 - **Chat alerts:** a ping when someone says your name or any word you list in Settings, names one of your bases, or
   posts coordinates within 300 blocks of one (overworld or nether coordinates).
+
+## Sounds
+Each kind of alert has a sound of its own, so you can tell what happened without looking: a low triple bass for a
+Naughty-list player near you, a didgeridoo when one joins, a cow bell for a threat, guitar for your base, a rising
+pling for your name, a chime for new chunks ahead, an iron xylophone for old ones, banjo for a chunk trail, an
+alarm-like bit when a trip pauses for a stranger, a drum when it stops for low health, a pickup sound when you arrive,
+and a bell for each group at its own pitch. `/nn sounds` plays every one with its name.
+
+Settings → **Notifications** lists every one: ▶ plays its sound, **Sound / Silent** turns just that sound off (the
+message still comes), and **Alert / Off** turns the notification itself off where there's one switch for it (the rest
+say where they're set: alert words, topics, each player's or group's page). **All sounds** turns every sound off.
 
 ## Updates
 Once per game session, a little after you join a world, the mod says in chat if a newer version is out on GitHub,

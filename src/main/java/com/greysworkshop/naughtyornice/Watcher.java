@@ -575,14 +575,25 @@ public final class Watcher {
 		if (profile != null && profile.notifyChat && alert == null) {
 			Alerts.ping(Text.literal(name).formatted(verdictFormat(profile), Formatting.BOLD)
 					.append(Text.literal(whisper ? " whispered: " : ": ").formatted(Formatting.GRAY))
-					.append(Text.literal(text.length() > 100 ? text.substring(0, 100) + "…" : text).formatted(Formatting.WHITE)));
+					.append(Text.literal(text.length() > 100 ? text.substring(0, 100) + "…" : text).formatted(Formatting.WHITE)), Alerts.Sound.WATCHED_TALKS);
 		}
 		chatLogger.heard(profile, name, text, false, whisper, alert, now);
 		if (alert != null && fresh(name + "/" + alert, now)) {
 			Alerts.ping(Text.literal(name).formatted(profile != null && profile.verdict == Profile.Verdict.NAUGHTY ? Formatting.RED : Formatting.YELLOW, Formatting.BOLD)
 					.append(Text.literal(" " + alert + ": ").formatted(Formatting.YELLOW))
-					.append(Text.literal(text.length() > 80 ? text.substring(0, 80) + "…" : text).formatted(Formatting.WHITE)));
+					.append(Text.literal(text.length() > 80 ? text.substring(0, 80) + "…" : text).formatted(Formatting.WHITE)), soundFor(alert));
 		}
+	}
+
+	/** Each kind of chat alert has its own sound (see {@link Alerts.Sound}), from what {@link #alertFor} said it was. */
+	static Alerts.Sound soundFor(String alert) {
+		if (alert.startsWith("threatened")) return Alerts.Sound.THREAT;
+		if (alert.equals("said your name")) return Alerts.Sound.NAME;
+		if (alert.startsWith("said ")) return Alerts.Sound.WORD;
+		if (alert.startsWith("named your base") || alert.startsWith("posted coordinates near your base")) return Alerts.Sound.BASE;
+		if (alert.startsWith("talked about")) return Alerts.Sound.TOPIC;
+		if (alert.startsWith("posted coordinates")) return Alerts.Sound.COORDS;
+		return Alerts.Sound.WORD;
 	}
 
 	private static final Set<String> COMMON = Set.of("that", "this", "with", "have", "just", "what", "your", "from", "they", "were", "will",
@@ -864,7 +875,7 @@ public final class Watcher {
 				Alerts.warn(Text.literal("Naughty-list player ").formatted(Formatting.RED)
 						.append(Text.literal(profile.name).formatted(Formatting.RED, Formatting.BOLD))
 						.append(groupTag(profile))
-						.append(Text.literal(" is nearby (" + (int) distance + " blocks " + direction(client, player) + ")").formatted(Formatting.RED)));
+						.append(Text.literal(" is nearby (" + (int) distance + " blocks " + direction(client, player) + ")").formatted(Formatting.RED)), Alerts.Sound.NAUGHTY_NEAR);
 			} else if (arrived && alertGroup != null) {
 				Alerts.groupAlert(Text.literal(alertGroup + ": ").formatted(Formatting.AQUA)
 						.append(Text.literal(profile.name).formatted(Formatting.AQUA, Formatting.BOLD))
@@ -942,12 +953,12 @@ public final class Watcher {
 				// You asked for this player in particular: always said, with a ping.
 				Alerts.ping(Text.literal(profile.name).formatted(verdictFormat(profile), Formatting.BOLD)
 						.append(groupTag(profile))
-						.append(Text.literal(" logged in").formatted(Formatting.GRAY)));
+						.append(Text.literal(" logged in").formatted(Formatting.GRAY)), Alerts.Sound.WATCHED_JOINED);
 			} else if (profile.verdict == Profile.Verdict.NAUGHTY && config.warnNaughtyJoin) {
 				Alerts.warn(Text.literal("Naughty-list player ").formatted(Formatting.RED)
 						.append(Text.literal(profile.name).formatted(Formatting.RED, Formatting.BOLD))
 						.append(groupTag(profile))
-						.append(Text.literal(" joined the server").formatted(Formatting.RED)));
+						.append(Text.literal(" joined the server").formatted(Formatting.RED)), Alerts.Sound.NAUGHTY_JOINED);
 			} else if (alertGroup != null) {
 				int on = 0;
 				List<Profile> members = ledger.members(alertGroup);

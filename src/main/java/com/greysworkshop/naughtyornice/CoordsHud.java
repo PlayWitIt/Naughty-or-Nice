@@ -11,7 +11,7 @@ import java.util.List;
 import java.util.Locale;
 
 /**
- * Your coordinates in the bottom-right corner (or the bottom left, under the chat), so F3 isn't needed: x y z, which way you face, and the matching spot in the
+ * Your coordinates in the bottom-left corner under the chat (or the bottom right), so F3 isn't needed: x y z, which way you face, and the matching spot in the
  * nether (or the overworld, from the nether), in green, a size smaller than the rest of the HUD. On a dark backing so they read on snow and sand too, and split onto two
  * lines (then lifted above the hotbar) when they'd run into it. Hidden while F3 is open; in stream-safe mode a note
  * says they're hidden and how to bring them back, so they never just vanish. /nn coords says why they aren't showing.
@@ -37,7 +37,19 @@ public final class CoordsHud {
 			draw(context, client.textRenderer, List.of("Coordinates hidden: stream-safe (F7)"), w, h, s, true);
 			return;
 		}
-		draw(context, client.textRenderer, lines(client.textRenderer, line(client), w, s), w, h, s, false);
+		List<String> lines = lines(client.textRenderer, line(client), w, s);
+		draw(context, client.textRenderer, lines, w, h, fit(client.textRenderer, lines, w, s), false);
+	}
+
+	/**
+	 * In the bottom-left corner they never go up into the chat: if a line still won't fit beside the hotbar (a very
+	 * narrow window, coordinates in the millions), the text is drawn smaller instead.
+	 */
+	static float fit(TextRenderer tr, List<String> lines, int w, float s) {
+		if (NNConfig.INSTANCE.coordsRight) return s;
+		int widest = 0;
+		for (String l : lines) widest = Math.max(widest, tr.getWidth(l));
+		return widest * s <= room(w) ? s : Math.max(0.3f, room(w) / (float) widest);
 	}
 
 	/**
@@ -76,14 +88,18 @@ public final class CoordsHud {
 		}
 	}
 
-	/** Where a line of that width starts: in the bottom-right corner (by default), or the bottom-left under the chat. */
+	/** Where a line of that width starts: in the bottom-left corner under the chat (by default), or the bottom right. */
 	static int left(int textWidth, int screenWidth) {
 		return NNConfig.INSTANCE.coordsRight ? screenWidth - 4 - textWidth : 4;
 	}
 
-	/** The top of the bottom line: just above the screen's edge, or above the hotbar when a line would reach it. */
+	/**
+	 * The top of the bottom line: right down in the corner. On the right, lifted above the hotbar when a line would
+	 * reach it; on the left never, as that's where the chat is (see {@link #fit}).
+	 */
 	static int bottomY(TextRenderer tr, List<String> lines, int w, int h, float s) {
 		int bottom = h - lineHeight(s) - 1;
+		if (!NNConfig.INSTANCE.coordsRight) return bottom;
 		for (String l : lines) {
 			if (tr.getWidth(l) * s > room(w)) return bottom - 24;
 		}
@@ -103,6 +119,18 @@ public final class CoordsHud {
 		out.add(line.substring(cut + 5));
 		out.add(line.substring(0, cut));
 		return out;
+	}
+
+	/** Where they're drawn right now, in words, for /nn coords. */
+	public static String where(MinecraftClient client) {
+		int w = client.getWindow().getScaledWidth(), h = client.getWindow().getScaledHeight();
+		float s = scale(client);
+		List<String> lines = lines(client.textRenderer, line(client), w, s);
+		s = fit(client.textRenderer, lines, w, s);
+		int tw = (int) Math.ceil(client.textRenderer.getWidth(lines.getLast()) * s);
+		return String.format(java.util.Locale.ROOT, "in the bottom-%s corner (from x %d, y %d, on a %d by %d screen at GUI scale %d)",
+				NNConfig.INSTANCE.coordsRight ? "right" : "left", left(tw, w), bottomY(client.textRenderer, lines, w, h, s), w, h,
+				(int) Math.round(client.getWindow().getScaleFactor()));
 	}
 
 	/** Why the coordinates aren't on screen right now, or null when they are. */

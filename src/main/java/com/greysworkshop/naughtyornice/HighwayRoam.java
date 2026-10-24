@@ -8,10 +8,8 @@ import net.minecraft.util.Formatting;
 
 import java.util.ArrayList;
 import java.util.HashSet;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
-import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 
@@ -46,8 +44,8 @@ public final class HighwayRoam {
 	private static final Set<UUID> warned = new HashSet<>();
 	private static final Set<ChunkTrails.Trail> stoppedFor = new HashSet<>();
 	private static int idleSeconds;
-	/** Baritone's own settings as they were before the roam changed them, to put back after. */
-	private static final Map<String, Boolean> before = new LinkedHashMap<>();
+	/** Baritone's own settings the roam changes for its length (put back after, see {@link BaritoneBridge#override}). */
+	private static final String[] CHANGED = {"allowBreak", "allowPlace", "allowParkour", "allowParkourPlace", "assumeWalkOnLava"};
 
 	private HighwayRoam() {}
 
@@ -155,12 +153,13 @@ public final class HighwayRoam {
 		targetX = last.x();
 		targetZ = last.z();
 		// How to get through a damaged highway, remembering how Baritone had them.
-		before.clear();
-		set("allowBreak", c.roamBreak);
-		set("allowPlace", c.roamBridge);
-		set("allowParkour", c.roamParkour);
-		set("allowParkourPlace", c.roamParkour && c.roamBridge);
-		set("assumeWalkOnLava", c.roamLava);
+		BaritoneBridge.override("allowBreak", c.roamBreak);
+		BaritoneBridge.override("allowPlace", c.roamBridge);
+		BaritoneBridge.override("allowParkour", c.roamParkour);
+		BaritoneBridge.override("allowParkourPlace", c.roamParkour && c.roamBridge);
+		BaritoneBridge.override("assumeWalkOnLava", c.roamLava);
+		// A trip under way ends first, so its stop doesn't cancel what the roam sets off.
+		SmartTravel.stop();
 		legs = route;
 		leg = 0;
 		boolean ok = c.roamElytra ? BaritoneBridge.run("goal " + targetX + " " + targetZ) && BaritoneBridge.run("elytra") : startLeg(client);
@@ -169,7 +168,6 @@ public final class HighwayRoam {
 			legs = List.of();
 			return "Baritone didn't accept the trip (see its message in chat)";
 		}
-		SmartTravel.stop();
 		active = true;
 		paused = false;
 		warned.clear();
@@ -200,15 +198,9 @@ public final class HighwayRoam {
 		return "To " + last.x() + ", " + last.z() + ": " + way + "." + note;
 	}
 
-	private static void set(String setting, boolean value) {
-		Boolean was = BaritoneBridge.bool(setting);
-		if (was != null) before.put(setting, was);
-		BaritoneBridge.setBool(setting, value);
-	}
-
 	private static void restore() {
-		for (var e : before.entrySet()) BaritoneBridge.setBool(e.getKey(), e.getValue());
-		before.clear();
+		for (String name : CHANGED) BaritoneBridge.release(name);
+		BaritoneBridge.showGoal(true);
 	}
 
 	/** Sets Baritone off on the current leg. */
@@ -219,6 +211,8 @@ public final class HighwayRoam {
 			highwayY = h != null ? h : client.player.getBlockY();
 			return step(client, l);
 		}
+		// Getting on the highway is an in-between goal; the last leg's end is where you're going.
+		BaritoneBridge.showGoal(leg == legs.size() - 1);
 		return BaritoneBridge.run("goto " + l.x() + " " + l.z());
 	}
 
@@ -229,6 +223,8 @@ public final class HighwayRoam {
 		int[] p = HighwayRoute.point(l.axis(), next);
 		stepX = p[0];
 		stepZ = p[1];
+		// The box only when this step is the end of the whole roam.
+		BaritoneBridge.showGoal(leg == legs.size() - 1 && Math.abs(l.to() - next) < 1);
 		return BaritoneBridge.run("goto " + stepX + " " + highwayY + " " + stepZ);
 	}
 
@@ -264,12 +260,15 @@ public final class HighwayRoam {
 				warned.add(p.getUuid());
 				pause();
 				Alerts.warn(Text.literal("Paused: " + p.getGameProfile().name() + " is " + (int) p.distanceTo(client.player) + " blocks away. ").formatted(Formatting.RED)
-						.append(resumeButton()).append(Text.literal(" ")).append(stopButton()));
+						.append(resumeButton()).append(Text.literal(" ")).append(stopButton()), Alerts.Sound.STRANGER);
 			}
 		}
 		double px = client.player.getX(), pz = client.player.getZ();
 		if (c.roamElytra || legs.isEmpty()) {
-			if (Math.hypot(targetX - px, targetZ - pz) < 20) stop("reached " + target());
+			if (Math.hypot(targetX - px, targetZ - pz) < 20) {
+				Alerts.play(Alerts.Sound.ARRIVED);
+				stop("reached " + target());
+			}
 			return;
 		}
 		HighwayRoute.Leg l = legs.get(leg);
@@ -277,6 +276,7 @@ public final class HighwayRoam {
 		boolean done = l.onHighway() ? Math.abs(l.to() - HighwayRoute.along(l.axis(), px, pz)) < 16
 				: Math.hypot(l.x() - px, l.z() - pz) < (last ? 8 : HighwayRoute.ON);
 		if (done && last) {
+			Alerts.play(Alerts.Sound.ARRIVED);
 			stop("reached " + target());
 			return;
 		}
@@ -312,7 +312,7 @@ public final class HighwayRoam {
 						.withClickEvent(new ClickEvent.RunCommand("/nn roam follow " + end[0] + " " + end[1]))))
 				.append(Text.literal(" ")).append(resumeButton()).append(Text.literal(" ")).append(stopButton())
 				.append(WorldDownload.active() ? Text.empty() : Text.literal(" [Download this area]").styled(st -> st.withColor(Formatting.GREEN).withUnderline(true)
-						.withClickEvent(new ClickEvent.RunCommand("/nn download start")))));
+						.withClickEvent(new ClickEvent.RunCommand("/nn download start")))), Alerts.Sound.TRAIL);
 	}
 
 	/** Leaves the highway to follow a trail to its far end. */
