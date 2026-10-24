@@ -1301,7 +1301,29 @@ public final class SelfTest {
 				screenshot(client, "56_top_players");
 				check("Top players open a player's page", screen(client).testClick("top:2:Griefer_Gary") && screen(client).testSelected() == ledger.get(id(GRIEFER)));
 			}
-			case 1205 -> client.setScreen(new ShopScreen(ShopScreen.Tab.INTEL, null));
+			case 1204 -> client.setScreen(new ShopScreen(ShopScreen.Tab.SERVER, null));
+			case 1205 -> {
+				screenshot(client, "56b_server");
+				List<ServerDetails.Section> secs = ServerDetails.read(client, NaughtyOrNiceClient.INSTANCE);
+				java.util.function.Function<String, ServerDetails.Row> row = label -> secs.stream().flatMap(sec -> sec.rows().stream())
+						.filter(r -> r.label().equals(label)).findFirst().orElse(null);
+				log("Server tab: " + secs.stream().map(ServerDetails.Section::title).toList());
+				var soft = row.apply("Software");
+				check("the Server tab says what the server runs, here Fabric (" + (soft == null ? "no row" : soft.value()) + ")", soft != null && soft.value().equals("fabric"));
+				double tps = ServerDetails.tps(60_000);
+				check("it measures ticks per second from the server's clock (" + String.format(java.util.Locale.ROOT, "%.1f", tps) + ")", tps > 15 && tps <= 20);
+				var cycle = row.apply("Day and night");
+				check("it reads the day cycle game rule (" + (cycle == null ? "no row" : cycle.value()) + ")", cycle != null && cycle.sure() == ServerDetails.Sure.TOLD);
+				var dist = row.apply("View distance");
+				check("it has the server's view distance (" + (dist == null ? "no row" : dist.value()) + ")", dist != null && dist.value().matches("\\d+ chunks.*") && !dist.value().startsWith("0 "));
+				log("Plugins: " + secs.stream().filter(sec -> sec.title().startsWith("Plugins")).flatMap(sec -> sec.rows().stream()).map(r -> r.label() + " " + r.note()).toList());
+				check("your own mods' commands (/nn) aren't taken for the server's plugins", !ServerDetails.commands(client.getNetworkHandler()).contains("nn"));
+				check("a world with no plugins shows none", secs.stream().anyMatch(sec -> sec.title().startsWith("Plugins") && sec.rows().get(0).label().equals("None shown")));
+				String report = ServerDetails.report(client, NaughtyOrNiceClient.INSTANCE);
+				check("the server report has every section and the command list", report.contains("== Game rules ==") && report.contains("== Every command you can use ==")
+						&& report.contains("gamerule"));
+				client.setScreen(new ShopScreen(ShopScreen.Tab.INTEL, null));
+			}
 			case 1207 -> {
 				check("Intel lists places and topics", screen(client).testClick("intel-filter:PLACES"));
 				screenshot(client, "57_intel");
@@ -1385,9 +1407,30 @@ public final class SelfTest {
 				log("Radar says: " + (say == null ? "nothing" : say[0] + " / " + say[1]));
 				check("the radar finds the trail beside you and says how to follow it", say != null && say[0].startsWith("Trail:"));
 				screenshot(client, "59_trail_radar");
+				// What's really on screen in the bottom left, not just what the line would say.
+				int scale = (int) client.getWindow().getScaleFactor();
+				var shown = CoordsHud.lines(client.textRenderer, CoordsHud.line(client), client.getWindow().getScaledWidth());
+				int fy = (CoordsHud.bottomY(client.textRenderer, shown, client.getWindow().getScaledWidth(), client.getWindow().getScaledHeight()) + 3) * scale;
+				int lineW = client.textRenderer.getWidth(shown.getLast());
+				log("Coordinates on screen: " + shown + " at GUI scale " + scale);
+				coordsPixels = null;
+				net.minecraft.client.util.ScreenshotRecorder.takeScreenshot(client.getFramebuffer(), image -> {
+					try (image) {
+						int outside = luma(image.getColorArgb(0, fy)), backing = luma(image.getColorArgb(3 * scale, fy));
+						int bright = 0;
+						for (int x = 4 * scale; x < (4 + lineW) * scale && x < image.getWidth(); x++) {
+							for (int y = fy - 3 * scale; y < fy + 5 * scale; y++) if (luma(image.getColorArgb(x, y)) > 200) bright++;
+						}
+						coordsPixels = new int[] {outside, backing, bright};
+					}
+				});
 				client.player.setPitch(55);
 			}
 			case 1322 -> {
+				int[] px = coordsPixels;
+				check("your coordinates are really drawn in the bottom left, white on a dark backing ("
+						+ (px == null ? "no screenshot" : "outside " + px[0] + ", backing " + px[1] + ", " + px[2] + " white pixels") + ")",
+						px != null && px[1] <= px[0] && px[1] < 90 && px[2] > 40);
 				check("the chunks are drawn in the world (" + ChunkOverlay.shown() + " squares)", ChunkOverlay.shown() > 100);
 				screenshot(client, "59b_chunks_in_world");
 				client.player.setPitch(0);
@@ -1553,6 +1596,9 @@ public final class SelfTest {
 	private static int baritoneStep;
 	/** What Baritone had said before the every-setting round trip. */
 	private static int settingsMark;
+	/** Where the nether highway walk began, and how far it ever got from the highway's middle. */
+	private static BlockPos highwayFrom;
+	private static double maxOff;
 	/** When the last Baritone button was pressed, for steps that must wait a while by the clock. */
 	private static long baritonePressed;
 	/** Where the test wheat was planted (x of the first of three, and z). */
@@ -2103,7 +2149,71 @@ public final class SelfTest {
 			}
 			case 181 -> check("a mistyped command shows Baritone's error in red (" + b.testStatus() + ")", b.testStatusIsError() && b.testStatus().startsWith("Baritone:")
 					&& !BaritoneBridge.processActive("getMineProcess"));
-			case 183 -> {
+			case 182 -> {
+				// ---- Nether trips by highway: the route ----
+				java.util.function.BiFunction<double[], int[], List<HighwayRoute.Leg>> route = (from, to) -> HighwayRoute.plan(from[0], from[1], to[0], to[1]);
+				List<HighwayRoute.Leg> r1 = route.apply(new double[] {5000, 3}, new int[] {20000, 500});
+				check("route: along the +X highway, then off it (" + HighwayRoute.describe(r1, 5000, 3) + ")", r1.size() == 2 && r1.get(0).axis().name().equals("+X")
+						&& r1.get(0).x() == 20000 && r1.get(0).z() == 0 && !r1.get(1).onHighway());
+				// 1,000 back along +X to spawn and out along the diagonal beats digging 707 across to the diagonal.
+				List<HighwayRoute.Leg> r2 = route.apply(new double[] {1000, 0}, new int[] {15000, -15000});
+				check("route: back to spawn on +X, out along +X-Z (" + HighwayRoute.describe(r2, 1000, 0) + ")", r2.size() == 3 && r2.get(0).axis().name().equals("+X")
+						&& r2.get(1).axis().name().equals("+X-Z") && r2.get(1).x() == 15000 && r2.get(1).z() == -15000);
+				// Off to the side of a diagonal, far from spawn: straight across onto it.
+				List<HighwayRoute.Leg> r2b = route.apply(new double[] {10000, -9000}, new int[] {30000, -30000});
+				check("route: across onto the +X-Z diagonal first (" + HighwayRoute.describe(r2b, 10000, -9000) + ")", r2b.size() == 3 && !r2b.get(0).onHighway()
+						&& r2b.get(1).axis().name().equals("+X-Z") && r2b.get(0).x() == -r2b.get(0).z());
+				List<HighwayRoute.Leg> r3 = route.apply(new double[] {5000, 0}, new int[] {0, -8000});
+				check("route: +X in to spawn, then out along -Z (" + HighwayRoute.describe(r3, 5000, 0) + ")", r3.size() == 3 && r3.get(0).axis().name().equals("+X")
+						&& r3.get(1).axis().name().equals("-Z") && r3.get(1).z() == -8000);
+				check("route: somewhere near is just gone to", route.apply(new double[] {0, 0}, new int[] {100, 100}).isEmpty());
+				// ---- ...and a real one: a highway tunnel along +X with netherrack walls (easy to cut through). The test
+				// world is flat with no nether, so it's built here and trips are routed here for the test. ----
+				IntegratedServer server = client.getServer();
+				server.execute(() -> server.getCommandManager().parseAndExecute(server.getCommandSource(), "forceload add -16 -16 432 16"));
+			}
+			case 188 -> {
+				IntegratedServer server = client.getServer();
+				for (String cmd : new String[] {"fill -5 -61 -3 425 -56 3 minecraft:netherrack hollow", "tp @a 10.5 -60 0.5 -90 0"}) {
+					server.execute(() -> server.getCommandManager().parseAndExecute(server.getCommandSource(), cmd));
+				}
+			}
+			case 196 -> {
+				boolean was = NNConfig.INSTANCE.tripUseHighways;
+				NNConfig.INSTANCE.tripUseHighways = true;
+				SmartTravel.testRouteEverywhere = true;
+				// The griefer stands just outside the tunnel; that pause is right, but here we want to see it walk.
+				NNConfig.INSTANCE.tripStopForStrangers = false;
+				String said = SmartTravel.go(client, new Destinations.Destination(Destinations.Kind.BASE, "Grey base", "", 400, Integer.MIN_VALUE, 60, "", 0));
+				SmartTravel.testRouteEverywhere = false;
+				NNConfig.INSTANCE.tripUseHighways = was;
+				log("Nether trip: " + said + "; legs " + SmartTravel.testLegs() + "; goal " + BaritoneBridge.goal());
+				check("a nether trip takes the highway (" + said + ")", said.contains("along the +X highway") && SmartTravel.testLegs().size() == 2);
+				baritonePressed = System.currentTimeMillis();
+				highwayFrom = p.getBlockPos();
+				maxOff = 0;
+			}
+			case 198 -> {
+				// Walk for a while: it must keep to the highway (z -2..2), not cut across.
+				if (System.currentTimeMillis() - baritonePressed < 20_000) {
+					// The middle block is z 0, so its middle is z 0.5; the tunnel inside is 2.5 either side of that.
+					if (Math.abs(p.getZ() - 0.5) > maxOff) maxOff = Math.abs(p.getZ() - 0.5);
+					baritoneStep--;
+					return;
+				}
+				log("Along the highway: x " + highwayFrom.getX() + " -> " + p.getBlockX() + ", furthest off its middle " + String.format(java.util.Locale.ROOT, "%.1f", maxOff)
+						+ ", goal " + BaritoneBridge.goal());
+				check("...and keeps to it, along (" + (p.getBlockX() - highwayFrom.getX()) + " blocks) not across (furthest off " + (int) maxOff + ")",
+						p.getBlockX() - highwayFrom.getX() > 40 && maxOff <= 2.5);
+				SmartTravel.stop();
+				NNConfig.INSTANCE.tripStopForStrangers = true;
+				// Put the land back as it was, and you where you were.
+				IntegratedServer server = client.getServer();
+				for (String cmd : new String[] {"fill -5 -61 -3 425 -56 3 air", "fill -5 -61 -3 425 -61 3 grass_block", "tp @a 0.5 -60 0.5", "forceload remove all"}) {
+					server.execute(() -> server.getCommandManager().parseAndExecute(server.getCommandSource(), cmd));
+				}
+			}
+			case 204 -> {
 				check("nothing went to the server's chat through all of it (" + serverHeard + ")", serverHeard.isEmpty());
 				String coords = CoordsHud.line(client);
 				// An F3 entry set to always on (hitboxes) doesn't count as F3 open: the coordinates, chunk line and radar stay.
@@ -2119,12 +2229,28 @@ public final class SelfTest {
 				check("your coordinates show in the bottom left by default (" + coords + ")", NNConfig.INSTANCE.showCoords
 						&& coords.startsWith("XYZ " + p.getBlockX() + " " + p.getBlockY() + " " + p.getBlockZ())
 						&& coords.contains("Nether " + Math.floorDiv(p.getBlockX(), 8) + " " + Math.floorDiv(p.getBlockZ(), 8)));
+				String far = "XYZ -1234567 64 2345678  NE  ·  Nether -154321 293210";
+				var split = CoordsHud.lines(client.textRenderer, far, 400);
+				check("far-out coordinates split onto two lines instead of running into the hotbar (" + split + ")", split.size() == 2
+						&& split.get(1).startsWith("XYZ") && split.get(0).startsWith("Nether") && CoordsHud.lines(client.textRenderer, far, 2000).size() == 1);
+				check("nothing hides them now (" + CoordsHud.hiddenReason(client) + ")", CoordsHud.hiddenReason(client) == null);
+				ModsPanel.setStreamSafe(true);
+				String why = CoordsHud.hiddenReason(client);
+				ModsPanel.setStreamSafe(false);
+				check("when stream-safe hides them, it says so and how to undo it (" + why + ")", why != null && why.contains("F7"));
 				client.setScreen(null);
 				NNConfig.save();
 				baritoneStep = 0;
 			}
 			default -> {}
 		}
+	}
+
+	/** Brightness outside and on the coordinates' backing, and how many white text pixels; set by a screenshot. */
+	private static volatile int[] coordsPixels;
+
+	private static int luma(int argb) {
+		return (((argb >> 16) & 0xFF) * 3 + ((argb >> 8) & 0xFF) * 6 + (argb & 0xFF)) / 10;
 	}
 
 	private static void screenshot(MinecraftClient client, String name) {

@@ -13,6 +13,9 @@ import net.minecraft.network.packet.s2c.play.DeathMessageS2CPacket;
 import net.minecraft.network.packet.s2c.play.EntityDamageS2CPacket;
 import net.minecraft.network.packet.s2c.play.EntityStatusS2CPacket;
 import net.minecraft.network.packet.s2c.play.WorldEventS2CPacket;
+import net.minecraft.network.packet.s2c.play.GameJoinS2CPacket;
+import net.minecraft.network.packet.s2c.play.WorldTimeUpdateS2CPacket;
+import com.greysworkshop.naughtyornice.ServerDetails;
 import net.minecraft.network.packet.s2c.play.EntityAnimationS2CPacket;
 import net.minecraft.network.packet.s2c.play.EntitySpawnS2CPacket;
 import net.minecraft.network.packet.s2c.play.ExplosionS2CPacket;
@@ -178,5 +181,17 @@ public abstract class ClientPlayNetworkHandlerMixin {
 		NaughtyOrNiceClient mod = NaughtyOrNiceClient.INSTANCE;
 		if (client.world == null || mod == null) return;
 		Safe.run("watching block breaking", () -> mod.watcher.onBlockBreaking(client, client.world.getEntityById(packet.getEntityId()), packet.getPos()));
+	}
+
+	@Inject(method = "onGameJoin", at = @At("TAIL"))
+	private void naughtyornice$join(GameJoinS2CPacket packet, CallbackInfo ci) {
+		if (!NNConfig.on()) return;
+		Safe.run("reading the server's settings", () -> ServerDetails.onJoin(packet));
+	}
+
+	@Inject(method = "onWorldTimeUpdate", at = @At("TAIL"))
+	private void naughtyornice$time(WorldTimeUpdateS2CPacket packet, CallbackInfo ci) {
+		if (!NNConfig.on()) return;
+		Safe.run("reading the server's clock", () -> ServerDetails.onTime(packet));
 	}
 }

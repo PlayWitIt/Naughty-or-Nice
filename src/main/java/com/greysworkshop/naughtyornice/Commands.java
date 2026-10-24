@@ -74,6 +74,7 @@ public final class Commands {
 					if (!CoordGuard.sendHeld()) c.getSource().sendError(Text.literal("No message is being held."));
 					return 1;
 				}))
+				.then(literal("coords").executes(Commands::coords))
 				.then(literal("events").executes(c -> {
 					NaughtyOrNiceClient.INSTANCE.openLater(new EventScreen());
 					return 1;
@@ -118,6 +119,10 @@ public final class Commands {
 					NNConfig.save();
 					c.getSource().sendFeedback(Alerts.prefix().append(Text.literal("Chunk trail radar " + (NNConfig.INSTANCE.trailRadar ? "on (J toggles it)" : "off"))
 							.formatted(Formatting.GRAY)));
+					return 1;
+				}))
+				.then(literal("server").executes(c -> {
+					NaughtyOrNiceClient.INSTANCE.openLater(new ShopScreen(ShopScreen.Tab.SERVER, null));
 					return 1;
 				}))
 				.then(literal("intel").executes(c -> {
@@ -254,6 +259,33 @@ public final class Commands {
 		c.getSource().sendFeedback(Alerts.prefix().append(Text.literal(added
 				? profile.name + " is in the group " + name + " (" + mod.ledger.members(name).size() + " members)."
 				: profile.name + " is already in " + name + ".").formatted(Formatting.AQUA)));
+		return 1;
+	}
+
+	/** Says why the coordinates aren't showing, and turns them back on: the setting, and any profile for this server that turns it off. */
+	private static int coords(CommandContext<FabricClientCommandSource> c) {
+		MinecraftClient client = MinecraftClient.getInstance();
+		String reason = CoordsHud.hiddenReason(client);
+		NNConfig.INSTANCE.showCoords = true;
+		NNConfig.save();
+		int profiles = 0;
+		var entry = client.getCurrentServerEntry();
+		if (entry != null) {
+			List<ModsPanel.Profile> all = ModsPanel.loadProfiles();
+			String here = ModsPanel.server(entry.address);
+			for (ModsPanel.Profile p : all) {
+				if (p.servers.stream().map(ModsPanel::server).noneMatch(here::equals)) continue;
+				if (Boolean.FALSE.equals(p.switches.get(NaughtyOrNiceClient.MOD_ID + "/My coordinates"))) {
+					p.switches.put(NaughtyOrNiceClient.MOD_ID + "/My coordinates", true);
+					profiles++;
+				}
+			}
+			if (profiles > 0) ModsPanel.saveProfiles(all);
+		}
+		String said = reason == null ? "Your coordinates are on, in the bottom left." : "They weren't showing because " + reason;
+		if (reason != null && NNConfig.on() && !ModsPanel.streamSafe() && !client.options.hudHidden && !CoordsHud.f3Open(client)) said += " They're on now.";
+		if (profiles > 0) said += " A Mods panel profile for this server was turning them off each time you joined; it keeps them on now.";
+		c.getSource().sendFeedback(Alerts.prefix().append(Text.literal(said).formatted(Formatting.GRAY)));
 		return 1;
 	}
 }

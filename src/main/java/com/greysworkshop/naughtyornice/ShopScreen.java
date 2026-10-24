@@ -13,6 +13,7 @@ import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.entity.player.SkinTextures;
 import net.minecraft.text.Text;
 import net.minecraft.util.Util;
+import net.minecraft.client.gui.screen.ConfirmLinkScreen;
 import org.lwjgl.glfw.GLFW;
 
 import java.nio.file.Files;
@@ -39,7 +40,7 @@ import java.util.function.Consumer;
 public class ShopScreen extends Screen {
 	public enum Tab {
 		ALL("All"), NEARBY("Nearby"), ONLINE("Online"), OFFLINE("Offline"), FRIENDS("Friends"), NICE("Nice list"), LOOK("Look Into"), NAUGHTY("Naughty list"),
-		GROUPS("Groups"), ACTIVITY("Activity"), INTEL("Intel"), CHAT("Chat"), BARITONE("Baritone"), SETTINGS("Settings");
+		GROUPS("Groups"), ACTIVITY("Activity"), SERVER("Server"), INTEL("Intel"), CHAT("Chat"), BARITONE("Baritone"), SETTINGS("Settings");
 
 		final String label;
 
@@ -497,9 +498,9 @@ public class ShopScreen extends Screen {
 			query = q.trim();
 			scroll = 0;
 			cachedResults = null;
-			if (selected != null || tab == Tab.SETTINGS || tab == Tab.ACTIVITY) {
+			if (selected != null || tab == Tab.SETTINGS || tab == Tab.ACTIVITY || tab == Tab.SERVER) {
 				selected = null;
-				if (tab == Tab.SETTINGS || tab == Tab.ACTIVITY) tab = Tab.ALL;
+				if (tab == Tab.SETTINGS || tab == Tab.ACTIVITY || tab == Tab.SERVER) tab = Tab.ALL;
 			}
 		});
 		addDrawableChild(search);
@@ -1149,6 +1150,7 @@ public class ShopScreen extends Screen {
 		context.fill(0, 0, width, height, PAGE);
 		if (tab == Tab.SETTINGS) renderSettings(context, mouseX, mouseY);
 		else if (tab == Tab.ACTIVITY && selected == null) renderActivity(context, mouseX, mouseY);
+		else if (tab == Tab.SERVER && selected == null) renderServer(context, mouseX, mouseY);
 		else if (tab == Tab.INTEL && selected == null) renderIntel(context, mouseX, mouseY);
 		else if (selected != null) renderDetail(context, mouseX, mouseY);
 		else if (tab == Tab.CHAT) renderChat(context, mouseX, mouseY);
@@ -1267,9 +1269,9 @@ public class ShopScreen extends Screen {
 		if (total > width - 12) compact = true;
 		for (Tab t : Tab.values()) {
 			String label = tabLabel(t, compact);
-			int w = textRenderer.getWidth(label) + 8;
 			boolean active = t == tab && (selected == null || t == Tab.SETTINGS);
 			if (t == Tab.CHAT && !active && mod.chatLogger.feedVersion() != chatSeen && !mod.chatLogger.feed().isEmpty()) label += " •";
+			int w = textRenderer.getWidth(label) + 8;
 			boolean hover = over(mouseX, mouseY, tx, HEADER + 1, w, TABS - 2);
 			if (active || hover) context.drawStrokedRectangle(tx, HEADER + 1, w, TABS - 2, active ? WHITE : 0xFFAAAAAA);
 			text(context, label, tx + 4, HEADER + 4, WHITE);
@@ -1291,6 +1293,7 @@ public class ShopScreen extends Screen {
 				case LOOK -> "Look";
 				case GROUPS -> "Groups";
 				case ACTIVITY -> "Activity";
+				case SERVER -> "Server";
 				case INTEL -> "Intel";
 				case CHAT -> "Chat";
 				case BARITONE -> "Baritone";
@@ -1960,7 +1963,7 @@ public class ShopScreen extends Screen {
 
 	private double maxScroll() {
 		if (selected == null && tab == Tab.CHAT) return chatMaxScroll;
-		int top = selected != null || tab == Tab.SETTINGS || tab == Tab.ACTIVITY || tab == Tab.INTEL ? BODY : BODY + 17;
+		int top = selected != null || tab == Tab.SETTINGS || tab == Tab.ACTIVITY || tab == Tab.SERVER || tab == Tab.INTEL ? BODY : BODY + 17;
 		return Math.max(0, contentHeight - (height - top));
 	}
 
@@ -4168,7 +4171,7 @@ public class ShopScreen extends Screen {
 		options.add(new Option("Death recap", "On the death screen: who hit you in your last 30 seconds, with what, the totems you popped and your last few hits, "
 				+ "with a button to save the fight.", () -> c.deathRecap, v -> c.deathRecap = v));
 		options.add(new Option("My coordinates", "Your x y z, which way you face, and the matching nether (or overworld) spot in the bottom "
-				+ "left, so you don't need F3. Hidden while stream-safe mode is on.", () -> c.showCoords, v -> c.showCoords = v));
+				+ "left, so you don't need F3. Hidden while stream-safe mode is on. Not showing? Type /nn coords.", () -> c.showCoords, v -> c.showCoords = v));
 		options.add(new Option("Note new chunk trails in chat", "Where a new trail is, which way it runs, and its far end.", () -> c.trailAlerts, v -> c.trailAlerts = v));
 		options.add(new Option("Ping on any coordinates", "A ping whenever anyone posts coordinates. They're always listed on the Intel tab either way.",
 				() -> c.pingAllCoords, v -> c.pingAllCoords = v));
@@ -5108,6 +5111,143 @@ public class ShopScreen extends Screen {
 				text(context, r.text(), x + 6, ty, color);
 			}
 		}
+	}
+
+
+	/** The Server tab's sections, read at most once a second (the registries and command list aren't free to walk). */
+	private List<ServerDetails.Section> serverSections;
+	private long serverReadAt;
+
+	private void renderServer(DrawContext context, int mouseX, int mouseY) {
+		int w = Math.min(900, width - 16);
+		int x = (width - w) / 2;
+		int y0 = BODY + 8 - (int) scroll;
+		int y = y0;
+		context.enableScissor(0, BODY, width, height);
+		var h = client.getNetworkHandler();
+		String name = mod.ledger.key() == null ? "this world" : Sharing.placeName(mod.ledger.key());
+		big(context, "Server: " + name, x, y, TEXT, 1.4f);
+		y += 18;
+		if (h == null || client.world == null) {
+			wrapped(context, "Join a server to see everything it shows about itself.", x, y, w, MUTED, 2);
+			context.disableScissor();
+			contentHeight = 40;
+			return;
+		}
+		if (serverSections == null || System.currentTimeMillis() - serverReadAt > 1000) {
+			serverSections = Safe.get("reading the server", () -> ServerDetails.read(client, mod), List.of());
+			serverReadAt = System.currentTimeMillis();
+		}
+		y = wrapped(context, "Everything this server shows a player: what it runs, how well it's running, its world settings and rules, "
+				+ "and the plugins its commands give away. Nothing is sent to it to find out.", x, y, w, MUTED, 3) + 4;
+		// Legend, then the actions.
+		int lx = x;
+		for (ServerDetails.Sure sure : ServerDetails.Sure.values()) {
+			context.fill(lx, y + 2, lx + 5, y + 7, sureColor(sure));
+			String label = switch (sure) {
+				case TOLD -> "the server says so";
+				case SEEN -> "seen happening";
+				case UNKNOWN -> "can't be known from here";
+			};
+			text(context, label, lx + 8, y, MUTED);
+			lx += 8 + textRenderer.getWidth(label) + 14;
+		}
+		int ax = x + w;
+		ax -= textRenderer.getWidth("Save report");
+		link(context, mouseX, mouseY, ax, y, "Save report", "server-save", () -> {
+			try {
+				Path file = ServerDetails.save(client, mod);
+				flash("Saved " + file.getFileName(), NICE, null);
+				Util.getOperatingSystem().open(file.getParent());
+			} catch (java.io.IOException e) {
+				flash("Couldn't save the report: " + e.getMessage(), NAUGHTY, null);
+			}
+		});
+		ax -= 14 + textRenderer.getWidth("Copy report");
+		link(context, mouseX, mouseY, ax, y, "Copy report", "server-copy", () -> {
+			client.keyboard.setClipboard(ServerDetails.report(client, mod));
+			flash("Copied everything about this server", NICE, null);
+		});
+		y += 16;
+
+		// Three tiles: ticks per second, players, your ping.
+		int tileW = (w - 12) / 3;
+		double tps = ServerDetails.tps(12_000);
+		statTile(context, x, y, tileW, "Ticks per second", tps < 0 ? "measuring…" : String.format(Locale.ROOT, "%.1f / 20", tps),
+				tps < 0 ? "a few seconds after joining" : ServerDetails.lag(tps));
+		var info = h.getServerInfo();
+		statTile(context, x + tileW + 6, y, tileW, "Players", h.getListedPlayerListEntries().size() + (info != null && info.players != null ? " / " + info.players.max() : ""),
+				"on the tab list now");
+		var me = client.player == null ? null : h.getPlayerListEntry(client.player.getUuid());
+		statTile(context, x + 2 * (tileW + 6), y, w - 2 * (tileW + 6), "Your ping", me == null ? "-" : me.getLatency() + " ms", "as the server reports it");
+		y += 52;
+
+		// The sections in two columns when there's room, each card under the shorter column.
+		int cols = w >= 600 ? 2 : 1;
+		int colW = (w - (cols - 1) * 8) / cols;
+		int[] colY = new int[cols];
+		java.util.Arrays.fill(colY, y);
+		for (ServerDetails.Section sec : serverSections) {
+			int c = cols == 2 && colY[1] < colY[0] ? 1 : 0;
+			int cx = x + c * (colW + 8);
+			colY[c] = serverCard(context, mouseX, mouseY, sec, cx, colY[c], colW) + 8;
+		}
+		y = Math.max(colY[0], cols == 2 ? colY[1] : 0);
+		context.disableScissor();
+		contentHeight = y - y0 + 10;
+		scrollbar(context, BODY);
+	}
+
+	/** One section as a card: a title, then a row per thing, with what backs it as a coloured mark. Returns the y after it. */
+	private int serverCard(DrawContext context, int mouseX, int mouseY, ServerDetails.Section sec, int x, int y, int w) {
+		int labelW = Math.min(130, w / 3);
+		int valueX = x + 10 + labelW + 6;
+		int valueW = x + w - 10 - valueX;
+		// Lay out first, to know the height.
+		List<List<net.minecraft.text.OrderedText>> notes = new ArrayList<>();
+		int hgt = 24;
+		for (ServerDetails.Row r : sec.rows()) {
+			List<net.minecraft.text.OrderedText> lines = r.note().isEmpty() ? List.of() : textRenderer.wrapLines(Text.literal(r.note()), valueW);
+			if (lines.size() > 3) lines = lines.subList(0, 3);
+			notes.add(lines);
+			hgt += Math.max(11, (r.value().isEmpty() ? 0 : 11) + lines.size() * 10) + 2;
+		}
+		roundedBorder(context, x, y, w, hgt, CARD, BORDER);
+		context.drawText(textRenderer, Text.literal(sec.title()).styled(st -> st.withBold(true)), x + 10, y + 8, TEXT, false);
+		int ry = y + 24;
+		for (int i = 0; i < sec.rows().size(); i++) {
+			ServerDetails.Row r = sec.rows().get(i);
+			List<net.minecraft.text.OrderedText> lines = notes.get(i);
+			context.fill(x + 4, ry + 2, x + 7, ry + 6, sureColor(r.sure()));
+			textTrim(context, r.label(), x + 10, ry, labelW, MUTED);
+			int ly = ry;
+			if (!r.value().isEmpty()) {
+				boolean warn = r.value().startsWith("Anticheat") || r.value().startsWith("Logs every") || r.value().startsWith("A live web map")
+						|| r.label().equals("Server stalled");
+				boolean isLink = r.label().startsWith("Link: ") && r.value().startsWith("http");
+				if (isLink) {
+					String v = fit(r.value(), valueW);
+					link(context, mouseX, mouseY, valueX, ry, v, "server-link:" + i + ":" + sec.title(), () -> ConfirmLinkScreen.open(this, r.value()));
+				} else {
+					textTrim(context, r.value(), valueX, ry, valueW, warn ? NAUGHTY : TEXT);
+				}
+				ly += 11;
+			}
+			for (var line : lines) {
+				context.drawText(textRenderer, line, valueX, ly, MUTED, false);
+				ly += 10;
+			}
+			ry = Math.max(ry + 11, ly) + 2;
+		}
+		return y + hgt;
+	}
+
+	private int sureColor(ServerDetails.Sure sure) {
+		return switch (sure) {
+			case TOLD -> LINK;
+			case SEEN -> ORANGE;
+			case UNKNOWN -> MUTED;
+		};
 	}
 
 		private void renderActivity(DrawContext context, int mouseX, int mouseY) {

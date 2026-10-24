@@ -500,6 +500,10 @@ public class BaritoneScreen extends Screen {
 	// ---- Settings ----
 
 	private void initSettings(int x, int y) {
+		check(x, y + 24, "Nether trips: ride the highways when quicker", () -> NNConfig.INSTANCE.tripUseHighways, v -> {
+			NNConfig.INSTANCE.tripUseHighways = v;
+			NNConfig.save();
+		});
 		check(x, y, "On trips: pause when a stranger shows up", () -> NNConfig.INSTANCE.tripStopForStrangers, v -> {
 			NNConfig.INSTANCE.tripStopForStrangers = v;
 			NNConfig.save();
@@ -512,7 +516,7 @@ public class BaritoneScreen extends Screen {
 			NNConfig.save();
 			clearAndInit();
 		});
-		y += 24;
+		y += 48;
 		settingSearch = field(x, y, 400, "Search Baritone's settings (all of them)", settingSearch == null ? "" : settingSearch.getText());
 		settingSearch.setChangedListener(t -> listScroll = 0);
 		// A picked setting that isn't on/off: type its value, Set, or put it back.
@@ -555,7 +559,7 @@ public class BaritoneScreen extends Screen {
 
 	/** The settings list, drawn by hand: on/off ones switch with a click, the rest are picked to type a value. */
 	private void renderSettings(DrawContext context, int mouseX, int mouseY) {
-		int x = width / 2 - 200, top = 116, bottom = setting(pickedSetting) != null && !setting(pickedSetting).bool() ? height - 58 : height - 20;
+		int x = width / 2 - 200, top = 140, bottom = setting(pickedSetting) != null && !setting(pickedSetting).bool() ? height - 58 : height - 20;
 		String q = settingSearch == null ? "" : settingSearch.getText().strip().toLowerCase(java.util.Locale.ROOT);
 		List<BaritoneBridge.Setting> shown = new java.util.ArrayList<>();
 		for (BaritoneBridge.Setting s : currentSettings()) {

@@ -94,6 +94,7 @@ public class NaughtyOrNiceClient implements ClientModInitializer {
 
 		// Disconnect fires on the network thread; do the work on the game thread.
 		ClientPlayConnectionEvents.DISCONNECT.register((handler, client) -> client.execute(() -> {
+			Safe.run("remembering the server", () -> ServerDetails.leave(ledger));
 			HighwayRoam.stop(null);
 			SmartTravel.stop();
 			EventHooks.flush(true);
@@ -278,6 +279,7 @@ public class NaughtyOrNiceClient implements ClientModInitializer {
 	private void tick(MinecraftClient client) {
 		UpdateCheck.tick(client);
 		PhoneAlerts.flush(false);
+		if (NNConfig.on()) ServerDetails.tick(client, ledger);
 		if (pendingScreen != null) {
 			client.setScreen(pendingScreen);
 			pendingScreen = null;
