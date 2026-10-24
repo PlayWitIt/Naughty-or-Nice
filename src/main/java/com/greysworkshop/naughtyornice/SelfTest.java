@@ -1533,10 +1533,24 @@ public final class SelfTest {
 			}
 			case 1347 -> {
 				check("...the server got it once you said send", serverHeard.contains("hello there"));
-				screenshot(client, "62_baritone_go");
+				((BaritoneScreen) client.currentScreen).testPage(0);
 			}
+			case 1348 -> screenshot(client, "62_baritone_go");
 			case 1349 -> ((BaritoneScreen) client.currentScreen).testPage(2);
-			case 1352 -> screenshot(client, "63_baritone_highway");
+			case 1351 -> {
+				screenshot(client, "63_baritone_highway");
+				NNConfig.INSTANCE.roamToCoords = true;
+				((BaritoneScreen) client.currentScreen).testPage(2);
+			}
+			case 1352 -> {
+				screenshot(client, "63b_baritone_highway_coords");
+				NNConfig.INSTANCE.roamToCoords = false;
+				((BaritoneScreen) client.currentScreen).testPage(1);
+			}
+			case 1353 -> {
+				screenshot(client, "63c_baritone_do");
+				((BaritoneScreen) client.currentScreen).testPage(3);
+			}
 			case 1354 -> {
 				// A trip from the screen, no commands typed: fill in x y z and press Go.
 				BlockPos to = client.player.getBlockPos().add(0, 0, 40);
@@ -1926,10 +1940,11 @@ public final class SelfTest {
 				b.testPress("Save where I am");
 				check("Save where I am saves a spot (" + b.testStatus() + ")",
 						Destinations.waypoints(ledger).stream().anyMatch(w -> w.name.equals("NN test spot") && w.x == p.getBlockX() && w.z == p.getBlockZ()));
-				int kinds = Destinations.Kind.values().length;
-				boolean filtered = b.testPress("Show:") && !b.testHas("Show: everything");
-				for (int i = 0; i < kinds; i++) b.testPress("Show:");
-				check("the Show filter goes through every kind and back", filtered && b.testHas("Show: everything"));
+				// A chip for each kind of place: one shows just that kind, again (or All) shows everything.
+				boolean oneKind = b.testPress("Waypoint") && b.testFilter().equals("WAYPOINT");
+				boolean againAll = b.testPress("Waypoint") && b.testFilter().isEmpty();
+				boolean chipsAll = b.testPress("Waypoint") && b.testPress("All") && b.testFilter().isEmpty();
+				check("the kind chips filter the places and All brings them back", oneKind && againAll && chipsAll);
 				b.testType("Search places", "NN test spot");
 				tp(client, "0.5 -60 30.5");
 			}
@@ -2099,9 +2114,9 @@ public final class SelfTest {
 				b.testPress("A distance along a highway");
 				check("a highway is picked with its button", b.testPress("+Z") && HighwayRoam.axis().name().equals("+Z"));
 				boolean was = c0.roamElytra;
-				b.testPress(was ? "Elytra ▸" : "Walk ▸");
+				b.testPress(was ? "Walk" : "Elytra");
 				boolean flipped = NNConfig.INSTANCE.roamElytra != was;
-				b.testPress(NNConfig.INSTANCE.roamElytra ? "Elytra ▸" : "Walk ▸");
+				b.testPress(was ? "Elytra" : "Walk");
 				check("Walk / Elytra switches and back", flipped && NNConfig.INSTANCE.roamElytra == was);
 				boolean parkour = NNConfig.INSTANCE.roamParkour;
 				b.testPress("Parkour jumps");
@@ -2172,6 +2187,7 @@ public final class SelfTest {
 				b.testType("Search Baritone's settings (all of them)", "allowSprint");
 			}
 			case 159 -> {
+				screenshot(client, "63d_baritone_settings");
 				int count = BaritoneBridge.settings().size();
 				Boolean sprint = BaritoneBridge.bool("allowSprint");
 				boolean clicked = b.testRow("allowSprint", false);
@@ -2249,6 +2265,9 @@ public final class SelfTest {
 			case 178 -> {
 				b.testRow("mine", false);
 				b.testType("what to add after mine (or nothing)", "dir");
+			}
+			case 179 -> {
+				screenshot(client, "63e_baritone_commands");
 				b.testPress("Run mine");
 			}
 			case 181 -> check("a mistyped command shows Baritone's error in red (" + b.testStatus() + ")", b.testStatusIsError() && b.testStatus().startsWith("Baritone:")

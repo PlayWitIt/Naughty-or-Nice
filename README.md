@@ -304,6 +304,12 @@ Who did something is only written when the server says so (the attacker of a hit
 whoever damaged a crystal). When it doesn't (who placed a crystal), the players close by are listed instead.
 
 ## Baritone, with buttons
+The Baritone screen has Naughty or Nice's own look, and sizes itself like the main screen (Settings → Screen size)
+whatever your GUI scale. A header on every page says what Baritone is doing right now (Idle, Moving, Mining,
+Roaming, Paused, Flying), where it's taking you, how far, how long and how fast, with **Pause**, **Resume** and
+**Stop** always there. Go to… shows each place as a card with chips to filter by kind (with how many of each);
+Do has players in view and common ores as one-click chips; Highway roam picks the highway on a compass (north up);
+Settings has real switches and a "Changed" filter. What happened shows in the bar along the bottom.
 If you have [Baritone](https://github.com/cabaletta/baritone) installed (on its own, or inside a client that has it),
 press **B** (or `/nn baritone`). Naughty or Nice drives it through Baritone's own API, so nothing goes through chat.
 - **Go to…**: every place the mod knows, in one list with distance and direction: your saved waypoints (type a name,
