@@ -41,11 +41,26 @@ public final class BaritoneBridge {
 			Object b = baritone();
 			Object manager = Class.forName("baritone.api.IBaritone").getMethod("getCommandManager").invoke(b);
 			Object ok = Class.forName("baritone.api.command.manager.ICommandManager").getMethod("execute", String.class).invoke(manager, command);
+			if (Boolean.TRUE.equals(ok)) {
+				// As Baritone keeps it: pause holds until resume, stop or cancel.
+				switch (command.strip().toLowerCase(java.util.Locale.ROOT)) {
+					case "pause" -> paused = true;
+					case "resume", "stop", "cancel", "forcecancel" -> paused = false;
+					default -> { }
+				}
+			}
 			return Boolean.TRUE.equals(ok);
 		} catch (ReflectiveOperationException | LinkageError | RuntimeException e) {
 			NaughtyOrNiceClient.LOGGER.warn("Baritone command failed: {}", command, e);
 			return false;
 		}
+	}
+
+	private static boolean paused;
+
+	/** Whether Baritone was paused through this mod and not resumed or stopped since. */
+	public static boolean paused() {
+		return paused;
 	}
 
 	/** Whether one of Baritone's processes is running, by its getter, e.g. "getFollowProcess". */

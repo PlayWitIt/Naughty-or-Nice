@@ -40,6 +40,9 @@ public class BaritoneScreen extends Screen {
 	private static final int OK = 0xFF7CE0A0, ERROR = 0xFFFF8A80, WARN = 0xFFFFC14D, PLAIN = 0xFFDDDDDD;
 
 	/** Header (status and Stop), then the page tabs, then the page; the status bar along the bottom. */
+	private Pill pauseButton, resumeButton;
+	/** The compass's middle (x, y, w, h) when it's a "you are here" mark, not a button. */
+	private int[] compassYou;
 	private static final int HEADER = 34, TABS = 24, TOP = HEADER + TABS + 8, STATUS_H = 18;
 
 	private static Page page = Page.PLACES;
@@ -169,8 +172,8 @@ public class BaritoneScreen extends Screen {
 					text = 0xFFFFFFFF;
 				}
 				default -> {
-					fill = hover ? SOFT_HOVER : SOFT;
-					edge = hover ? HOVER_BORDER : BORDER;
+					fill = !active ? tint(SOFT, NAV, 0.45f) : hover ? SOFT_HOVER : SOFT;
+					edge = !active ? tint(BORDER, NAV, 0.45f) : hover ? HOVER_BORDER : BORDER;
 					text = active ? TEXT : DIM;
 				}
 			}
@@ -186,7 +189,7 @@ public class BaritoneScreen extends Screen {
 			String b = badge == null ? null : badge.get();
 			String full = (icon == null ? "" : icon + " ") + label;
 			int bw = b == null ? 0 : textRenderer.getWidth(b) + 6;
-			String shown = textRenderer.trimToWidth(full, width - 8 - bw);
+			String shown = fit(full, width - 8 - bw);
 			int tw = textRenderer.getWidth(shown) + bw;
 			int tx = getX() + (width - tw) / 2, ty = getY() + (height - 8) / 2;
 			context.drawText(textRenderer, shown, tx, ty, text, false);
@@ -219,7 +222,7 @@ public class BaritoneScreen extends Screen {
 		protected void renderWidget(DrawContext context, int mouseX, int mouseY, float delta) {
 			boolean on = get.getAsBoolean();
 			drawSwitch(context, getX(), getY() + 2, on, isHovered());
-			context.drawText(textRenderer, textRenderer.trimToWidth(getMessage().getString(), width - 26), getX() + 24, getY() + 3, isHovered() ? 0xFFFFFFFF : TEXT, false);
+			context.drawText(textRenderer, fit(getMessage().getString(), width - 26), getX() + 24, getY() + 3, isHovered() ? 0xFFFFFFFF : TEXT, false);
 		}
 
 		@Override
@@ -252,7 +255,7 @@ public class BaritoneScreen extends Screen {
 		@Override
 		public void renderWidget(DrawContext context, int mouseX, int mouseY, float delta) {
 			super.renderWidget(context, mouseX, mouseY, delta);
-			if (getText().isEmpty() && !isFocused()) context.drawText(textRenderer, textRenderer.trimToWidth(hint.getString(), width), getX(), getY(), DIM, false);
+			if (getText().isEmpty() && !isFocused()) context.drawText(textRenderer, fit(hint.getString(), width), getX(), getY(), DIM, false);
 		}
 	}
 
@@ -308,6 +311,21 @@ public class BaritoneScreen extends Screen {
 		w.visible = false;
 	}
 
+	/** The text cut to fit {@code maxWidth}, ending in "…" if anything was cut. */
+	private String fit(String s, int maxWidth) {
+		if (textRenderer.getWidth(s) <= maxWidth) return s;
+		return textRenderer.trimToWidth(s, Math.max(0, maxWidth - textRenderer.getWidth("…"))).stripTrailing() + "…";
+	}
+
+	/** {@link #fit} for bold text, which is a pixel wider a letter. */
+	private String fitBold(String s, int maxWidth) {
+		String shown = s;
+		while (shown.length() > 1 && textRenderer.getWidth(Text.literal(shown).styled(st -> st.withBold(true))) > maxWidth) {
+			shown = s.substring(0, shown.length() - (shown.endsWith("…") ? 2 : 1)).stripTrailing() + "…";
+		}
+		return shown;
+	}
+
 	private Card card(int x, int y, int w, int h, String title, String note) {
 		Card c = new Card(x, y, w, h, title, note);
 		cards.add(c);
@@ -329,6 +347,7 @@ public class BaritoneScreen extends Screen {
 		height = (int) Math.ceil(window.getScaledHeight() / uiScale);
 		cards.clear();
 		labels.clear();
+		compassYou = null;
 		fields.clear();
 
 		// Header: Pause, Resume and Stop, always.
@@ -341,7 +360,7 @@ public class BaritoneScreen extends Screen {
 			clearAndInit();
 		});
 		stop.icon("■");
-		pill(right - 70 - 4 - 62, 9, 62, 16, "Resume", Look.SOFT, () -> {
+		resumeButton = pill(right - 70 - 4 - 62, 9, 62, 16, "Resume", Look.SOFT, () -> {
 			// A roam paused for a stranger or a trail knows it's paused; anything else, Baritone resumes itself.
 			if (HighwayRoam.active() && HighwayRoam.paused()) {
 				HighwayRoam.resume();
@@ -353,7 +372,8 @@ public class BaritoneScreen extends Screen {
 				run("resume", "Going again");
 			}
 		}).icon("▶");
-		pill(right - 70 - 4 - 62 - 4 - 58, 9, 58, 16, "Pause", Look.SOFT, () -> run("pause", "Paused"));
+		pauseButton = pill(right - 70 - 4 - 62 - 4 - 58, 9, 58, 16, "Pause", Look.SOFT, () -> run("pause", "Paused"));
+		updateHeaderButtons();
 
 		// The pages.
 		int tx = contentX();
@@ -742,7 +762,7 @@ public class BaritoneScreen extends Screen {
 		if (all.isEmpty()) {
 			roundedBorder(context, x, top, w, 46, CARD, BORDER);
 			context.drawText(textRenderer, q.isEmpty() && kindFilter == null ? "No places yet" : "Nothing matches", x + 12, top + 10, TEXT, false);
-			context.drawText(textRenderer, textRenderer.trimToWidth(q.isEmpty() && kindFilter == null
+			context.drawText(textRenderer, fit(q.isEmpty() && kindFilter == null
 					? "Save a spot above, or play a while: trails, places players give away and where your list's players were seen all show up here."
 					: "Try another word, or All.", w - 24), x + 12, top + 24, MUTED, false);
 			return;
@@ -756,6 +776,8 @@ public class BaritoneScreen extends Screen {
 			if (y + rowH >= top && y <= bottom) drawPlace(context, mouseX, mouseY, d, x, y, w, rowH, top, bottom, here);
 			y += rowH;
 		}
+		// More below: the last card fades out instead of being cut by the edge.
+		if (listScroll < maxScroll) context.fillGradient(x, bottom - 14, x + w, bottom, PAGE_BG & 0x00FFFFFF, PAGE_BG);
 		context.disableScissor();
 		scrollbar(context, x + w + 4, top, bottom, all.size() * rowH, maxScroll);
 	}
@@ -783,13 +805,13 @@ public class BaritoneScreen extends Screen {
 		roundedBorder(context, x + 10, y + 5, tagW, 11, tint(kc, CARD, 0.18f), tint(kc, CARD, 0.5f));
 		context.drawText(textRenderer, tag, x + 14, y + 7, kc, false);
 		int nameX = x + 10 + tagW + 6;
-		String name = textRenderer.trimToWidth(d.name(), Math.max(20, textRight - nameX));
+		String name = fitBold(d.name(), Math.max(20, textRight - nameX));
 		context.drawText(textRenderer, Text.literal(name).styled(s -> s.withBold(true)), nameX, y + 7, TEXT, false);
 		int detailX = nameX + textRenderer.getWidth(Text.literal(name).styled(s -> s.withBold(true))) + 6;
-		if (!d.detail().isEmpty() && detailX < textRight) context.drawText(textRenderer, textRenderer.trimToWidth(d.detail(), textRight - detailX), detailX, y + 7, MUTED, false);
+		if (!d.detail().isEmpty() && detailX < textRight) context.drawText(textRenderer, fit(d.detail(), textRight - detailX), detailX, y + 7, MUTED, false);
 		String coords = end ? String.format(Locale.ROOT, "End  %,d  %,d", d.x(), d.z())
 				: String.format(Locale.ROOT, "Overworld  %,d  %,d      Nether  %,d  %,d", ox, oz, nx, nz);
-		context.drawText(textRenderer, textRenderer.trimToWidth(coords, textRight - x - 10), x + 10, y + 19, DIM, false);
+		context.drawText(textRenderer, fit(coords, textRight - x - 10), x + 10, y + 19, DIM, false);
 		// How far, and which way, from where you are.
 		int right = x + w - 10 - (waypoint ? 16 : 0);
 		int bx = right - buttons;
@@ -876,7 +898,9 @@ public class BaritoneScreen extends Screen {
 				int gx = compassX + col * (cell + gap), gy = compassY + r * (ch + gap);
 				String name = grid[r][col];
 				if (name == null) {
-					if (c.roamToCoords) {
+					if (!c.roamToCoords) {
+						compassYou = new int[] {gx, gy, cell, ch};
+					} else {
 						pill(gx, gy, cell, ch, HighwayRoam.BEST, HighwayRoam.axis() == null ? Look.PRIMARY : Look.SOFT, () -> {
 							HighwayRoam.pick(null);
 							clearAndInit();
@@ -1148,7 +1172,7 @@ public class BaritoneScreen extends Screen {
 			int by = height - STATUS_H - 46;
 			roundedBorder(context, x, by - 2, w, 42, CARD, LINK);
 			context.drawText(textRenderer, Text.literal(picked.name()).styled(s -> s.withBold(true)), x + 10, by + 3, TEXT, false);
-			context.drawText(textRenderer, "default " + textRenderer.trimToWidth(picked.defaultValue(), 200) + " · type a value, then Set",
+			context.drawText(textRenderer, "default " + fit(picked.defaultValue(), 200) + " · type a value, then Set",
 					x + 16 + textRenderer.getWidth(Text.literal(picked.name()).styled(s -> s.withBold(true))), by + 3, MUTED, false);
 		}
 	}
@@ -1205,13 +1229,13 @@ public class BaritoneScreen extends Screen {
 		int by = bottom + 6;
 		roundedBorder(context, x, by, w, height - STATUS_H - 4 - by, CARD, LINK);
 		context.drawText(textRenderer, Text.literal(picked.name()).styled(s -> s.withBold(true)), x + 10, by + 7, TEXT, false);
-		context.drawText(textRenderer, textRenderer.trimToWidth(picked.shortDesc(), w - 30 - textRenderer.getWidth(picked.name())),
+		context.drawText(textRenderer, fit(picked.shortDesc(), w - 30 - textRenderer.getWidth(picked.name())),
 				x + 18 + textRenderer.getWidth(Text.literal(picked.name()).styled(s -> s.withBold(true))), by + 7, MUTED, false);
 		// How it's used: Baritone's own lines ("> goto <x> <y> <z>").
 		int uy = by + 19, shownLines = 0;
 		for (String line : picked.longDesc()) {
 			if (!line.startsWith(">") || shownLines >= 3) continue;
-			context.drawText(textRenderer, textRenderer.trimToWidth(line.substring(1).strip(), w - 20), x + 10, uy, LINK, false);
+			context.drawText(textRenderer, fit(line.substring(1).strip(), w - 20), x + 10, uy, LINK, false);
 			uy += 10;
 			shownLines++;
 		}
@@ -1269,22 +1293,22 @@ public class BaritoneScreen extends Screen {
 						drawSwitch(context, right - 20, y + (h - 10) / 2, on, hover);
 						right -= 26;
 					} else {
-						String v = textRenderer.trimToWidth(s.value().isEmpty() ? "(empty)" : s.value(), w / 2) + "  ›";
+						String v = fit(s.value().isEmpty() ? "(empty)" : s.value(), w / 2) + "  ›";
 						context.drawText(textRenderer, v, right - textRenderer.getWidth(v), y + (h - 8) / 2, MUTED, false);
 						right -= textRenderer.getWidth(v) + 8;
 					}
-					context.drawText(textRenderer, textRenderer.trimToWidth(s.name(), right - x - 20), x + 10, y + (h - 8) / 2, nameColor, false);
+					context.drawText(textRenderer, fit(s.name(), right - x - 20), x + 10, y + (h - 8) / 2, nameColor, false);
 					if (s.changed()) {
-						String was = "default " + (s.bool() ? (s.defaultValue().equals("true") ? "on" : "off") : textRenderer.trimToWidth(s.defaultValue(), 80));
+						String was = "default " + (s.bool() ? (s.defaultValue().equals("true") ? "on" : "off") : fit(s.defaultValue(), 80));
 						int nw = textRenderer.getWidth(s.name()) + 8;
 						if (x + 10 + nw + textRenderer.getWidth(was) < right) context.drawText(textRenderer, was, x + 10 + nw, y + (h - 8) / 2, DIM, false);
 					}
 				} else {
 					String[] parts = String.valueOf(r.sub).split("\n", 2);
-					context.drawText(textRenderer, Text.literal(textRenderer.trimToWidth(r.main, w - 20)).styled(st -> st.withBold(true)), x + 10, y + 4, TEXT, false);
+					context.drawText(textRenderer, Text.literal(fit(r.main, w - 20)).styled(st -> st.withBold(true)), x + 10, y + 4, TEXT, false);
 					int mw = textRenderer.getWidth(Text.literal(r.main).styled(st -> st.withBold(true)));
-					if (!parts[0].isEmpty()) context.drawText(textRenderer, textRenderer.trimToWidth(parts[0], w - 30 - mw), x + 16 + mw, y + 4, DIM, false);
-					if (parts.length > 1) context.drawText(textRenderer, textRenderer.trimToWidth(parts[1], w - 20), x + 10, y + 14, MUTED, false);
+					if (!parts[0].isEmpty()) context.drawText(textRenderer, fit(parts[0], w - 30 - mw), x + 16 + mw, y + 4, DIM, false);
+					if (parts.length > 1) context.drawText(textRenderer, fit(parts[1], w - 20), x + 10, y + 14, MUTED, false);
 				}
 				rowHits.add(new Object[] {x, Math.max(y, top), x + w, Math.min(y + h, bottom), r.click, r.key, false});
 			}
@@ -1373,7 +1397,7 @@ public class BaritoneScreen extends Screen {
 			if (c.title() != null) context.drawText(textRenderer, Text.literal(c.title()).styled(s -> s.withBold(true)), c.x() + 10, c.y() + 8, TEXT, false);
 			if (c.note() != null) {
 				int tx = c.title() == null ? c.x() + 10 : c.x() + 16 + textRenderer.getWidth(Text.literal(c.title()).styled(s -> s.withBold(true)));
-				context.drawText(textRenderer, textRenderer.trimToWidth(c.note(), c.x() + c.w() - 10 - tx), tx, c.y() + 8, DIM, false);
+				context.drawText(textRenderer, fit(c.note(), c.x() + c.w() - 10 - tx), tx, c.y() + 8, DIM, false);
 			}
 		}
 		for (Object[] l : labels) {
@@ -1398,6 +1422,16 @@ public class BaritoneScreen extends Screen {
 			listScroll = pageScroll;
 			scrollbar(context, contentX() + contentW() + 4, TOP, height - STATUS_H - 6, pageHeight, max);
 		}
+	}
+
+	/** Pause only while something is going, Resume only while something is paused. */
+	private void updateHeaderButtons() {
+		if (pauseButton == null) return;
+		boolean roamPaused = HighwayRoam.active() && HighwayRoam.paused() || TrailFollow.active() && TrailFollow.paused();
+		boolean going = BaritoneBridge.isPathing() || process() != null || SmartTravel.active()
+				|| HighwayRoam.active() && !HighwayRoam.paused() || TrailFollow.active() && !TrailFollow.paused();
+		resumeButton.active = roamPaused || BaritoneBridge.paused();
+		pauseButton.active = going && !resumeButton.active;
 	}
 
 	/** What Baritone is doing right now, at the top of every page: a coloured state, then where to, how far, how fast. */
@@ -1449,7 +1483,7 @@ public class BaritoneScreen extends Screen {
 		context.drawText(textRenderer, state, x + 14, 13, color, false);
 		int dx = x + sw + 8;
 		int maxW = width - 10 - 70 - 4 - 62 - 4 - 58 - 10 - dx;
-		if (!detail.isEmpty() && maxW > 30) context.drawText(textRenderer, textRenderer.trimToWidth(detail, maxW), dx, 13, MUTED, false);
+		if (!detail.isEmpty() && maxW > 30) context.drawText(textRenderer, fit(detail, maxW), dx, 13, MUTED, false);
 	}
 
 	/** Which of Baritone's jobs is running, in a word, or null. */
@@ -1464,6 +1498,12 @@ public class BaritoneScreen extends Screen {
 
 	/** Highway roam: the arrows on the compass, and the way it'll go. */
 	private void drawHighway(DrawContext context) {
+		if (compassYou != null && compassYou[1] >= TOP && compassYou[1] + compassYou[3] <= height - STATUS_H) {
+			// The compass's middle: you, with the highways all round.
+			int mx = compassYou[0] + compassYou[2] / 2, my = compassYou[1] + compassYou[3] / 2;
+			context.fill(mx - 2, my - 6, mx + 2, my - 2, MUTED);
+			context.drawText(textRenderer, "you", mx - textRenderer.getWidth("you") / 2, my + 1, DIM, false);
+		}
 		if (routeW <= 0 || routeY < TOP || routeY > height - STATUS_H) return;
 		String way = HighwayRoam.active() ? "Roaming to " + HighwayRoam.target() + ". Stop roaming, or " + NaughtyOrNiceClient.INSTANCE.stopKeyName() + ", ends it."
 				: Safe.get("describing the roam", () -> HighwayRoam.describe(client), "");
@@ -1474,7 +1514,7 @@ public class BaritoneScreen extends Screen {
 			context.drawText(textRenderer, l, routeX, ly, TEXT, false);
 			ly += 10;
 		}
-		context.drawText(textRenderer, textRenderer.trimToWidth("Breaks through, bridges gaps or goes round. What you set here is kept.", routeW), routeX, routeY + 22, DIM, false);
+		context.drawText(textRenderer, fit("Breaks through, bridges gaps or goes round. What you set here is kept.", routeW), routeX, routeY + 22, DIM, false);
 	}
 
 	@Override
@@ -1487,6 +1527,7 @@ public class BaritoneScreen extends Screen {
 		for (var e : children()) {
 			if (e instanceof Field f && hidden) f.visible = false;
 		}
+		updateHeaderButtons();
 		super.render(context, mouseX, mouseY, delta);
 		updateStatus();
 		drawStatusBar(context);
@@ -1528,7 +1569,7 @@ public class BaritoneScreen extends Screen {
 		boolean fresh = System.currentTimeMillis() - statusAt < 1500;
 		if (fresh) context.fill(0, y, width, y + 1, statusColor);
 		context.drawText(textRenderer, mark, x, y + 5, statusColor, false);
-		context.drawText(textRenderer, textRenderer.trimToWidth(status, contentW() - 14), x + 12, y + 5, statusColor, false);
+		context.drawText(textRenderer, fit(status, contentW() - 14), x + 12, y + 5, statusColor, false);
 	}
 
 	// ---- Input ----
@@ -1621,6 +1662,11 @@ public class BaritoneScreen extends Screen {
 	/** Whether a button or switch whose label starts with {@code label} is showing. */
 	public boolean testHas(String label) {
 		return children().stream().anyMatch(e -> e instanceof ClickableWidget w && w.visible && w.getMessage().getString().startsWith(label));
+	}
+
+	/** Whether the button labelled exactly {@code label} can be pressed (not greyed out). */
+	public boolean testEnabled(String label) {
+		return children().stream().anyMatch(e -> e instanceof ClickableWidget w && w.visible && w.active && w.getMessage().getString().equals(label));
 	}
 
 	/** Which page is showing (0 Go to…, 1 Do, 2 Highway roam, 3 Settings, 4 Every command). */

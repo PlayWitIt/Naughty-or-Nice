@@ -2053,10 +2053,12 @@ public final class SelfTest {
 			}
 			case 74 -> {
 				check("Explore explores (" + b.testStatus() + ")", BaritoneBridge.processActive("getExploreProcess"));
+				check("...Pause can be pressed, Resume is greyed out", b.testEnabled("Pause") && !b.testEnabled("Resume"));
 				b.testPress("Pause");
 			}
 			case 80 -> {
 				check("Pause stops it moving (" + b.testStatus() + ")", !BaritoneBridge.isPathing() && b.testStatus().contains("Paused"));
+				check("...then Resume can be pressed, Pause is greyed out", b.testEnabled("Resume") && !b.testEnabled("Pause"));
 				b.testPress("Resume");
 			}
 			case 88 -> {
@@ -2065,6 +2067,7 @@ public final class SelfTest {
 			}
 			case 91 -> {
 				check("Stop stops exploring", !BaritoneBridge.processActive("getExploreProcess"));
+				check("...and with nothing going, Pause and Resume are greyed out", !b.testEnabled("Pause") && !b.testEnabled("Resume") && b.testEnabled("Stop"));
 				b.testPress("Farm nearby");
 				baritonePressed = System.currentTimeMillis();
 			}
