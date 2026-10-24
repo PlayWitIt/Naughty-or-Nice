@@ -1,8 +1,6 @@
 package com.greysworkshop.naughtyornice;
 
 import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.sound.PositionedSoundInstance;
-import net.minecraft.sound.SoundEvents;
 import net.minecraft.text.Text;
 import net.minecraft.util.Formatting;
 
@@ -90,7 +88,7 @@ public final class ChunkAhead {
 		Text message = Text.literal(said).formatted(fresh ? Formatting.RED : Formatting.GREEN);
 		client.player.sendMessage(Alerts.prefix().append(message), false);
 		client.player.sendMessage(message, true);
-		if (NNConfig.INSTANCE.warnSounds) client.getSoundManager().play(PositionedSoundInstance.ui(SoundEvents.BLOCK_NOTE_BLOCK_CHIME, fresh ? 1.2f : 0.9f));
+		Alerts.play(fresh ? Alerts.Sound.NEW_AHEAD : Alerts.Sound.OLD_AHEAD);
 	}
 
 	public static void reset() {

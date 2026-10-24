@@ -152,12 +152,41 @@ public final class BaritoneBridge {
 	 */
 	public static void saveSettings() {
 		if (!present()) return;
+		// What a trip has set for a while isn't yours: the file gets your own values.
+		for (var e : overrides.entrySet()) setBool(e.getKey(), e.getValue()[0]);
 		try {
 			Object settings = Class.forName("baritone.api.BaritoneAPI").getMethod("getSettings").invoke(null);
 			Class.forName("baritone.api.utils.SettingsUtil").getMethod("save", Class.forName("baritone.api.Settings")).invoke(null, settings);
 		} catch (ReflectiveOperationException | LinkageError | RuntimeException e) {
 			NaughtyOrNiceClient.LOGGER.warn("Couldn't save Baritone's settings", e);
 		}
+		for (var e : overrides.entrySet()) setBool(e.getKey(), e.getValue()[1]);
+	}
+
+	/** Settings a trip has changed for now: name to {yours, the trip's}. */
+	private static final java.util.Map<String, Boolean[]> overrides = new java.util.LinkedHashMap<>();
+
+	/** Sets a true/false setting for the length of a trip, remembering yours to put back with {@link #release}. */
+	public static void override(String name, boolean value) {
+		Boolean yours = overrides.containsKey(name) ? overrides.get(name)[0] : bool(name);
+		if (yours == null) return;
+		overrides.put(name, new Boolean[] {yours, value});
+		setBool(name, value);
+	}
+
+	/** Puts a setting a trip changed back to yours. */
+	public static void release(String name) {
+		Boolean[] o = overrides.remove(name);
+		if (o != null) setBool(name, o[0]);
+	}
+
+	/**
+	 * Baritone's green goal box: shown only for where a trip really ends. While it walks to the in-between steps along
+	 * a highway, the box would mark each one, so it's hidden till the last stretch.
+	 */
+	public static void showGoal(boolean show) {
+		if (show) release("renderGoal");
+		else override("renderGoal", false);
 	}
 
 	/** Puts a Baritone setting back to its default. */

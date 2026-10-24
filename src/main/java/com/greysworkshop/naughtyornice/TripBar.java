@@ -4,7 +4,11 @@ import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.render.RenderTickCounter;
 
+import net.minecraft.client.font.TextRenderer;
+
 import java.util.ArrayDeque;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Locale;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -12,7 +16,8 @@ import java.util.regex.Pattern;
 /**
  * The bar at the top of the screen whenever Baritone is taking you somewhere (a trip to a place, a highway roam, or
  * anything you set it walking to): where to, how far is left (along the highways when the route is by them), about
- * how long that is at the speed you're closing in, how fast you're going, and how. Off in Settings (Trip bar).
+ * how long that is at the speed you're closing in, how fast you're going, and how. Small, like the coordinates, with
+ * where to on the first row and the rest wrapped under it so it never runs off the screen. Off in Settings (Trip bar).
  */
 public final class TripBar {
 	private TripBar() {}
@@ -63,11 +68,48 @@ public final class TripBar {
 			samples.clear();
 			return;
 		}
-		String line = line(client, w);
-		int width = client.textRenderer.getWidth(line);
-		int x = context.getScaledWindowWidth() / 2 - width / 2;
-		context.fill(x - 4, 3, x + width + 4, 15, 0xA0000000);
-		context.drawTextWithShadow(client.textRenderer, line, x, 5, 0xFFFFE08A);
+		float s = CoordsHud.scale(client);
+		int screen = context.getScaledWindowWidth();
+		List<String> rows = rows(client.textRenderer, line(client, w), (int) ((screen - 16) / s));
+		int lh = (int) Math.ceil(10 * s);
+		int widest = 0;
+		for (String r : rows) widest = Math.max(widest, (int) Math.ceil(client.textRenderer.getWidth(r) * s));
+		int x0 = screen / 2 - widest / 2;
+		context.fill(x0 - 4, 2, x0 + widest + 4, 4 + rows.size() * lh, 0xA0000000);
+		int y = 4;
+		for (int i = 0; i < rows.size(); i++) {
+			String r = rows.get(i);
+			int rw = (int) Math.ceil(client.textRenderer.getWidth(r) * s);
+			var m = context.getMatrices();
+			m.pushMatrix();
+			m.translate(screen / 2f - rw / 2f, y);
+			m.scale(s, s);
+			context.drawTextWithShadow(client.textRenderer, r, 0, 0, i == 0 ? 0xFFFFE08A : 0xFFE8E8E8);
+			m.popMatrix();
+			y += lh;
+		}
+	}
+
+	/**
+	 * The bar's text as rows that fit {@code max} wide: where to on the first, then the rest, broken between its parts
+	 * (never in the middle of one) onto as many rows as it takes.
+	 */
+	static List<String> rows(TextRenderer font, String line, int max) {
+		String[] parts = line.split(" · ");
+		List<String> out = new ArrayList<>();
+		out.add(parts[0]);
+		StringBuilder row = new StringBuilder();
+		for (int i = 1; i < parts.length; i++) {
+			String next = row.length() == 0 ? parts[i] : row + " · " + parts[i];
+			if (row.length() > 0 && font.getWidth(next) > max) {
+				out.add(row.toString());
+				row = new StringBuilder(parts[i]);
+			} else {
+				row = new StringBuilder(next);
+			}
+		}
+		if (row.length() > 0) out.add(row.toString());
+		return out;
 	}
 
 	static String line(MinecraftClient client, Where w) {

@@ -75,6 +75,10 @@ public final class Commands {
 					return 1;
 				}))
 				.then(literal("coords").executes(Commands::coords))
+				.then(literal("sounds").executes(c -> {
+					Alerts.demo();
+					return 1;
+				}))
 				.then(literal("events").executes(c -> {
 					NaughtyOrNiceClient.INSTANCE.openLater(new EventScreen());
 					return 1;
@@ -282,7 +286,7 @@ public final class Commands {
 			}
 			if (profiles > 0) ModsPanel.saveProfiles(all);
 		}
-		String said = reason == null ? "Your coordinates are on, in the bottom left." : "They weren't showing because " + reason;
+		String said = reason == null ? "Your coordinates are on, " + CoordsHud.where(client) + "." : "They weren't showing because " + reason;
 		if (reason != null && NNConfig.on() && !ModsPanel.streamSafe() && !client.options.hudHidden && !CoordsHud.f3Open(client)) said += " They're on now.";
 		if (profiles > 0) said += " A Mods panel profile for this server was turning them off each time you joined; it keeps them on now.";
 		c.getSource().sendFeedback(Alerts.prefix().append(Text.literal(said).formatted(Formatting.GRAY)));

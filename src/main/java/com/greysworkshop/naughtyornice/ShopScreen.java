@@ -4162,7 +4162,8 @@ public class ShopScreen extends Screen {
 		options.add(new Option("Warn when a naughty player joins", "When someone on your Naughty list joins the server.", () -> c.warnNaughtyJoin, v -> c.warnNaughtyJoin = v));
 		options.add(new Option("Note when a Look Into player is near or joins", "A quiet chat note (no sound) for people you're keeping an eye on.",
 				() -> c.noteLookInto, v -> c.noteLookInto = v));
-		options.add(new Option("Warning sound", "Play a low note with warnings.", () -> c.warnSounds, v -> c.warnSounds = v));
+		options.add(new Option("Warning sound", "A sound with each alert, a different one for each kind (low and urgent for danger, "
+				+ "rising for good news, a bell per group). Type /nn sounds to hear them all with their names.", () -> c.warnSounds, v -> c.warnSounds = v));
 		options.add(new Option("Killers go on the Naughty list", "Anyone not on a list who kills you is added automatically (you can undo it).", () -> c.autoNaughtyKillers, v -> c.autoNaughtyKillers = v));
 		options.add(new Option("Read the chat", "Friendly words (thanks, gg, np) count for players; trash talk aimed at someone (\"you're trash\", \"kys\", "
 				+ "\"gg ez\") counts against them. Ordinary words like \"trash can\" never do.", () -> c.watchChat, v -> c.watchChat = v));
@@ -4182,7 +4183,7 @@ public class ShopScreen extends Screen {
 				+ "corner, so you don't need F3. Hidden while stream-safe mode is on. Not showing? Type /nn coords.", () -> c.showCoords, v -> c.showCoords = v));
 		options.add(new Option("Trip bar", "While Baritone takes you somewhere: a bar at the top with where to, how far, about how long, "
 				+ "and how fast you're going.", () -> c.tripBar, v -> c.tripBar = v));
-		options.add(new Option("Coordinates on the right", "In the bottom-right corner, clear of the chat. Off: the bottom-left corner, under the chat.",
+		options.add(new Option("Coordinates on the right", "In the bottom-right corner. Off: the bottom-left corner, under the chat.",
 				() -> c.coordsRight, v -> c.coordsRight = v));
 		options.add(new Option("Small coordinates", "Draw your coordinates a size smaller than the rest of the screen (still sharp). Off: the same size "
 				+ "as chat.", () -> c.smallCoords, v -> c.smallCoords = v));
@@ -4390,6 +4391,7 @@ public class ShopScreen extends Screen {
 			scroll = Math.max(0, disconnectsAt - y0 - 4);
 		}
 		y = chunkTrailsCard(context, mouseX, mouseY, x, y, w) + 10;
+		y = notificationsCard(context, mouseX, mouseY, x, y, w) + 10;
 		int circlesAt = y;
 		y = circlesCard(context, mouseX, mouseY, x, y, w) + 10;
 		if (scrollToCircles) {
@@ -5804,6 +5806,86 @@ public class ShopScreen extends Screen {
 	 * Settings card for friend circles: colour, name, how many, trusted at bases, ping on join, move up/down,
 	 * remove; and a box to make a new one or rename one. Returns the y after it.
 	 */
+	/** The switch that turns a notification itself on or off, when there's one for all of it (null: it's set elsewhere). */
+	private record Notice(Alerts.Sound sound, String where, BooleanSupplier get, Consumer<Boolean> set) {}
+
+	private List<Notice> notices() {
+		NNConfig c = NNConfig.INSTANCE;
+		return List.of(
+				new Notice(Alerts.Sound.NAUGHTY_NEAR, null, () -> c.warnNaughtyNearby, v -> c.warnNaughtyNearby = v),
+				new Notice(Alerts.Sound.NAUGHTY_JOINED, null, () -> c.warnNaughtyJoin, v -> c.warnNaughtyJoin = v),
+				new Notice(Alerts.Sound.THREAT, null, () -> c.alertThreats, v -> c.alertThreats = v),
+				new Notice(Alerts.Sound.BASE, null, () -> c.alertBaseNames, v -> c.alertBaseNames = v),
+				new Notice(Alerts.Sound.NAME, "Alert words, below", null, null),
+				new Notice(Alerts.Sound.WORD, "Alert words, below", null, null),
+				new Notice(Alerts.Sound.TOPIC, "Topics, below", null, null),
+				new Notice(Alerts.Sound.COORDS, null, () -> c.pingAllCoords, v -> c.pingAllCoords = v),
+				new Notice(Alerts.Sound.WATCHED_TALKS, "on each player's page", null, null),
+				new Notice(Alerts.Sound.WATCHED_JOINED, "on each player's page", null, null),
+				new Notice(Alerts.Sound.STRANGER, null, () -> c.tripStopForStrangers, v -> c.tripStopForStrangers = v),
+				new Notice(Alerts.Sound.LOW_HEALTH, "Baritone screen, Settings", null, null),
+				new Notice(Alerts.Sound.TRAIL, null, () -> c.trailAlerts, v -> c.trailAlerts = v),
+				new Notice(Alerts.Sound.NEW_AHEAD, null, () -> c.aheadAlerts, v -> c.aheadAlerts = v),
+				new Notice(Alerts.Sound.OLD_AHEAD, null, () -> c.aheadAlerts, v -> c.aheadAlerts = v),
+				new Notice(Alerts.Sound.ARRIVED, "always, on arriving", null, null),
+				new Notice(Alerts.Sound.GROUP, "on each group and circle", null, null));
+	}
+
+	/**
+	 * Every notification in one place: what it is, whether it comes at all, whether it makes its sound, and a ▶ to hear
+	 * that sound, so a beep is never a mystery. Returns where it ends.
+	 */
+	private int notificationsCard(DrawContext context, int mouseX, int mouseY, int x, int y, int w) {
+		NNConfig c = NNConfig.INSTANCE;
+		List<Notice> all = notices();
+		int cols = w >= 600 ? 2 : 1, colW = (w - 20 - (cols - 1) * 12) / cols;
+		int rows = (all.size() + cols - 1) / cols;
+		int h = 46 + rows * 16 + 6;
+		roundedBorder(context, x, y, w, h, CARD, BORDER);
+		context.drawText(textRenderer, Text.literal("Notifications").styled(s -> s.withBold(true)), x + 10, y + 7, TEXT, false);
+		textTrim(context, "Each has a sound of its own. ▶ plays it. Alert: whether it comes at all. Sound: whether it makes its sound.",
+				x + 10, y + 19, w - 20, MUTED);
+		String all0 = "All sounds: " + (c.warnSounds ? "on" : "off");
+		int aw = textRenderer.getWidth(all0) + 14;
+		pill(context, mouseX, mouseY, x + 10, y + 30, aw, 13, all0, c.warnSounds ? SOFT : BAD_BG, BORDER, TEXT, "sounds-all", () -> {
+			c.warnSounds = !c.warnSounds;
+			NNConfig.save();
+		});
+		String demo = "Hear them all, one by one";
+		pill(context, mouseX, mouseY, x + 16 + aw, y + 30, textRenderer.getWidth(demo) + 14, 13, demo, SOFT, BORDER, TEXT, "sounds-demo", Alerts::demo);
+		int top = y + 48;
+		for (int i = 0; i < all.size(); i++) {
+			Notice n = all.get(i);
+			int col = i / rows, row = i % rows;
+			int rx = x + 10 + col * (colW + 12), ry = top + row * 16;
+			int px = rx;
+			pill(context, mouseX, mouseY, px, ry, 16, 13, "▶", SOFT, BORDER, TEXT, "sound-play:" + n.sound().name(), () -> Alerts.preview(n.sound()));
+			px += 20;
+			boolean soundOn = !Alerts.muted(n.sound());
+			String sl = soundOn ? "Sound" : "Silent";
+			pill(context, mouseX, mouseY, px, ry, 40, 13, sl, soundOn ? GOOD_BG : BAD_BG, BORDER, TEXT, "sound-mute:" + n.sound().name(),
+					() -> Alerts.mute(n.sound(), !Alerts.muted(n.sound())));
+			px += 44;
+			int labelW = colW - (px - rx);
+			if (n.get() != null) {
+				boolean on = n.get().getAsBoolean();
+				pill(context, mouseX, mouseY, px, ry, 36, 13, on ? "Alert" : "Off", on ? GOOD_BG : BAD_BG, BORDER, TEXT, "notice:" + n.sound().name(), () -> {
+					n.set().accept(!n.get().getAsBoolean());
+					NNConfig.save();
+				});
+				px += 40;
+				labelW -= 40;
+				textTrim(context, n.sound().label, px, ry + 3, labelW, on ? TEXT : MUTED);
+			} else {
+				String label = n.sound().label;
+				textTrim(context, label, px, ry + 3, labelW, TEXT);
+				int lw = Math.min(labelW, textRenderer.getWidth(label));
+				if (labelW - lw > 30) textTrim(context, " · " + n.where(), px + lw, ry + 3, labelW - lw, MUTED);
+			}
+		}
+		return y + h;
+	}
+
 	private int circlesCard(DrawContext context, int mouseX, int mouseY, int x, int y, int w) {
 		List<Friends.Circle> circles = Friends.circles();
 		int rowH = 28;

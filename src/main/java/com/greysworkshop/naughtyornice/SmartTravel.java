@@ -88,9 +88,12 @@ public final class SmartTravel {
 		boolean nether = client.world.getRegistryKey().getValue().toString().endsWith("the_nether");
 		List<HighwayRoute.Leg> route = !fly && (nether || testRouteEverywhere) && NNConfig.INSTANCE.tripUseHighways
 				? HighwayRoute.plan(client.player.getX(), client.player.getZ(), plan.x(), plan.z()) : List.of();
+		// A roam under way ends first, so its stop doesn't cancel this trip's first goal.
+		HighwayRoam.stop(null);
 		finalY = plan.y();
 		legs = route;
 		leg = 0;
+		if (route.isEmpty()) BaritoneBridge.showGoal(true);
 		boolean ok = fly ? BaritoneBridge.run("goal " + plan.x() + " " + plan.z()) && BaritoneBridge.run("elytra")
 				: !route.isEmpty() ? startLeg(client)
 				: BaritoneBridge.run("goto " + plan.x() + " " + (plan.y() == null ? "" : plan.y() + " ") + plan.z());
@@ -98,7 +101,6 @@ public final class SmartTravel {
 			legs = List.of();
 			return "Baritone didn't take it (see its message in chat)";
 		}
-		HighwayRoam.stop(null);
 		trip = new Trip(d.name(), plan.x(), plan.z(), fly, System.currentTimeMillis());
 		warned.clear();
 		lowHealthWarned = false;
@@ -117,6 +119,8 @@ public final class SmartTravel {
 			return step(client, l);
 		}
 		boolean last = leg == legs.size() - 1;
+		// Baritone's goal box marks only where the trip ends, not where it gets on a highway.
+		BaritoneBridge.showGoal(last);
 		return BaritoneBridge.run("goto " + l.x() + " " + (last && finalY != null ? finalY + " " : "") + l.z());
 	}
 
@@ -127,6 +131,7 @@ public final class SmartTravel {
 		int[] p = HighwayRoute.point(l.axis(), next);
 		stepX = p[0];
 		stepZ = p[1];
+		BaritoneBridge.showGoal(false);
 		return BaritoneBridge.run("goto " + stepX + " " + highwayY + " " + stepZ);
 	}
 
@@ -157,7 +162,9 @@ public final class SmartTravel {
 	}
 
 	public static void stop() {
+		boolean had = trip != null || !legs.isEmpty();
 		legs = List.of();
+		if (had) BaritoneBridge.showGoal(true);
 		if (trip == null) return;
 		trip = null;
 		BaritoneBridge.run("stop");
@@ -170,8 +177,10 @@ public final class SmartTravel {
 		double left = Math.hypot(trip.x() - client.player.getX(), trip.z() - client.player.getZ());
 		if (left < 8) {
 			Alerts.chat(Text.literal("Arrived at " + trip.name() + ".").formatted(Formatting.GREEN));
+			Alerts.play(Alerts.Sound.ARRIVED);
 			trip = null;
 			legs = List.of();
+			BaritoneBridge.showGoal(true);
 			return;
 		}
 		legs(client);
@@ -186,13 +195,13 @@ public final class SmartTravel {
 								.withClickEvent(new ClickEvent.RunCommand("/nn roam resume"))))
 						.append(Text.literal(" "))
 						.append(Text.literal("[Stop]").styled(st -> st.withColor(Formatting.RED).withUnderline(true)
-								.withClickEvent(new ClickEvent.RunCommand("/nn trip stop")))));
+								.withClickEvent(new ClickEvent.RunCommand("/nn trip stop")))), Alerts.Sound.STRANGER);
 			}
 		}
 		int stopAt = NNConfig.INSTANCE.tripStopHealth;
 		if (stopAt > 0 && client.player.getHealth() <= stopAt && !lowHealthWarned) {
 			lowHealthWarned = true;
-			Alerts.warn(Text.literal("Stopped: your health is down to " + (int) Math.ceil(client.player.getHealth() / 2) + " hearts.").formatted(Formatting.RED));
+			Alerts.warn(Text.literal("Stopped: your health is down to " + (int) Math.ceil(client.player.getHealth() / 2) + " hearts.").formatted(Formatting.RED), Alerts.Sound.LOW_HEALTH);
 			stop();
 		}
 	}
