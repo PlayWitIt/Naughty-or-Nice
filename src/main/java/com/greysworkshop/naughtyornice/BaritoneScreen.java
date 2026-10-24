@@ -336,6 +336,7 @@ public class BaritoneScreen extends Screen {
 		Pill stop = pill(right - 70, 9, 70, 16, "Stop", Look.DANGER, () -> {
 			HighwayRoam.stop(null);
 			SmartTravel.stop();
+			TrailFollow.stop(null);
 			run("stop", "Stopped");
 			clearAndInit();
 		});
@@ -345,6 +346,9 @@ public class BaritoneScreen extends Screen {
 			if (HighwayRoam.active() && HighwayRoam.paused()) {
 				HighwayRoam.resume();
 				say("Going again", OK);
+			} else if (TrailFollow.active() && TrailFollow.paused()) {
+				TrailFollow.resume(client);
+				say("Following again", OK);
 			} else {
 				run("resume", "Going again");
 			}
@@ -504,6 +508,43 @@ public class BaritoneScreen extends Screen {
 			}
 		}).icon("✈");
 		int leftEnd = cy + 150 + 10;
+
+		// Following old chunks: along the path someone left through new land.
+		NNConfig c = NNConfig.INSTANCE;
+		int fcy = leftEnd;
+		card(lx, fcy, colW, 112, "Follow old chunks", "Keeps to the path someone left");
+		int sy = fcy + 24;
+		int seg = (colW - 20) / 2;
+		pill(lx + 10, sy, seg, 16, "Away from spawn", c.trailFollowAway ? Look.PICKED : Look.SOFT, () -> {
+			c.trailFollowAway = true;
+			NNConfig.save();
+			clearAndInit();
+		});
+		pill(lx + 10 + seg, sy, colW - 20 - seg, 16, "The way I'm facing", c.trailFollowAway ? Look.SOFT : Look.PICKED, () -> {
+			c.trailFollowAway = false;
+			NNConfig.save();
+			clearAndInit();
+		});
+		toggle(lx + 10, sy + 22, colW - 20, "Stop and ask in wide old areas (a base?)", () -> c.trailFollowStopWide, v -> c.trailFollowStopWide = v);
+		toggle(lx + 10, sy + 38, colW - 20, "Fly it by elytra (the nether)", () -> c.trailFollowElytra, v -> c.trailFollowElytra = v);
+		boolean following = TrailFollow.active();
+		pill(lx + 10, sy + 58, colW - 20, 20, following ? "Stop following" : "Follow old chunks", following ? Look.DANGER : Look.PRIMARY, () -> {
+			if (TrailFollow.active()) {
+				TrailFollow.stop("you stopped it");
+				say("Stopped following old chunks", PLAIN);
+				clearAndInit();
+				return;
+			}
+			String why = TrailFollow.start(client, c.trailFollowAway);
+			if (why != null) {
+				say(why, ERROR);
+				return;
+			}
+			say("Following old chunks, heading " + TrailFollow.heading(), OK);
+			// Back to the game to watch it go.
+			client.setScreen(null);
+		});
+		leftEnd = fcy + 112 + 10;
 
 		// Follow, mine, around you, download.
 		int ry = two ? y : leftEnd;
@@ -1367,9 +1408,12 @@ public class BaritoneScreen extends Screen {
 		TripBar.Where where = TripBar.where(client);
 		boolean pathing = BaritoneBridge.isPathing();
 		String process = process();
-		if (HighwayRoam.active() && HighwayRoam.paused()) {
+		if (HighwayRoam.active() && HighwayRoam.paused() || TrailFollow.active() && TrailFollow.paused()) {
 			state = "Paused";
 			color = AMBER;
+		} else if (TrailFollow.active() && !TrailFollow.flying()) {
+			state = "Following";
+			color = GOOD;
 		} else if (where != null && (where.flying())) {
 			state = "Flying";
 			color = PURPLE;

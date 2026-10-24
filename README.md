@@ -339,6 +339,19 @@ press **B** (or `/nn baritone`). Naughty or Nice drives it through Baritone's ow
   highway ([Follow it], [Keep going], [Download this area]) or when a stranger shows up.
 - **Settings**: every Baritone setting, searched and clicked, saved to Baritone's own file so they stay.
 
+## Following old chunks
+**Follow old chunks** (Baritone screen → Do, `/nn trail follow`, or **[Follow the old chunks]** on a "chunk trail
+found" note) walks Baritone along the path someone left through new land, one old chunk at a time: each step is
+the old chunk a few chunks ahead that best keeps the way it's going and has more old land past it, so it keeps to
+the trail and turns where it bends. It never turns back along its own way.
+- It starts **away from spawn** (towards a trail's far end when you're on one), or **the way you're facing**.
+- It stops and asks at a **fork** ([Go NE] or [Go SE]), in a **wide old area** (a base or a town?
+  [Keep following], [Download this area]), and when the old chunks **run out** (only new land ahead). Where the land
+  ahead isn't loaded yet it goes on a little to see.
+- The same stops as any trip (a stranger, low health), the trip bar shows how far it's come and which way it's
+  heading, Baritone's goal box stays hidden, and **Z** stops it. In the nether it can fly it by elytra.
+- `/nn trail follow`, `/nn trail follow facing`, `/nn trail stop`, `/nn trail resume`.
+
 ## Downloading the world (only when you say yes)
 Press **Download** (Baritone screen, or the button when a highway roam stops at a trail): from then until you stop,
 every chunk you load in that dimension is saved into a singleplayer world named after the server, the dimension and the

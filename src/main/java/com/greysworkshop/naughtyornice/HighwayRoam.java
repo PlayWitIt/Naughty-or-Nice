@@ -160,6 +160,7 @@ public final class HighwayRoam {
 		BaritoneBridge.override("assumeWalkOnLava", c.roamLava);
 		// A trip under way ends first, so its stop doesn't cancel what the roam sets off.
 		SmartTravel.stop();
+		TrailFollow.stop(null);
 		legs = route;
 		leg = 0;
 		boolean ok = c.roamElytra ? BaritoneBridge.run("goal " + targetX + " " + targetZ) && BaritoneBridge.run("elytra") : startLeg(client);
@@ -309,7 +310,7 @@ public final class HighwayRoam {
 		String runs = ChunkTrails.compass(t.x2 - t.x1, t.z2 - t.z1) + "–" + ChunkTrails.compass(t.x1 - t.x2, t.z1 - t.z2);
 		Alerts.ping(Text.literal(String.format(Locale.ROOT, "Paused: a chunk trail %,d blocks long runs %s off the highway. ", t.length(), runs)).formatted(Formatting.GOLD)
 				.append(Text.literal("[Follow it]").styled(st -> st.withColor(Formatting.AQUA).withUnderline(true)
-						.withClickEvent(new ClickEvent.RunCommand("/nn roam follow " + end[0] + " " + end[1]))))
+						.withClickEvent(new ClickEvent.RunCommand("/nn trail follow"))))
 				.append(Text.literal(" ")).append(resumeButton()).append(Text.literal(" ")).append(stopButton())
 				.append(WorldDownload.active() ? Text.empty() : Text.literal(" [Download this area]").styled(st -> st.withColor(Formatting.GREEN).withUnderline(true)
 						.withClickEvent(new ClickEvent.RunCommand("/nn download start")))), Alerts.Sound.TRAIL);

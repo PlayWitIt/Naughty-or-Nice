@@ -124,6 +124,14 @@ public final class NNConfig {
 	/** The bar at the top while Baritone takes you somewhere: where to, how far, how long, how fast. */
 	public boolean tripBar = true;
 
+	// ---- Following old chunks ----
+	/** Start heading away from spawn (off: the way you're facing). */
+	public boolean trailFollowAway = true;
+	/** Stop and ask in a wide old area (a base or a town?). */
+	public boolean trailFollowStopWide = true;
+	/** Fly it by elytra (the nether only). */
+	public boolean trailFollowElytra = false;
+
 	// ---- Highway roam (the Baritone screen): kept until you change them ----
 	public String roamAxis = "+X";
 	public boolean roamElytra = false;

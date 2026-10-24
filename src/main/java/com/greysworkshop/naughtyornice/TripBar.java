@@ -40,6 +40,11 @@ public final class TripBar {
 			int[] t = SmartTravel.tripTarget();
 			return new Where(trip, t[0], t[1], SmartTravel.remaining(px, pz), SmartTravel.flying());
 		}
+		if (TrailFollow.active()) {
+			int[] t = TrailFollow.target();
+			// No end to count down to: how far it's come, and which way it's heading, instead.
+			return new Where("Following old chunks", t[0], t[1], -1, TrailFollow.flying());
+		}
 		if (HighwayRoam.active()) {
 			int[] t = HighwayRoam.targetXZ();
 			HighwayRoam.Axis a = HighwayRoam.axis();
@@ -123,7 +128,8 @@ public final class TripBar {
 			samples.addLast(new double[] {now, w.left(), client.player.getX(), client.player.getZ()});
 			while (samples.size() > 20) samples.removeFirst();
 		}
-		String to = w.name() + (ModsPanel.streamSafe() ? "" : String.format(Locale.ROOT, " (%d, %d)", w.x(), w.z()));
+		boolean open = w.left() < 0;
+		String to = w.name() + (ModsPanel.streamSafe() || open ? "" : String.format(Locale.ROOT, " (%d, %d)", w.x(), w.z()));
 		double closing = 0, moving = 0;
 		if (samples.size() >= 4) {
 			double[] first = samples.peekFirst(), last = samples.peekLast();
@@ -133,10 +139,12 @@ public final class TripBar {
 				moving = Math.hypot(last[2] - first[2], last[3] - first[3]) / secs;
 			}
 		}
-		String eta = closing < 0.5 ? "" : " · about " + ShopScreen.duration((int) (w.left() / closing)) + " left";
+		String eta = open || closing < 0.5 ? "" : " · about " + ShopScreen.duration((int) (w.left() / closing)) + " left";
 		String speed = samples.size() < 4 ? "" : String.format(Locale.ROOT, " · %.1f blocks/s", moving);
-		String how = w.flying() ? "flying" : HighwayRoam.active() && HighwayRoam.paused() ? "paused" : BaritoneBridge.isPathing() ? "walking" : "working out a path";
-		return String.format(Locale.ROOT, "▶ %s · %,d blocks%s%s · %s · %s to stop", to, (int) w.left(), eta, speed, how,
-				NaughtyOrNiceClient.INSTANCE.stopKeyName());
+		boolean paused = HighwayRoam.active() && HighwayRoam.paused() || TrailFollow.active() && TrailFollow.paused();
+		String how = paused ? "paused" : w.flying() ? "flying" : BaritoneBridge.isPathing() ? "walking" : "working out a path";
+		String far = open ? String.format(Locale.ROOT, "%,d blocks followed · heading %s", (int) TrailFollow.followed(), TrailFollow.heading())
+				: String.format(Locale.ROOT, "%,d blocks", (int) w.left());
+		return String.format(Locale.ROOT, "▶ %s · %s%s%s · %s · %s to stop", to, far, eta, speed, how, NaughtyOrNiceClient.INSTANCE.stopKeyName());
 	}
 }

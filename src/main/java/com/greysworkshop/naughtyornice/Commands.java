@@ -102,6 +102,21 @@ public final class Commands {
 					c.getSource().sendFeedback(Alerts.prefix().append(Text.literal("Stopped.").formatted(Formatting.GRAY)));
 					return 1;
 				})))
+				.then(literal("trail")
+						.then(literal("follow").executes(c -> trailFollow(c, NNConfig.INSTANCE.trailFollowAway))
+								.then(literal("facing").executes(c -> trailFollow(c, false))))
+						.then(literal("stop").executes(c -> {
+							TrailFollow.stop("you stopped it");
+							return 1;
+						}))
+						.then(literal("resume").executes(c -> {
+							TrailFollow.resume(MinecraftClient.getInstance());
+							return 1;
+						}))
+						.then(literal("take").then(argument("way", com.mojang.brigadier.arguments.IntegerArgumentType.integer(1, 2)).executes(c -> {
+							TrailFollow.take(MinecraftClient.getInstance(), com.mojang.brigadier.arguments.IntegerArgumentType.getInteger(c, "way"));
+							return 1;
+						}))))
 				.then(literal("roam")
 						.then(literal("stop").executes(c -> {
 							HighwayRoam.stop("you stopped it");
@@ -291,5 +306,11 @@ public final class Commands {
 		if (profiles > 0) said += " A Mods panel profile for this server was turning them off each time you joined; it keeps them on now.";
 		c.getSource().sendFeedback(Alerts.prefix().append(Text.literal(said).formatted(Formatting.GRAY)));
 		return 1;
+	}
+
+	private static int trailFollow(CommandContext<FabricClientCommandSource> c, boolean awayFromSpawn) {
+		String why = TrailFollow.start(MinecraftClient.getInstance(), awayFromSpawn);
+		if (why != null) c.getSource().sendError(Text.literal(why + "."));
+		return why == null ? 1 : 0;
 	}
 }

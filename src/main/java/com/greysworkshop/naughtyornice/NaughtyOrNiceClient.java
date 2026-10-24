@@ -94,6 +94,7 @@ public class NaughtyOrNiceClient implements ClientModInitializer {
 		// Disconnect fires on the network thread; do the work on the game thread.
 		ClientPlayConnectionEvents.DISCONNECT.register((handler, client) -> client.execute(() -> {
 			Safe.run("remembering the server", () -> ServerDetails.leave(ledger));
+			TrailFollow.stop(null);
 			ChunkAhead.reset();
 			HighwayRoam.stop(null);
 			SmartTravel.stop();
@@ -223,8 +224,10 @@ public class NaughtyOrNiceClient implements ClientModInitializer {
 			Alerts.chat(Text.literal("Chunk trail found: ").formatted(Formatting.GOLD)
 					.append(Text.literal(say == null ? "" : say[0] + ". " + say[1] + ". ").formatted(Formatting.YELLOW))
 					.append(Text.literal(t.away == 0 || ModsPanel.streamSafe() ? "" : "The far end (away from spawn) is at " + end[0] + ", " + end[1] + ". ").formatted(Formatting.GRAY))
-					.append(Text.literal(NNConfig.INSTANCE.trailRadar ? "" : "[Show radar]").styled(st -> st.withColor(Formatting.AQUA).withUnderline(true)
-							.withClickEvent(new ClickEvent.RunCommand("/nn radar")))));
+					.append(Text.literal(NNConfig.INSTANCE.trailRadar ? "" : "[Show radar] ").styled(st -> st.withColor(Formatting.AQUA).withUnderline(true)
+							.withClickEvent(new ClickEvent.RunCommand("/nn radar"))))
+					.append(TrailFollow.active() || !BaritoneBridge.present() ? Text.empty() : Text.literal("[Follow the old chunks]").styled(st -> st.withColor(Formatting.GREEN)
+							.withUnderline(true).withClickEvent(new ClickEvent.RunCommand("/nn trail follow")))));
 			// A roam stops at the trail with this sound already.
 			if (!HighwayRoam.active()) Alerts.play(Alerts.Sound.TRAIL);
 		}
@@ -295,9 +298,10 @@ public class NaughtyOrNiceClient implements ClientModInitializer {
 		}
 		while (stopKey.wasPressed()) {
 			// One key stops everything: a trip, a highway roam, and whatever Baritone is doing.
-			boolean was = SmartTravel.active() || HighwayRoam.active() || BaritoneBridge.isPathing();
+			boolean was = SmartTravel.active() || HighwayRoam.active() || TrailFollow.active() || BaritoneBridge.isPathing();
 			SmartTravel.stop();
 			HighwayRoam.stop(null);
+			TrailFollow.stop(null);
 			BaritoneBridge.run("stop");
 			if (BaritoneBridge.present()) client.inGameHud.setOverlayMessage(Text.literal(was ? "Stopped" : "Nothing to stop").formatted(Formatting.YELLOW), false);
 		}
@@ -309,6 +313,7 @@ public class NaughtyOrNiceClient implements ClientModInitializer {
 			roamTimer = 0;
 			HighwayRoam.tick(client);
 			SmartTravel.tick(client);
+			Safe.run("following old chunks", () -> TrailFollow.tick(client));
 			if (NNConfig.on()) Safe.run("looking ahead for new chunks", () -> ChunkAhead.tick(client, ledger.chunkTrails));
 		}
 		// Off (the Mods panel's first switch): the keys above still work, nothing else runs.

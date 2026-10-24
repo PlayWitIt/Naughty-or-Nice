@@ -90,6 +90,7 @@ public final class SmartTravel {
 				? HighwayRoute.plan(client.player.getX(), client.player.getZ(), plan.x(), plan.z()) : List.of();
 		// A roam under way ends first, so its stop doesn't cancel this trip's first goal.
 		HighwayRoam.stop(null);
+		TrailFollow.stop(null);
 		finalY = plan.y();
 		legs = route;
 		leg = 0;

@@ -1478,6 +1478,37 @@ public final class SelfTest {
 				client.player.setPitch(0);
 			}
 			case 1323 -> {
+				// ---- Following old chunks, for real: a line of old chunks east of you, facing east ----
+				String dimL = client.world.getRegistryKey().getValue().toString();
+				int pcx = client.player.getBlockX() >> 4, pcz = client.player.getBlockZ() >> 4;
+				// Clear land all round first (the radar's test trail is just south), then the line.
+				for (int i = -10; i <= 16; i++) {
+					for (int j = -10; j <= 10; j++) {
+						if (j == 0 && i >= -1 && i <= 14) setOld(ledger.chunkTrails, dimL, pcx + i, pcz + j);
+						else ledger.chunkTrails.set(dimL, pcx + i, pcz + j, ChunkTrails.NEW);
+					}
+				}
+				NNConfig.INSTANCE.tripStopForStrangers = false;
+				client.player.setYaw(-90);
+				followWhy = TrailFollow.start(client, false);
+				followChunkZ = pcz;
+			}
+			case 1324 -> {
+				// Baritone takes its goal on its next tick.
+				String why = followWhy;
+				String dimL = client.world.getRegistryKey().getValue().toString();
+				int pcz = followChunkZ;
+				int[] goal = TripBar.goalXZ(BaritoneBridge.goal());
+				log("Follow for real: " + why + ", goal " + BaritoneBridge.goal() + ", heading " + TrailFollow.heading());
+				check("Follow old chunks sets off along them (" + BaritoneBridge.goal() + ")", why == null && TrailFollow.active() && goal != null
+						&& goal[0] > client.player.getBlockX() && (goal[1] >> 4) == pcz && ledger.chunkTrails.state(dimL, goal[0] >> 4, goal[1] >> 4) == ChunkTrails.OLD);
+				TripBar.Where fw = TripBar.where(client);
+				String fbar = fw == null ? "" : TripBar.line(client, fw);
+				check("...with the trip bar saying so (" + fbar + ")", fbar.startsWith("▶ Following old chunks") && fbar.contains("heading E"));
+				check("...and it's hidden Baritone's goal box for the steps", Boolean.FALSE.equals(BaritoneBridge.bool("renderGoal")));
+				TrailFollow.stop("test over");
+				check("...and Stop stops it, the goal box back", !TrailFollow.active() && Boolean.TRUE.equals(BaritoneBridge.bool("renderGoal")));
+				NNConfig.INSTANCE.tripStopForStrangers = true;
 				NNConfig.INSTANCE.trailRadar = false;
 				NNConfig.INSTANCE.intelMap = false;
 				client.setScreen(new ShopScreen(ShopScreen.Tab.INTEL, null));
@@ -1664,6 +1695,9 @@ public final class SelfTest {
 	private static double maxOff;
 	/** When the last Baritone button was pressed, for steps that must wait a while by the clock. */
 	private static long baritonePressed;
+	/** Following old chunks for real: what starting said, and the row of chunks the line of old ones is on. */
+	private static String followWhy;
+	private static int followChunkZ;
 	/** When Baritone stopped farming, for the farm-with-nothing check. */
 	private static long farmIdleAt;
 	/** Where the test wheat was planted (x of the first of three, and z). */
@@ -2320,6 +2354,68 @@ public final class SelfTest {
 				for (int i = 0; i < 10; i++) Alerts.tick();
 				NNConfig.INSTANCE.warnSounds = soundsWere;
 				check("a sound's later notes play on the ticks after (" + waiting + " waiting, " + Alerts.pending() + " left)", waiting == 2 && Alerts.pending() == 0);
+				// ---- Following old chunks: the decisions, on trails drawn here ----
+				String dimF = "minecraft:overworld";
+				java.util.function.BiPredicate<Integer, Integer> allLoaded = (a, b2) -> true;
+				// Straight: old along z 0 for 30 chunks, new either side.
+				ChunkTrails straight = new ChunkTrails();
+				for (int i = -2; i <= 34; i++) for (int j = -4; j <= 4; j++) straight.set(dimF, i, j, j == 0 && i <= 30 ? ChunkTrails.OLD : ChunkTrails.NEW);
+				int[] walk1 = followSim(straight, dimF, 8, 8, 1, 0, allLoaded);
+				log("Follow straight: ended at chunk " + walk1[0] + ", " + walk1[1] + " after " + walk1[2] + " steps, " + walk1[3] + " off the old chunks, end " + walk1[4]);
+				check("following old chunks keeps to them along a straight trail to its end (chunk " + walk1[0] + ")", walk1[3] == 0 && walk1[0] >= 28 && walk1[1] == 0
+						&& walk1[4] == 1);
+				// A bend: along x for 10 chunks, then turning to run south-east.
+				ChunkTrails bend = new ChunkTrails();
+				for (int i = -2; i <= 30; i++) for (int j = -4; j <= 20; j++) bend.set(dimF, i, j, ChunkTrails.NEW);
+				// (Set new first, then old: forget they were "yours", or they'd still read as new.)
+				for (int i = 0; i <= 10; i++) setOld(bend, dimF, i, 0);
+				for (int k = 1; k <= 12; k++) {
+					setOld(bend, dimF, 10 + k, k);
+					setOld(bend, dimF, 10 + k, k - 1);
+				}
+				int[] walk2 = followSim(bend, dimF, 8, 8, 1, 0, allLoaded);
+				log("Follow bend: ended at chunk " + walk2[0] + ", " + walk2[1] + ", " + walk2[3] + " off");
+				check("...turns with the trail where it bends (ended at chunk " + walk2[0] + ", " + walk2[1] + ")", walk2[3] == 0 && walk2[0] >= 20 && walk2[1] >= 9);
+				// A fork: along x, then two ways, north-east and south-east.
+				ChunkTrails forked = new ChunkTrails();
+				for (int i = -2; i <= 24; i++) for (int j = -14; j <= 14; j++) forked.set(dimF, i, j, ChunkTrails.NEW);
+				for (int i = 0; i <= 8; i++) setOld(forked, dimF, i, 0);
+				for (int k = 1; k <= 10; k++) {
+					setOld(forked, dimF, 8 + k, k);
+					setOld(forked, dimF, 8 + k, -k);
+				}
+				TrailFollow.Decision fd = null;
+				double fx = 8, fz = 8, hx0 = 1, hz0 = 0;
+				java.util.Set<Long> seen = new java.util.HashSet<>();
+				for (int n = 0; n < 20; n++) {
+					fd = TrailFollow.decide(forked, dimF, fx, fz, hx0, hz0, seen, false, true, allLoaded);
+					if (fd.kind() != TrailFollow.Kind.STEP) break;
+					seen.add(net.minecraft.util.math.ChunkPos.toLong(fd.cx(), fd.cz()));
+					double tx = fd.cx() * 16 + 8, tz = fd.cz() * 16 + 8, dd = Math.hypot(tx - fx, tz - fz);
+					hx0 = hx0 * 0.5 + (tx - fx) / dd * 0.5;
+					hz0 = hz0 * 0.5 + (tz - fz) / dd * 0.5;
+					double hl = Math.hypot(hx0, hz0);
+					hx0 /= hl;
+					hz0 /= hl;
+					fx = tx;
+					fz = tz;
+				}
+				log("Follow fork: " + fd);
+				check("...and stops to ask at a fork, with both ways (" + fd + ")", fd != null && fd.kind() == TrailFollow.Kind.FORK
+						&& Integer.signum(fd.cz() - (int) Math.floor(fz) / 16) != Integer.signum(fd.altZ() - (int) Math.floor(fz) / 16));
+				// A wide old area: 7 by 7 old.
+				ChunkTrails wide = new ChunkTrails();
+				for (int i = -6; i <= 6; i++) for (int j = -6; j <= 6; j++) wide.set(dimF, i, j, Math.abs(i) <= 3 && Math.abs(j) <= 3 ? ChunkTrails.OLD : ChunkTrails.NEW);
+				TrailFollow.Decision wd = TrailFollow.decide(wide, dimF, 8, 8, 1, 0, new java.util.HashSet<>(), false, false, allLoaded);
+				TrailFollow.Decision wd2 = TrailFollow.decide(wide, dimF, 8, 8, 1, 0, new java.util.HashSet<>(), false, true, allLoaded);
+				check("...stops in a wide old area (a base?), and carries on through it when told to (" + wd.kind() + ", then " + wd2.kind() + ")",
+						wd.kind() == TrailFollow.Kind.WIDE && wd2.kind() != TrailFollow.Kind.WIDE);
+				// Nothing known ahead: look further if it isn't loaded, the end if it is.
+				ChunkTrails blank = new ChunkTrails();
+				blank.set(dimF, 0, 0, ChunkTrails.OLD);
+				check("...looks further on into land not loaded yet, and ends where there's only new land",
+						TrailFollow.decide(blank, dimF, 8, 8, 1, 0, new java.util.HashSet<>(), false, true, (a, b2) -> false).kind() == TrailFollow.Kind.PROBE
+						&& TrailFollow.decide(straight, dimF, 31 * 16 + 8, 8, 1, 0, new java.util.HashSet<>(), false, true, allLoaded).kind() == TrailFollow.Kind.END);
 				// New chunks ahead: told once, two chunks deep, along the way you're going.
 				ChunkTrails ahead = new ChunkTrails();
 				String dimA = "minecraft:the_nether";
@@ -2418,6 +2514,42 @@ public final class SelfTest {
 			}
 			default -> {}
 		}
+	}
+
+	/** Marks a chunk old for a test, forgetting it was one you generated (those always read as new). */
+	private static void setOld(ChunkTrails trails, String dim, int x, int z) {
+		trails.set(dim, x, z, ChunkTrails.OLD);
+		trails.forgetMine(dim, x, z);
+	}
+
+	/**
+	 * Follows a drawn trail by {@link TrailFollow#decide} alone, stepping to each chunk chosen: {end chunk x, z, steps,
+	 * steps onto chunks that weren't old, 1 if it ended at the end}.
+	 */
+	private static int[] followSim(ChunkTrails trails, String dim, double x, double z, double hx, double hz,
+			java.util.function.BiPredicate<Integer, Integer> loaded) {
+		java.util.Set<Long> seen = new java.util.HashSet<>();
+		int steps = 0, off = 0, ended = 0;
+		for (int n = 0; n < 60; n++) {
+			TrailFollow.Decision d = TrailFollow.decide(trails, dim, x, z, hx, hz, seen, false, true, loaded);
+			if (d.kind() == TrailFollow.Kind.END) {
+				ended = 1;
+				break;
+			}
+			if (d.kind() != TrailFollow.Kind.STEP) break;
+			if (trails.state(dim, d.cx(), d.cz()) != ChunkTrails.OLD) off++;
+			seen.add(net.minecraft.util.math.ChunkPos.toLong(d.cx(), d.cz()));
+			double tx = d.cx() * 16 + 8, tz = d.cz() * 16 + 8, dd = Math.hypot(tx - x, tz - z);
+			hx = hx * 0.5 + (tx - x) / dd * 0.5;
+			hz = hz * 0.5 + (tz - z) / dd * 0.5;
+			double l = Math.hypot(hx, hz);
+			hx /= l;
+			hz /= l;
+			x = tx;
+			z = tz;
+			steps++;
+		}
+		return new int[] {(int) Math.floor(x) >> 4, (int) Math.floor(z) >> 4, steps, off, ended};
 	}
 
 	/** Brightness outside and on the coordinates' backing, and how many white text pixels; set by a screenshot. */

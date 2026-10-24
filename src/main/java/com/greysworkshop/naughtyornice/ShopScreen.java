@@ -5825,6 +5825,8 @@ public class ShopScreen extends Screen {
 				new Notice(Alerts.Sound.STRANGER, null, () -> c.tripStopForStrangers, v -> c.tripStopForStrangers = v),
 				new Notice(Alerts.Sound.LOW_HEALTH, "Baritone screen, Settings", null, null),
 				new Notice(Alerts.Sound.TRAIL, null, () -> c.trailAlerts, v -> c.trailAlerts = v),
+				new Notice(Alerts.Sound.TRAIL_FORK, "always, while following", null, null),
+				new Notice(Alerts.Sound.TRAIL_END, "always, while following", null, null),
 				new Notice(Alerts.Sound.NEW_AHEAD, null, () -> c.aheadAlerts, v -> c.aheadAlerts = v),
 				new Notice(Alerts.Sound.OLD_AHEAD, null, () -> c.aheadAlerts, v -> c.aheadAlerts = v),
 				new Notice(Alerts.Sound.ARRIVED, "always, on arriving", null, null),
