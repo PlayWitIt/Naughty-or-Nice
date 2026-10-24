@@ -174,7 +174,13 @@ public class ShopScreen extends Screen {
 	private static final int BUY_BOX = 150;
 
 	private static Tab lastTab;
-	private static Sort sort = Sort.RECENT;
+	/** How the lists are sorted: kept in the settings until you change it. */
+	private static Sort sort = savedSort();
+
+	private static Sort savedSort() {
+		for (Sort s : Sort.values()) if (s.name().equals(NNConfig.INSTANCE.listSort)) return s;
+		return Sort.RECENT;
+	}
 	private static boolean onlineOnly;
 	private static Rating rating = Rating.ANY;
 	/** Faces of players seen this session, so they keep their skin after logging off. */
@@ -1370,6 +1376,8 @@ public class ShopScreen extends Screen {
 		int sw = textRenderer.getWidth(sortLabel) + 10;
 		pill(context, mouseX, mouseY, right - sw, barY + 2, sw, 12, sortLabel, SOFT, BORDER, TEXT, "sort", () -> {
 			sort = Sort.values()[(sort.ordinal() + 1) % Sort.values().length];
+			NNConfig.INSTANCE.listSort = sort.name();
+			NNConfig.save();
 			cachedResults = null;
 		});
 		String addLabel = "+ Add players";
@@ -4171,8 +4179,16 @@ public class ShopScreen extends Screen {
 		options.add(new Option("Death recap", "On the death screen: who hit you in your last 30 seconds, with what, the totems you popped and your last few hits, "
 				+ "with a button to save the fight.", () -> c.deathRecap, v -> c.deathRecap = v));
 		options.add(new Option("My coordinates", "Your x y z, which way you face, and the matching nether (or overworld) spot in the bottom "
-				+ "left, so you don't need F3. Hidden while stream-safe mode is on. Not showing? Type /nn coords.", () -> c.showCoords, v -> c.showCoords = v));
+				+ "corner, so you don't need F3. Hidden while stream-safe mode is on. Not showing? Type /nn coords.", () -> c.showCoords, v -> c.showCoords = v));
+		options.add(new Option("Trip bar", "While Baritone takes you somewhere: a bar at the top with where to, how far, about how long, "
+				+ "and how fast you're going.", () -> c.tripBar, v -> c.tripBar = v));
+		options.add(new Option("Coordinates on the right", "In the bottom-right corner, clear of the chat. Off: the bottom-left corner, under the chat.",
+				() -> c.coordsRight, v -> c.coordsRight = v));
+		options.add(new Option("Small coordinates", "Draw your coordinates a size smaller than the rest of the screen (still sharp). Off: the same size "
+				+ "as chat.", () -> c.smallCoords, v -> c.smallCoords = v));
 		options.add(new Option("Note new chunk trails in chat", "Where a new trail is, which way it runs, and its far end.", () -> c.trailAlerts, v -> c.trailAlerts = v));
+		options.add(new Option("Tell me when the land changes ahead", "Once, as you travel: new chunks coming up while you're in old land, or old chunks "
+				+ "(someone has been there) while you're in new land. In chat and above the hotbar, with a chime.", () -> c.aheadAlerts, v -> c.aheadAlerts = v));
 		options.add(new Option("Ping on any coordinates", "A ping whenever anyone posts coordinates. They're always listed on the Intel tab either way.",
 				() -> c.pingAllCoords, v -> c.pingAllCoords = v));
 		for (ChatIntel.Topic t : ChatIntel.Topic.values()) {
@@ -4239,7 +4255,12 @@ public class ShopScreen extends Screen {
 				new Stepper("Squares are drawn at", new int[] {ChunkOverlay.FOLLOW, -64, 0, 32, 62, 64, 100, 120, 128, 200, 256, 320},
 						() -> c.chunkOverlayY, v -> c.chunkOverlayY = v, v -> v == ChunkOverlay.FOLLOW ? "your feet" : "height " + v),
 				new Stepper("Squares are filled", new int[] {0, 10, 25, 40, 60},
-						() -> c.chunkOverlayFill, v -> c.chunkOverlayFill = v, v -> v == 0 ? "outline only" : v + "%"));
+						() -> c.chunkOverlayFill, v -> c.chunkOverlayFill = v, v -> v == 0 ? "outline only" : v + "%"),
+				new Stepper("Radar size", new int[] {0, 1, 2}, () -> c.radarSize, v -> c.radarSize = v, v -> switch (v) {
+					case 0 -> "Small";
+					case 2 -> "Large";
+					default -> "Medium";
+				}));
 	}
 
 	/**
@@ -4248,7 +4269,7 @@ public class ShopScreen extends Screen {
 	 */
 	private int chunkTrailsCard(DrawContext context, int mouseX, int mouseY, int x, int y, int w) {
 		NNConfig c = NNConfig.INSTANCE;
-		int h = 98;
+		int h = 116;
 		roundedBorder(context, x, y, w, h, CARD, c.chunkTrails ? NICE : BORDER);
 		context.drawText(textRenderer, Text.literal("Chunk trails").styled(s -> s.withBold(true)), x + 10, y + 7, TEXT, false);
 		textTrim(context, c.chunkTrails ? "On: as chunks load, new land shows red, old land green (someone was there), trails yellow."
@@ -4654,6 +4675,8 @@ public class ShopScreen extends Screen {
 			boolean on = intelMap == asMap;
 			pill(context, mouseX, mouseY, tx, y, pw, 14, label, on ? LINK : SOFT, on ? LINK : BORDER, on ? CARD : TEXT, "intel-view:" + label, () -> {
 				intelMap = asMap;
+				NNConfig.INSTANCE.intelMap = asMap;
+				NNConfig.save();
 				scroll = 0;
 				if (asMap) centreMap();
 			});
@@ -4716,7 +4739,7 @@ public class ShopScreen extends Screen {
 
 	// ---- The Intel map: land, trails, places and events, around you or anywhere ----
 
-	private boolean intelMap;
+	private boolean intelMap = NNConfig.INSTANCE.intelMap;
 	/** The middle of the map, in blocks, and pixels per block. */
 	private double mapX, mapZ, mapZoom = 0.125;
 	private String mapDim;

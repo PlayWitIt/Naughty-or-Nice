@@ -68,10 +68,9 @@ public class NaughtyOrNiceClient implements ClientModInitializer {
 		stopKey = KeyBindingHelper.registerKeyBinding(new KeyBinding("key.naughtyornice.stop", InputUtil.Type.KEYSYM, GLFW.GLFW_KEY_Z, category));
 		chunksKey = KeyBindingHelper.registerKeyBinding(new KeyBinding("key.naughtyornice.chunks", InputUtil.Type.KEYSYM, GLFW.GLFW_KEY_K, category));
 		WorldRenderEvents.BEFORE_DEBUG_RENDER.register(context -> Safe.run("drawing chunks in the world", () -> ChunkOverlay.render(context)));
-		HudElementRegistry.addLast(Identifier.of(MOD_ID, "trip"), (context, tickCounter) -> Safe.run("drawing the trip line", () -> SmartTravel.render(context, tickCounter)));
+		HudElementRegistry.addLast(Identifier.of(MOD_ID, "trip"), (context, tickCounter) -> Safe.run("drawing the trip bar", () -> TripBar.render(context, tickCounter)));
 		HudElementRegistry.addLast(Identifier.of(MOD_ID, "logout_spots"), (context, tickCounter) -> Safe.run("drawing logout spots", () -> LogoutSpots.render(context, tickCounter)));
 		HudElementRegistry.addLast(Identifier.of(MOD_ID, "coords"), (context, tickCounter) -> Safe.run("drawing your coordinates", () -> CoordsHud.render(context, tickCounter)));
-		HudElementRegistry.addLast(Identifier.of(MOD_ID, "chunk_here"), (context, tickCounter) -> Safe.run("drawing the chunk line", () -> ChunkOverlay.renderHud(context, tickCounter)));
 		HudElementRegistry.addLast(Identifier.of(MOD_ID, "trail_radar"), (context, tickCounter) -> Safe.run("drawing the trail radar", () -> TrailRadar.render(context, tickCounter)));
 
 		DeathRecap.register();
@@ -95,6 +94,7 @@ public class NaughtyOrNiceClient implements ClientModInitializer {
 		// Disconnect fires on the network thread; do the work on the game thread.
 		ClientPlayConnectionEvents.DISCONNECT.register((handler, client) -> client.execute(() -> {
 			Safe.run("remembering the server", () -> ServerDetails.leave(ledger));
+			ChunkAhead.reset();
 			HighwayRoam.stop(null);
 			SmartTravel.stop();
 			EventHooks.flush(true);
@@ -306,6 +306,7 @@ public class NaughtyOrNiceClient implements ClientModInitializer {
 			roamTimer = 0;
 			HighwayRoam.tick(client);
 			SmartTravel.tick(client);
+			if (NNConfig.on()) Safe.run("looking ahead for new chunks", () -> ChunkAhead.tick(client, ledger.chunkTrails));
 		}
 		// Off (the Mods panel's first switch): the keys above still work, nothing else runs.
 		if (!NNConfig.on()) return;
@@ -379,8 +380,11 @@ public class NaughtyOrNiceClient implements ClientModInitializer {
 				ModsPanel.toggle("Alert on threats against you", "A ping when someone threatens you or your base in chat.", () -> c.alertThreats, v -> c.alertThreats = v),
 				ModsPanel.toggle("Warning sound", "Play a low note with warnings.", () -> c.warnSounds, v -> c.warnSounds = v),
 				ModsPanel.section("On screen"),
-				ModsPanel.toggle("My coordinates", "x y z, facing, and the nether/overworld match in the bottom left, so you don't need F3. "
+				ModsPanel.toggle("My coordinates", "x y z, facing, and the nether/overworld match in the bottom corner, so you don't need F3. "
 						+ "Hidden in stream-safe mode.", () -> c.showCoords, v -> c.showCoords = v),
+				ModsPanel.toggle("Trip bar", "While Baritone takes you somewhere: where to, how far, how long, how fast, at the top.", () -> c.tripBar, v -> c.tripBar = v),
+				ModsPanel.toggle("Coordinates on the right", "In the bottom-right corner, clear of the chat. Off: the bottom left.", () -> c.coordsRight, v -> c.coordsRight = v),
+				ModsPanel.toggle("Small coordinates", "Draw your coordinates a size smaller than the rest of the screen (still sharp).", () -> c.smallCoords, v -> c.smallCoords = v),
 				ModsPanel.toggle("Marks on nametags", "Green ✔, gold ? or red ✖ before listed players' names above their heads.", () -> c.nametagMarks, v -> c.nametagMarks = v),
 				ModsPanel.toggle("Marks in the tab list", "The same marks in the player list (Tab).", () -> c.tabListMarks, v -> c.tabListMarks = v),
 				ModsPanel.toggle("Who's on when you join", "A summary of who's online from your lists when you join a server.", () -> c.joinSummary, v -> c.joinSummary = v),
@@ -392,16 +396,14 @@ public class NaughtyOrNiceClient implements ClientModInitializer {
 						() -> c.deathRecap, v -> c.deathRecap = v),
 				ModsPanel.section("Chunk trails"),
 				ModsPanel.toggle("Find chunk trails", "Tells old land from new land by how each chunk arrives, and finds the paths players left. K shows the squares in the world.",
-						() -> c.chunkTrails, v -> {
-							c.chunkTrails = v;
-							// The radar is what you see: on with it, so turning trails on is never "nothing happened".
-							if (v) c.trailRadar = true;
-						}),
+						() -> c.chunkTrails, v -> c.chunkTrails = v),
 				ModsPanel.toggle("Chunk trail radar", "The small turning map on the right (J shows or hides it in game).", () -> c.trailRadar, v -> {
 					c.trailRadar = v;
 					if (v) c.chunkTrails = true;
 				}),
 				ModsPanel.toggle("Note new chunk trails in chat", "Where a new trail is, which way it runs, and its far end.", () -> c.trailAlerts, v -> c.trailAlerts = v),
+				ModsPanel.toggle("Tell me when the land changes ahead", "Once, as you travel: new chunks coming up while you're in old land, or old chunks "
+						+ "(someone has been there) while you're in new land.", () -> c.aheadAlerts, v -> c.aheadAlerts = v),
 				ModsPanel.section("Other"),
 				ModsPanel.toggle("Offer to open shared links", "When a friend sends you a Naughty or Nice share link in chat.", () -> c.openSharedLinks, v -> c.openSharedLinks = v),
 				ModsPanel.toggle("Tell me about updates", "Once per game session, a note in chat when a newer version is out.", () -> c.checkUpdates, v -> c.checkUpdates = v));

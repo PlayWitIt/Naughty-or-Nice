@@ -10,7 +10,6 @@ import net.minecraft.text.ClickEvent;
 import net.minecraft.text.Text;
 import net.minecraft.util.Formatting;
 
-import java.util.ArrayDeque;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
@@ -35,8 +34,6 @@ public final class SmartTravel {
 	private static int highwayY, stepX, stepZ;
 	/** How far ahead along the highway each step is: short enough that the straight way is along it, not through the walls. */
 	static final int STEP = 120;
-	/** Recent (time, distance left), for the speed you're making. */
-	private static final ArrayDeque<double[]> progress = new ArrayDeque<>();
 	private static final Set<UUID> warned = new HashSet<>();
 	private static boolean lowHealthWarned;
 
@@ -103,7 +100,6 @@ public final class SmartTravel {
 		}
 		HighwayRoam.stop(null);
 		trip = new Trip(d.name(), plan.x(), plan.z(), fly, System.currentTimeMillis());
-		progress.clear();
 		warned.clear();
 		lowHealthWarned = false;
 		String how = fly ? "flying" : !route.isEmpty() ? HighwayRoute.describe(route, client.player.getX(), client.player.getZ()) : "walking";
@@ -172,8 +168,6 @@ public final class SmartTravel {
 		if (trip == null || client.player == null || client.world == null) return;
 		long now = System.currentTimeMillis();
 		double left = Math.hypot(trip.x() - client.player.getX(), trip.z() - client.player.getZ());
-		progress.addLast(new double[] {now, left});
-		while (progress.size() > 20) progress.removeFirst();
 		if (left < 8) {
 			Alerts.chat(Text.literal("Arrived at " + trip.name() + ".").formatted(Formatting.GREEN));
 			trip = null;
@@ -203,27 +197,23 @@ public final class SmartTravel {
 		}
 	}
 
-	/** Blocks a second you're actually closing in at, over the last 20 seconds; 0 if not enough to say. */
-	private static double speed() {
-		if (progress.size() < 5) return 0;
-		double[] first = progress.peekFirst(), last = progress.peekLast();
-		double secs = (last[0] - first[0]) / 1000;
-		return secs <= 0 ? 0 : Math.max(0, (first[1] - last[1]) / secs);
+	/** The trip under way, for the trip bar: its name, where it ends, and whether it's by elytra; null when there's none. */
+	static String tripName() {
+		return trip == null ? null : trip.name();
 	}
 
-	/** The line at the top of the screen while going somewhere. */
-	public static void render(DrawContext context, RenderTickCounter tickCounter) {
-		MinecraftClient client = MinecraftClient.getInstance();
-		if (trip == null || client.player == null || client.options.hudHidden) return;
-		double left = Math.hypot(trip.x() - client.player.getX(), trip.z() - client.player.getZ());
-		double speed = speed();
-		String eta = speed < 0.5 ? "" : " · about " + ShopScreen.duration((int) (left / speed));
-		String stopKey = NaughtyOrNiceClient.INSTANCE.stopKeyName();
-		String line = String.format(Locale.ROOT, "▶ %s · %,d blocks%s · %s · %s to stop", trip.name(), (int) left, eta,
-				trip.elytra() ? "flying" : BaritoneBridge.isPathing() ? "walking" : "paused or working out a path", stopKey);
-		int w = client.textRenderer.getWidth(line);
-		int x = context.getScaledWindowWidth() / 2 - w / 2;
-		context.fill(x - 4, 3, x + w + 4, 15, 0xA0000000);
-		context.drawTextWithShadow(client.textRenderer, line, x, 5, 0xFFFFE08A);
+	static int[] tripTarget() {
+		return trip == null ? null : new int[] {trip.x(), trip.z()};
+	}
+
+	static boolean flying() {
+		return trip != null && trip.elytra();
+	}
+
+	/** Blocks still to go: along the highways when the trip is by them, straight there otherwise. */
+	static double remaining(double px, double pz) {
+		if (trip == null) return 0;
+		if (!legs.isEmpty() && leg < legs.size()) return HighwayRoute.remaining(legs, leg, px, pz);
+		return Math.hypot(trip.x() - px, trip.z() - pz);
 	}
 }

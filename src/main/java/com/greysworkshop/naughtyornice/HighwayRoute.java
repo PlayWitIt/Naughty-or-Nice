@@ -107,4 +107,21 @@ public final class HighwayRoute {
 		}
 		return sb.toString();
 	}
+
+	/** Blocks still to go on a route from (px, pz), on leg {@code leg}: the rest of this leg, then every leg after it. */
+	public static double remaining(List<Leg> legs, int leg, double px, double pz) {
+		double sum = 0, x = px, z = pz;
+		for (int i = leg; i < legs.size(); i++) {
+			Leg l = legs.get(i);
+			if (l.onHighway()) {
+				double from = i == leg ? along(l.axis(), x, z) : l.from();
+				sum += Math.abs(l.to() - from);
+			} else {
+				sum += Math.hypot(l.x() - x, l.z() - z);
+			}
+			x = l.x();
+			z = l.z();
+		}
+		return sum;
+	}
 }

@@ -146,6 +146,20 @@ public final class BaritoneBridge {
 		return list;
 	}
 
+	/**
+	 * Writes Baritone's settings to its own file (baritone/settings.txt), so a change made here is still there next
+	 * time the game starts. Its "set" command does this itself; switching a setting directly doesn't.
+	 */
+	public static void saveSettings() {
+		if (!present()) return;
+		try {
+			Object settings = Class.forName("baritone.api.BaritoneAPI").getMethod("getSettings").invoke(null);
+			Class.forName("baritone.api.utils.SettingsUtil").getMethod("save", Class.forName("baritone.api.Settings")).invoke(null, settings);
+		} catch (ReflectiveOperationException | LinkageError | RuntimeException e) {
+			NaughtyOrNiceClient.LOGGER.warn("Couldn't save Baritone's settings", e);
+		}
+	}
+
 	/** Puts a Baritone setting back to its default. */
 	public static void reset(String name) {
 		if (!present()) return;
