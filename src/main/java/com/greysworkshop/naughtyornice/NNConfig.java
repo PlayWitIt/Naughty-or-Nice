@@ -9,6 +9,7 @@ import java.io.Reader;
 import java.io.Writer;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 
 /** User settings, saved to config/naughtyornice/settings.json. Missing fields keep their defaults. */
 public final class NNConfig {
@@ -100,6 +101,8 @@ public final class NNConfig {
 	public boolean trailRadar = false;
 	/** Your coordinates in the bottom left (hidden in stream-safe mode). */
 	public boolean showCoords = true;
+	/** Set once 1.13.11 has turned the coordinates back on for everyone who'd lost them. */
+	public boolean coordsRestored = false;
 	/** A chat note when a new chunk trail is found. */
 	public boolean trailAlerts = true;
 	/** Draw the chunks that have been read in the world, as coloured squares (K toggles it). */
@@ -110,6 +113,8 @@ public final class NNConfig {
 	public int chunkOverlayFill = 25;
 	/** On a Baritone trip: pause and ask when someone who isn't a friend (or on your Nice list) shows up. */
 	public boolean tripStopForStrangers = true;
+	/** Trips in the nether ride the highways when that's quicker than going straight (see HighwayRoute). */
+	public boolean tripUseHighways = true;
 	/** On a Baritone trip: stop when your health is at or below this (half-hearts; 0 = never). */
 	public int tripStopHealth = 8;
 	/** Keep a log of everything around you (the last 30 minutes always; recordings when you start one). */
@@ -183,7 +188,10 @@ public final class NNConfig {
 	}
 
 	public static void load() {
-		if (!Files.exists(file())) return;
+		if (!Files.exists(file())) {
+			INSTANCE.coordsRestored = true;
+			return;
+		}
 		try (Reader reader = Files.newBufferedReader(file())) {
 			NNConfig loaded = GSON.fromJson(reader, NNConfig.class);
 			if (loaded != null) {
@@ -195,7 +203,18 @@ public final class NNConfig {
 				if (loaded.circles == null || loaded.circles.isEmpty()) loaded.circles = Friends.defaultCircles();
 				if (loaded.skippedVersion == null) loaded.skippedVersion = "";
 				if (loaded.whisperCommand == null || loaded.whisperCommand.isBlank()) loaded.whisperCommand = "msg";
+				boolean restore = !loaded.coordsRestored;
+				if (restore) {
+					loaded.showCoords = true;
+					loaded.coordsRestored = true;
+					// A profile saved with them off would turn them off again on every join.
+					List<ModsPanel.Profile> profiles = ModsPanel.loadProfiles();
+					boolean changed = false;
+					for (ModsPanel.Profile p : profiles) changed |= p.switches.remove(NaughtyOrNiceClient.MOD_ID + "/My coordinates") != null;
+					if (changed) ModsPanel.saveProfiles(profiles);
+				}
 				INSTANCE = loaded;
+				if (restore) save();
 			}
 		} catch (IOException | RuntimeException e) {
 			NaughtyOrNiceClient.LOGGER.error("Could not read {}", file(), e);

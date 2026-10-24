@@ -201,6 +201,7 @@ public class ChatIntelCheck {
 		tone("he is raping children", "NONE");
 		tone("i am a proud pedophile, like white pride, but with pedophilia", "ABUSE");
 		System.out.println("ChatIntel: " + pass + " passed, " + fail + " failed");
-		if (fail > 0) System.exit(1);
+		int serverFails = ServerSoftwareCheck.run();
+		if (fail > 0 || serverFails > 0) System.exit(1);
 	}
 }

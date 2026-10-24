@@ -12,6 +12,7 @@ import net.minecraft.util.Formatting;
 
 import java.util.ArrayDeque;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Locale;
 import java.util.Set;
 import java.util.UUID;
@@ -28,6 +29,12 @@ public final class SmartTravel {
 	private record Trip(String name, int x, int z, boolean elytra, long started) {}
 
 	private static Trip trip;
+	/** A trip by the nether highways: its legs, which one it's on, the highway's height, and the step being walked to. */
+	private static List<HighwayRoute.Leg> legs = List.of();
+	private static int leg;
+	private static int highwayY, stepX, stepZ;
+	/** How far ahead along the highway each step is: short enough that the straight way is along it, not through the walls. */
+	static final int STEP = 120;
 	/** Recent (time, distance left), for the speed you're making. */
 	private static final ArrayDeque<double[]> progress = new ArrayDeque<>();
 	private static final Set<UUID> warned = new HashSet<>();
@@ -80,19 +87,81 @@ public final class SmartTravel {
 		double distance = Math.hypot(plan.x() - client.player.getX(), plan.z() - client.player.getZ());
 		boolean fly = canFly(client, distance);
 		if (fly) BaritoneBridge.setBool("elytraTermsAccepted", true);
+		// Walking in the nether: by the highways, when that's quicker than straight there.
+		boolean nether = client.world.getRegistryKey().getValue().toString().endsWith("the_nether");
+		List<HighwayRoute.Leg> route = !fly && (nether || testRouteEverywhere) && NNConfig.INSTANCE.tripUseHighways
+				? HighwayRoute.plan(client.player.getX(), client.player.getZ(), plan.x(), plan.z()) : List.of();
+		finalY = plan.y();
+		legs = route;
+		leg = 0;
 		boolean ok = fly ? BaritoneBridge.run("goal " + plan.x() + " " + plan.z()) && BaritoneBridge.run("elytra")
+				: !route.isEmpty() ? startLeg(client)
 				: BaritoneBridge.run("goto " + plan.x() + " " + (plan.y() == null ? "" : plan.y() + " ") + plan.z());
-		if (!ok) return "Baritone didn't take it (see its message in chat)";
+		if (!ok) {
+			legs = List.of();
+			return "Baritone didn't take it (see its message in chat)";
+		}
 		HighwayRoam.stop(null);
 		trip = new Trip(d.name(), plan.x(), plan.z(), fly, System.currentTimeMillis());
 		progress.clear();
 		warned.clear();
 		lowHealthWarned = false;
-		String how = fly ? "flying" : "walking";
+		String how = fly ? "flying" : !route.isEmpty() ? HighwayRoute.describe(route, client.player.getX(), client.player.getZ()) : "walking";
 		return "Going to " + d.name() + ", " + how + String.format(Locale.ROOT, ", %,d blocks", (int) distance) + (plan.note() == null ? "" : " (" + plan.note() + ")");
 	}
 
+	/** The place's height, if known, for the last leg. */
+	private static Integer finalY;
+
+	/** Sets Baritone off on the current leg. */
+	private static boolean startLeg(MinecraftClient client) {
+		HighwayRoute.Leg l = legs.get(leg);
+		if (l.onHighway()) {
+			highwayY = client.player.getBlockY();
+			return step(client, l);
+		}
+		boolean last = leg == legs.size() - 1;
+		return BaritoneBridge.run("goto " + l.x() + " " + (last && finalY != null ? finalY + " " : "") + l.z());
+	}
+
+	/** The next step along the highway: the middle of it, up to {@link #STEP} blocks on, at the height you're riding it. */
+	private static boolean step(MinecraftClient client, HighwayRoute.Leg l) {
+		double now = HighwayRoute.along(l.axis(), client.player.getX(), client.player.getZ());
+		double next = now + Math.signum(l.to() - now) * Math.min(STEP, Math.abs(l.to() - now));
+		int[] p = HighwayRoute.point(l.axis(), next);
+		stepX = p[0];
+		stepZ = p[1];
+		return BaritoneBridge.run("goto " + stepX + " " + highwayY + " " + stepZ);
+	}
+
+	/** For a trip by highway, once a second: the next step, or the next leg when this one's done. */
+	private static void legs(MinecraftClient client) {
+		if (legs.isEmpty() || leg >= legs.size()) return;
+		HighwayRoute.Leg l = legs.get(leg);
+		double px = client.player.getX(), pz = client.player.getZ();
+		boolean done;
+		if (l.onHighway()) {
+			done = Math.abs(l.to() - HighwayRoute.along(l.axis(), px, pz)) < 16;
+			if (!done && Math.hypot(stepX - px, stepZ - pz) < 24) step(client, l);
+		} else {
+			done = leg < legs.size() - 1 && Math.hypot(l.x() - px, l.z() - pz) < HighwayRoute.ON;
+		}
+		if (done && leg < legs.size() - 1) {
+			leg++;
+			startLeg(client);
+		}
+	}
+
+	/** For the self-test, whose flat world has no nether: route by highway in the overworld too. */
+	static boolean testRouteEverywhere;
+
+	/** For the self-test: the legs of the trip under way. */
+	static List<HighwayRoute.Leg> testLegs() {
+		return legs;
+	}
+
 	public static void stop() {
+		legs = List.of();
 		if (trip == null) return;
 		trip = null;
 		BaritoneBridge.run("stop");
@@ -108,8 +177,10 @@ public final class SmartTravel {
 		if (left < 8) {
 			Alerts.chat(Text.literal("Arrived at " + trip.name() + ".").formatted(Formatting.GREEN));
 			trip = null;
+			legs = List.of();
 			return;
 		}
+		legs(client);
 		if (NNConfig.INSTANCE.tripStopForStrangers) {
 			for (PlayerEntity p : client.world.getPlayers()) {
 				if (p == client.player || !warned.add(p.getUuid())) continue;

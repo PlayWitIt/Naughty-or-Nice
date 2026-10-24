@@ -40,7 +40,7 @@ It also has:
   offline players too.
 - Search finds players by name, their details, their groups, or anything they've said in chat.
 - Tabs: All, Nearby, Online, **Offline**, **Friends**, Nice list, **Look Into** (your Look Into list, then players whose behaviour
-  suggests a list), Naughty list, **Groups**, **Activity**, **Intel**, **Chat**, Settings.
+  suggests a list), Naughty list, **Groups**, **Activity**, **Server**, **Intel**, **Chat**, Settings.
 - Everyone you see (nearby or on the tab list) is remembered, so they're still listed after logging off. Players who
   never did anything are forgotten after 180 days unseen (configurable).
 - Light and dark themes: the ☾ / ☀ button at the top (dark by default).
@@ -48,7 +48,10 @@ It also has:
   Settings → **Screen size**: Small fits the most (about 900 wide), Medium is in between (about 680), Large is the
   biggest (about 540, never so big the panels don't fit). Whole-pixel scales are used where they're close, so text
   stays sharp.
-- Commands: `/nn`, `/nn add`, `/nn friends`, `/nn chat`, `/nn groups`, `/nn intel`, `/nn share`, `/nn import`, `/nn open <link>`,
+- **Your coordinates** show in the bottom left (x y z, facing, and the matching nether or overworld spot), on a dark
+  backing, split onto two lines above the hotbar when they'd run into it. Not showing? `/nn coords` says why and turns
+  them back on.
+- Commands: `/nn`, `/nn add`, `/nn friends`, `/nn chat`, `/nn groups`, `/nn server`, `/nn intel`, `/nn coords`, `/nn share`, `/nn import`, `/nn open <link>`,
   `/nn disconnects`, `/nn sendanyway`, `/nn radar`, `/nn events`, `/nn baritone`, `/nn friend <name> [type]`, `/nn nice <name>`, `/nn look <name>`, `/nn naughty <name>`,
   `/nn unsort <name>`, `/nn group <name> <group>`, `/nn who <name>`, `/nn chat <name>`, `/nn settings`.
 
@@ -84,6 +87,32 @@ you play, it counts who's on.
   on yet are empty outlines.
 - **When your lists are on**: when your Friends, Nice, Look Into and Naughty players are usually online.
 - Hover any bar or square for the numbers: about how many, the most at once, and how much of your time it's from.
+
+## Server: everything it shows about itself
+The **Server** tab (or `/nn server`) lists everything a server tells a player, and nothing is sent to it to find out.
+A coloured mark on each line says how it's known: the server said so (blue), it was seen happening (amber), or it
+can't be known from a player's side (grey).
+- **The server**: address, message of the day, version and protocol (and whether ViaVersion is translating), the
+  software from its brand (Paper, Purpur, Fabric...), a proxy in front (Velocity, BungeeCord), slots, secure chat,
+  and its links (Discord, website) to open.
+- **How it's running**: ticks per second, measured from the server's own clock, now and over a minute, the slowest
+  minute since you joined, a warning when it stalls, your ping and everyone's, and how much is loaded around you.
+- **The world**: difficulty (and whether it's locked), hardcore, dimensions, build height, sea level, time and
+  weather, world spawn, world border (and your distance to its edge), the server's view and simulation distance,
+  and experiments.
+- **Game rules**: the ones that reach players (doDaylightCycle, doImmediateRespawn, reducedDebugInfo,
+  doLimitedCrafting), the ones that can be seen (death messages, PvP), and a plain note that the rest
+  (keepInventory, mobGriefing...) never leave the server.
+- **You**: game mode, operator level, how many commands you may use.
+- **Plugins its commands show**: every `plugin:command` namespace, plus well-known plugins by their own commands.
+  Anticheats, block loggers (CoreProtect: griefs can be rolled back) and live web maps (Dynmap, BlueMap: your base
+  may be on a public map) are shown in red. Your own mods' commands are left out.
+- **Plugin channels** and **data packs** (custom biomes, enchantments and the like, by namespace).
+- **Tab list and sidebar**: the tab list's top and bottom text and the sidebar's lines.
+- **Changed since your last visit**: new or removed plugins, a new version or software.
+
+**Copy report** and **Save report** (to `config/naughtyornice/server-reports`) give all of it as text, with every
+command you can use.
 
 ## Groups
 Group people you know are teamed up or associated: a base crew, a griefing group, someone's alts. Make one from a

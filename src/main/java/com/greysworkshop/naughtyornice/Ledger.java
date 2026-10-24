@@ -603,7 +603,7 @@ public final class Ledger {
 	}
 
 	/** A file next to the lists for this server, e.g. lists/&lt;server&gt;.trails.json. */
-	private Path sideFile(String suffix) {
+	Path sideFile(String suffix) {
 		return NNConfig.dir().resolve("lists").resolve(key.replaceAll("[^A-Za-z0-9._-]", "_") + suffix);
 	}
 
