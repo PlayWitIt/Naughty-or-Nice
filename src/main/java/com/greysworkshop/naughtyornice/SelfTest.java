@@ -1322,6 +1322,7 @@ public final class SelfTest {
 				String report = ServerDetails.report(client, NaughtyOrNiceClient.INSTANCE);
 				check("the server report has every section and the command list", report.contains("== Game rules ==") && report.contains("== Every command you can use ==")
 						&& report.contains("gamerule"));
+				NNConfig.INSTANCE.intelMap = false;
 				client.setScreen(new ShopScreen(ShopScreen.Tab.INTEL, null));
 			}
 			case 1207 -> {
@@ -1409,37 +1410,51 @@ public final class SelfTest {
 				screenshot(client, "59_trail_radar");
 				// What's really on screen in the bottom left, not just what the line would say.
 				int scale = (int) client.getWindow().getScaleFactor();
-				var shown = CoordsHud.lines(client.textRenderer, CoordsHud.line(client), client.getWindow().getScaledWidth());
-				int fy = (CoordsHud.bottomY(client.textRenderer, shown, client.getWindow().getScaledWidth(), client.getWindow().getScaledHeight()) + 3) * scale;
-				int lineW = client.textRenderer.getWidth(shown.getLast());
-				log("Coordinates on screen: " + shown + " at GUI scale " + scale);
+				float ts = CoordsHud.scale(client);
+				int sw = client.getWindow().getScaledWidth(), sh = client.getWindow().getScaledHeight();
+				var shown = CoordsHud.lines(client.textRenderer, CoordsHud.line(client), sw, ts);
+				int top = CoordsHud.bottomY(client.textRenderer, shown, sw, sh, ts);
+				// Rows in real pixels: the bottom line's backing, from its top to its bottom.
+				int y0 = top * scale, y1 = (top + CoordsHud.lineHeight(ts) - 2) * scale;
+				int lineW = (int) Math.ceil(client.textRenderer.getWidth(shown.getLast()) * ts);
+				log("Coordinates on screen: " + shown + " at GUI scale " + scale + ", text scale " + ts);
 				coordsPixels = null;
 				net.minecraft.client.util.ScreenshotRecorder.takeScreenshot(client.getFramebuffer(), image -> {
 					try (image) {
-						int outside = luma(image.getColorArgb(0, fy)), backing = luma(image.getColorArgb(3 * scale, fy));
-						int bright = 0;
-						for (int x = 4 * scale; x < (4 + lineW) * scale && x < image.getWidth(); x++) {
-							for (int y = fy - 3 * scale; y < fy + 5 * scale; y++) if (luma(image.getColorArgb(x, y)) > 200) bright++;
+						int mid = (y0 + y1) / 2;
+						int left = CoordsHud.left(lineW, sw);
+						int outside = luma(image.getColorArgb(Math.max(0, (left - 4) * scale), mid)), backing = luma(image.getColorArgb((left - 1) * scale, mid));
+						int green = 0, white = 0;
+						for (int x = left * scale; x < (left + lineW) * scale && x < image.getWidth(); x++) {
+							for (int y = y0; y < y1 && y < image.getHeight(); y++) {
+								int c = image.getColorArgb(x, y), r = (c >> 16) & 0xFF, g = (c >> 8) & 0xFF, b = c & 0xFF;
+								if (g > 200 && r < 140 && b < 140) green++;
+								if (r > 200 && g > 200 && b > 200) white++;
+							}
 						}
-						coordsPixels = new int[] {outside, backing, bright};
+						coordsPixels = new int[] {outside, backing, green, white};
 					}
 				});
 				client.player.setPitch(55);
 			}
 			case 1322 -> {
 				int[] px = coordsPixels;
-				check("your coordinates are really drawn in the bottom left, white on a dark backing ("
-						+ (px == null ? "no screenshot" : "outside " + px[0] + ", backing " + px[1] + ", " + px[2] + " white pixels") + ")",
-						px != null && px[1] <= px[0] && px[1] < 90 && px[2] > 40);
+				check("your coordinates are really drawn in the bottom-right corner, green on a dark backing ("
+						+ (px == null ? "no screenshot" : "outside " + px[0] + ", backing " + px[1] + ", " + px[2] + " green pixels, " + px[3] + " white") + ")",
+						px != null && px[1] <= px[0] * 0.6 + 4 && px[2] > 30 && px[3] < px[2] / 4);
+				check("...a size smaller than the rest of the HUD, on whole pixels", NNConfig.INSTANCE.smallCoords
+						&& CoordsHud.scale(client) < 1 && (client.getWindow().getScaleFactor() == 2 || Math.abs(CoordsHud.scale(client) * client.getWindow().getScaleFactor() - Math.round(CoordsHud.scale(client) * client.getWindow().getScaleFactor())) < 0.01));
 				check("the chunks are drawn in the world (" + ChunkOverlay.shown() + " squares)", ChunkOverlay.shown() > 100);
+				check("the radar draws the real land under the chunks (" + TrailRadar.landRead() + " chunks read)", TrailRadar.landRead() > 20);
 				screenshot(client, "59b_chunks_in_world");
 				client.player.setPitch(0);
 			}
 			case 1323 -> {
 				NNConfig.INSTANCE.trailRadar = false;
+				NNConfig.INSTANCE.intelMap = false;
 				client.setScreen(new ShopScreen(ShopScreen.Tab.INTEL, null));
 			}
-			case 1326 -> check("the Intel map opens", screen(client).testClick("intel-view:Map"));
+			case 1326 -> check("the Intel map opens, and it's remembered for next time", screen(client).testClick("intel-view:Map") && NNConfig.INSTANCE.intelMap);
 			case 1332 -> screenshot(client, "60_intel_map");
 			case 1333 -> check("the map switches to heat", screen(client).testClick("map-heat"));
 			case 1337 -> screenshot(client, "61_heat_map");
@@ -1519,16 +1534,20 @@ public final class SelfTest {
 				BaritoneBridge.run("stop");
 				SmartTravel.stop();
 				NNConfig.INSTANCE.tripStopForStrangers = true;
-				HighwayRoam.axis = HighwayRoam.AXES[0];
-				HighwayRoam.elytra = false;
-				HighwayRoam.distance = 300;
-				HighwayRoam.height = Integer.MIN_VALUE;
+				HighwayRoam.pick(HighwayRoam.AXES[0]);
+				NNConfig.INSTANCE.roamElytra = false;
+				NNConfig.INSTANCE.roamToCoords = false;
+				NNConfig.INSTANCE.roamDistance = 300;
+				NNConfig.INSTANCE.roamHeight = null;
 				String why = HighwayRoam.start(client);
 				check("a highway roam starts (" + (why == null ? HighwayRoam.target() : why) + ")", why == null && HighwayRoam.active());
 			}
 			case 1385 -> {
-				log("Roam goal: " + BaritoneBridge.goal());
-				check("...towards a point on the highway", BaritoneBridge.goal().contains(HighwayRoam.target().split(", ")[0]));
+				log("Roam goal: " + BaritoneBridge.goal() + ", legs " + HighwayRoam.legs());
+				// A step at a time along the middle of the +X highway (z 0), not one far point straight across.
+				int[] stepGoal = TripBar.goalXZ(BaritoneBridge.goal());
+				check("...a step at a time along the highway's middle (" + BaritoneBridge.goal() + ")", stepGoal != null && stepGoal[1] == 0
+						&& stepGoal[0] > client.player.getBlockX() && stepGoal[0] <= client.player.getBlockX() + HighwayRoam.STEP + 2);
 				HighwayRoam.stop("test over");
 				check("...and stops", !HighwayRoam.active());
 				BaritoneBridge.run("stop");
@@ -2037,33 +2056,64 @@ public final class SelfTest {
 			// ---- Highway roam ----
 			case 146 -> {
 				b.testPress("Highway roam");
-				check("a highway is picked with its button", b.testPress("+Z") && HighwayRoam.axis.name().equals("+Z"));
-				boolean was = HighwayRoam.elytra;
+				NNConfig c0 = NNConfig.INSTANCE;
+				b.testPress("A distance along a highway");
+				check("a highway is picked with its button", b.testPress("+Z") && HighwayRoam.axis().name().equals("+Z"));
+				boolean was = c0.roamElytra;
 				b.testPress(was ? "Elytra ▸" : "Walk ▸");
-				boolean flipped = HighwayRoam.elytra != was;
-				b.testPress(HighwayRoam.elytra ? "Elytra ▸" : "Walk ▸");
-				check("Walk / Elytra switches and back", flipped && HighwayRoam.elytra == was);
-				boolean parkour = HighwayRoam.parkour;
+				boolean flipped = NNConfig.INSTANCE.roamElytra != was;
+				b.testPress(NNConfig.INSTANCE.roamElytra ? "Elytra ▸" : "Walk ▸");
+				check("Walk / Elytra switches and back", flipped && NNConfig.INSTANCE.roamElytra == was);
+				boolean parkour = NNConfig.INSTANCE.roamParkour;
 				b.testPress("Parkour jumps");
-				boolean parkourFlipped = HighwayRoam.parkour != parkour;
+				boolean parkourFlipped = NNConfig.INSTANCE.roamParkour != parkour;
 				b.testPress("Parkour jumps");
-				check("its switches switch (parkour)", parkourFlipped && HighwayRoam.parkour == parkour);
-				if (HighwayRoam.stopForStrangers) b.testPress("Stop when a stranger shows up");
-				check("...and the stranger one", !HighwayRoam.stopForStrangers);
+				check("its switches switch (parkour)", parkourFlipped && NNConfig.INSTANCE.roamParkour == parkour);
+				if (NNConfig.INSTANCE.roamStopStrangers) b.testPress("Stop when a stranger shows up");
+				check("...and the stranger one", !NNConfig.INSTANCE.roamStopStrangers);
 				b.testType("here", "");
 				b.testType("blocks", "200");
 				b.testPress("Start roaming");
 			}
 			case 154 -> {
-				log("Roam: " + b.testStatus() + ", goal " + BaritoneBridge.goal() + ", distance " + HighwayRoam.distance);
-				check("Start roaming roams the +Z highway, 200 blocks", HighwayRoam.active() && HighwayRoam.distance == 200
+				log("Roam: " + b.testStatus() + ", goal " + BaritoneBridge.goal() + ", distance " + NNConfig.INSTANCE.roamDistance);
+				check("Start roaming roams the +Z highway, 200 blocks", HighwayRoam.active() && NNConfig.INSTANCE.roamDistance == 200
 						&& BaritoneBridge.goal().contains("x=0") && BaritoneBridge.goal().contains("z="));
+				TripBar.Where where = TripBar.where(client);
+				String bar = where == null ? "" : TripBar.line(client, where);
+				log("Trip bar: " + bar);
+				check("the trip bar shows the roam: where to, how far, how to stop (" + bar + ")", where != null && bar.startsWith("▶ Roaming the +Z highway")
+						&& bar.contains(" blocks") && bar.contains("to stop"));
 				b.testPress("Stop");
 			}
-			case 157 -> {
+			case 156 -> {
 				check("Stop stops the roam", !HighwayRoam.active() && !BaritoneBridge.isPathing());
-				HighwayRoam.stopForStrangers = true;
-				HighwayRoam.axis = HighwayRoam.AXES[0];
+				NNConfig.INSTANCE.roamStopStrangers = true;
+				// ---- ...to coordinates: typed in, the best highway, kept in the settings ----
+				b.testPress("To coordinates");
+				int toX = p.getBlockX() + 3000, toZ = 40;
+				b.testType("x", String.valueOf(toX));
+				b.testType("z", String.valueOf(toZ));
+				b.testPress(HighwayRoam.BEST);
+				b.testPress("Start roaming");
+				List<HighwayRoute.Leg> legs = HighwayRoam.legs();
+				log("Roam to coordinates: " + b.testStatus() + "; legs " + legs + "; goal " + BaritoneBridge.goal());
+				check("a roam goes to typed coordinates: along the +X highway, then off it to them (" + b.testStatus() + ")", HighwayRoam.active() && !legs.isEmpty()
+						&& legs.stream().anyMatch(l -> l.onHighway() && l.axis().name().equals("+X")) && legs.getLast().x() == toX && legs.getLast().z() == toZ);
+				HighwayRoam.stop(null);
+				NNConfig.load();
+				check("what's set for a roam is kept in the settings until changed (" + NNConfig.INSTANCE.roamX + ", " + NNConfig.INSTANCE.roamZ + ", "
+						+ NNConfig.INSTANCE.roamAxis + ")", NNConfig.INSTANCE.roamToCoords && Integer.valueOf(toX).equals(NNConfig.INSTANCE.roamX)
+						&& Integer.valueOf(toZ).equals(NNConfig.INSTANCE.roamZ) && NNConfig.INSTANCE.roamAxis.equals(HighwayRoam.BEST) && NNConfig.INSTANCE.roamDistance == 200);
+				// Stop on the highway instead: the last bit off it goes.
+				NNConfig.INSTANCE.roamGoOn = false;
+				String described = HighwayRoam.describe(client);
+				check("...or stop on the highway at its nearest point (" + described + ")", described.startsWith("To " + toX + ", 0:"));
+				NNConfig.INSTANCE.roamGoOn = true;
+				NNConfig.INSTANCE.roamToCoords = false;
+				HighwayRoam.pick(HighwayRoam.AXES[0]);
+			}
+			case 157 -> {
 				// ---- Settings: all of Baritone's, searched and clicked ----
 				b.testPress("Settings");
 				int health = NNConfig.INSTANCE.tripStopHealth;
@@ -2081,7 +2131,15 @@ public final class SelfTest {
 				boolean clicked = b.testRow("allowSprint", false);
 				boolean flipped = !java.util.Objects.equals(sprint, BaritoneBridge.bool("allowSprint"));
 				BaritoneBridge.setBool("allowSprint", Boolean.TRUE.equals(sprint));
+				String saved = "";
+				try {
+					saved = java.nio.file.Files.readString(client.runDirectory.toPath().resolve("baritone/settings.txt")).toLowerCase(java.util.Locale.ROOT);
+				} catch (java.io.IOException e) {
+					saved = "(no file: " + e.getMessage() + ")";
+				}
 				check("Settings has all of Baritone's (" + count + "), and an on/off one switches with a click", count > 100 && clicked && flipped);
+				check("...and is saved in Baritone's settings file, so it's kept", saved.contains("allowsprint " + !Boolean.TRUE.equals(sprint)));
+				BaritoneBridge.saveSettings();
 				check("...backfill among them", BaritoneBridge.settings().stream().anyMatch(st -> st.name().equals("backfill") && st.bool()));
 				// Every setting that isn't on/off, Set to what it shows: each must come back exactly the same, with no error.
 				BaritoneBridge.listen();
@@ -2167,6 +2225,36 @@ public final class SelfTest {
 				check("route: +X in to spawn, then out along -Z (" + HighwayRoute.describe(r3, 5000, 0) + ")", r3.size() == 3 && r3.get(0).axis().name().equals("+X")
 						&& r3.get(1).axis().name().equals("-Z") && r3.get(1).z() == -8000);
 				check("route: somewhere near is just gone to", route.apply(new double[] {0, 0}, new int[] {100, 100}).isEmpty());
+				// The roam's own plans: a distance, to coordinates by a picked highway, stopping on it or going on.
+				var plusX = HighwayRoam.AXES[0];
+				var d1 = HighwayRoam.plan(plusX, 100, 3, null, 5000, true);
+				check("roam plan: 5,000 along +X from where you are (" + d1 + ")", d1.size() == 1 && d1.get(0).x() == 5100 && d1.get(0).z() == 0);
+				var d2 = HighwayRoam.plan(plusX, 100, 300, null, 1000, true);
+				check("roam plan: off the highway, it gets on first (" + d2 + ")", d2.size() == 2 && !d2.get(0).onHighway() && d2.get(0).z() == 0 && d2.get(1).x() == 1100);
+				var c1 = HighwayRoam.plan(plusX, 0, 0, new int[] {8000, 600}, 0, true);
+				check("roam plan: to coordinates by +X, then off it (" + c1 + ")", c1.size() == 2 && c1.get(0).x() == 8000 && c1.get(1).x() == 8000 && c1.get(1).z() == 600);
+				var c2 = HighwayRoam.plan(plusX, 0, 0, new int[] {8000, 600}, 0, false);
+				check("roam plan: ...or stop on the highway (" + c2 + ")", c2.size() == 1 && c2.get(0).onHighway() && c2.get(0).x() == 8000);
+				var c3 = HighwayRoam.plan(null, 5000, 0, new int[] {0, -8000}, 0, true);
+				check("roam plan: Best goes in on +X and out on -Z (" + c3 + ")", c3.size() == 3 && c3.get(0).axis().name().equals("+X") && c3.get(1).axis().name().equals("-Z"));
+				check("roam: what's left counts along the route, not straight across", Math.abs(HighwayRoute.remaining(c3, 0, 5000, 0) - 13000) < 2);
+				check("trip bar reads Baritone's goal", java.util.Arrays.equals(TripBar.goalXZ("GoalBlock{x=12,y=64,z=-30}"), new int[] {12, -30})
+						&& java.util.Arrays.equals(TripBar.goalXZ("GoalXZ{x=-5,z=7}"), new int[] {-5, 7}) && TripBar.goalXZ("GoalComposite[]") == null);
+				// New chunks ahead: told once, two chunks deep, along the way you're going.
+				ChunkTrails ahead = new ChunkTrails();
+				String dimA = "minecraft:the_nether";
+				for (int i = -2; i <= 10; i++) ahead.set(dimA, i, 0, i < 4 ? ChunkTrails.OLD : ChunkTrails.NEW);
+				var a1 = ChunkAhead.ahead(ahead, dimA, 8, 8, 1, 0);
+				check("new chunks ahead are seen coming (" + a1 + ")", a1 != null && a1.state() == ChunkTrails.NEW && a1.blocks() >= 48 && a1.blocks() <= 64);
+				check("...but not behind you", ChunkAhead.ahead(ahead, dimA, 8, 8, -1, 0) == null);
+				for (int i = 5; i <= 6; i++) {
+					ahead.set(dimA, i, 0, ChunkTrails.OLD);
+					ahead.forgetMine(dimA, i, 0);
+				}
+				var a2 = ChunkAhead.ahead(ahead, dimA, 8, 8, 1, 0);
+				check("...and one odd chunk doesn't count, the edge must be two deep (" + a2 + ")", a2 != null && a2.blocks() >= 104);
+				var a3 = ChunkAhead.ahead(ahead, dimA, 9 * 16 + 8, 8, -1, 0);
+				check("from new land, old chunks ahead are told too (" + a3 + ")", a3 != null && a3.state() == ChunkTrails.OLD);
 				// ---- ...and a real one: a highway tunnel along +X with netherrack walls (easy to cut through). The test
 				// world is flat with no nether, so it's built here and trips are routed here for the test. ----
 				IntegratedServer server = client.getServer();
@@ -2226,13 +2314,13 @@ public final class SelfTest {
 				client.debugHudEntryList.setF3Enabled(false);
 				client.debugHudEntryList.setEntryVisibility(hitboxes, was);
 				check("on-screen things show with an F3 entry always on, and hide only with F3 open", shownWithHitboxes && hiddenWithF3);
-				check("your coordinates show in the bottom left by default (" + coords + ")", NNConfig.INSTANCE.showCoords
+				check("your coordinates show in the bottom-right corner by default (" + coords + ")", NNConfig.INSTANCE.showCoords && NNConfig.INSTANCE.coordsRight
 						&& coords.startsWith("XYZ " + p.getBlockX() + " " + p.getBlockY() + " " + p.getBlockZ())
 						&& coords.contains("Nether " + Math.floorDiv(p.getBlockX(), 8) + " " + Math.floorDiv(p.getBlockZ(), 8)));
 				String far = "XYZ -1234567 64 2345678  NE  ·  Nether -154321 293210";
-				var split = CoordsHud.lines(client.textRenderer, far, 400);
+				var split = CoordsHud.lines(client.textRenderer, far, 400, 1f);
 				check("far-out coordinates split onto two lines instead of running into the hotbar (" + split + ")", split.size() == 2
-						&& split.get(1).startsWith("XYZ") && split.get(0).startsWith("Nether") && CoordsHud.lines(client.textRenderer, far, 2000).size() == 1);
+						&& split.get(1).startsWith("XYZ") && split.get(0).startsWith("Nether") && CoordsHud.lines(client.textRenderer, far, 2000, 1f).size() == 1);
 				check("nothing hides them now (" + CoordsHud.hiddenReason(client) + ")", CoordsHud.hiddenReason(client) == null);
 				ModsPanel.setStreamSafe(true);
 				String why = CoordsHud.hiddenReason(client);

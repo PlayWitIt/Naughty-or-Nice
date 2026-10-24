@@ -48,9 +48,12 @@ It also has:
   Settings → **Screen size**: Small fits the most (about 900 wide), Medium is in between (about 680), Large is the
   biggest (about 540, never so big the panels don't fit). Whole-pixel scales are used where they're close, so text
   stays sharp.
-- **Your coordinates** show in the bottom left (x y z, facing, and the matching nether or overworld spot), on a dark
-  backing, split onto two lines above the hotbar when they'd run into it. Not showing? `/nn coords` says why and turns
+- **Your coordinates** show in green in the bottom-right corner, clear of the chat (x y z, facing, and the matching
+  nether or overworld spot), a size smaller than the rest of the HUD and still sharp, on a dark backing. Settings
+  move them to the bottom left (under the chat) or make them full size. Not showing? `/nn coords` says why and turns
   them back on.
+- Everything you set (here, in the Baritone screen, highway roam, Baritone's own settings, how the lists are sorted)
+  is saved and stays until you change it.
 - Commands: `/nn`, `/nn add`, `/nn friends`, `/nn chat`, `/nn groups`, `/nn server`, `/nn intel`, `/nn coords`, `/nn share`, `/nn import`, `/nn open <link>`,
   `/nn disconnects`, `/nn sendanyway`, `/nn radar`, `/nn events`, `/nn baritone`, `/nn friend <name> [type]`, `/nn nice <name>`, `/nn look <name>`, `/nn naughty <name>`,
   `/nn unsort <name>`, `/nn group <name> <group>`, `/nn who <name>`, `/nn chat <name>`, `/nn settings`.
@@ -218,16 +221,23 @@ they were heading when they left your view are on their Stats tab.
 topic, or any coordinates at all (Settings).
 
 ## Chunk trails
-Press **J** for the trail radar (or `/nn radar`). It's a small map on the right of the screen that turns with you, so
-ahead is always up:
-- **Blue: new to you**: generated just now, as you got there. Nobody had loaded it before.
-- **Grey: loaded before**: someone was here before you.
+Press **J** for the trail radar (or `/nn radar`); it's off until you turn it on, and Settings → Chunk trails sets
+its size (Small, Medium, Large). It's a map on the right of the screen that turns with you, so ahead is always up. It
+draws the land as it really is, like a map (each spot's top block in its map colour, shaded by height; in the nether,
+the floor near you), as far as your render distance:
+- **Land in its own colours: new to you**: generated just now, as you got there. Nobody had loaded it before.
+- **Tinted green: loaded before**: someone was here before you.
+- Past your render distance, what's remembered: faint red for new, green for old.
 - **Small dot: can't tell**: it's loaded, but has no water or lava to tell by.
 - **Dark: not loaded**.
 - **Amber line**: a **trail**, a long, narrow strip of old land with fresh land on both sides. That's someone's path.
   The **arrow** is on the end further from spawn (when one end clearly is). That's a fact about the trail, not a
   promise of a base: it's where they went, or came from.
-- Underneath, in words: "Trail: 1,920 blocks long, runs NE–SW" and either "Away from spawn: NE, turn 35° left" when
+- **Told as you go**: no line stays on screen. When new chunks come up ahead while you're in old land, or old chunks
+  (someone has been there) while you're in new land, it says so once, in chat and above the hotbar, with a chime:
+  "New chunks ahead: 48 blocks NE". It looks along the way you're moving and only counts an edge two chunks deep.
+  Off in Settings (Tell me when the land changes ahead).
+- Underneath, in small words: "Trail: 1,920 blocks long, runs NE–SW" and either "Away from spawn: NE, turn 35° left" when
   you're on it, or "300 blocks ahead-left (W)" when you're not.
 
 When a new trail turns up you get a chat note with its far end. Every trail is kept on the **Intel** tab (Chunk trails),
@@ -301,17 +311,24 @@ press **B** (or `/nn baritone`). Naughty or Nice drives it through Baritone's ow
   last seen, lit end portals (strongholds), and coordinates on your clipboard. Search it, filter it, press **Go**.
 - **Smart Go** works out how: a place in the other dimension becomes the matching spot in yours (8 to 1); it flies by
   elytra only when that will work (in the nether, over 1,000 blocks, an elytra on and fireworks with you) and walks
-  otherwise. While going, a line at the top of the screen shows where to, how far, about how long (from the speed you're
-  actually making) and how.
+  otherwise.
+- **Trip bar**: whenever Baritone takes you somewhere (a place, a highway roam, or anything from the Do page), a bar at
+  the top shows where to, how far is left (along the highways when the route is by them), about how long that is
+  from the speed you're actually making, how fast you're going, and how. Off in Settings (Trip bar).
 - **Z stops everything**: the trip, a highway roam, and Baritone. (Change it in Controls.)
 - **Safety on every trip**: it pauses and asks when someone who isn't a friend or on your Nice list shows up, and stops
   when your health gets low (Settings page).
 - **Do**: type coordinates, follow a player, mine a block, explore, farm, Stop / Pause / Resume.
-- **Highway roam**: pick a highway (±X, ±Z, the diagonals), walk or elytra, its height and how far. Damaged highways:
+- **Highway roam**: a distance along a highway, or **to coordinates**: type them (or paste them, or take the latest
+  trail's end), say if they're overworld ones (÷8 in the nether), and pick a highway or **Best** (the quickest,
+  through spawn if need be). It rides the highway to its nearest point and then goes on to them, or stops there if
+  you'd rather; the page says the way before you start. It walks the highway a short step at a time along its
+  middle, so Baritone never cuts through the walls, and puts Baritone's own settings back when it ends. Walk or
+  elytra, the highway's height. Damaged highways:
   break through filled-in parts, bridge gaps and missing floor with blocks you carry (or go round the side), parkour
   jumps, and walking on lava only if you have Fire Resistance. It stops and asks when a chunk trail turns up near the
   highway ([Follow it], [Keep going], [Download this area]) or when a stranger shows up.
-- **Settings**: Baritone's main switches, on and off.
+- **Settings**: every Baritone setting, searched and clicked, saved to Baritone's own file so they stay.
 
 ## Downloading the world (only when you say yes)
 Press **Download** (Baritone screen, or the button when a highway roam stops at a trail): from then until you stop,

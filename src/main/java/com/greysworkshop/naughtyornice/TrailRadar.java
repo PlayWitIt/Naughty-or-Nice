@@ -4,6 +4,8 @@ import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.font.TextRenderer;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.render.RenderTickCounter;
+import net.minecraft.util.math.BlockPos;
+import net.minecraft.util.math.ChunkPos;
 import net.minecraft.util.math.Vec3d;
 import org.joml.Matrix3x2fStack;
 
@@ -11,21 +13,35 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * The chunk-trail radar: a small map on the right of the screen that turns with you, so ahead is always up. New land
- * is a faint red, old land a faint green, and trails are thick yellow lines with an arrow on the end that leads away
- * from spawn. Under it, in words: where the nearest trail is, which way it runs, and how to turn to follow it.
+ * The chunk-trail radar: a map on the right of the screen that turns with you, so ahead is always up. The land is
+ * drawn as it is, like a map (each spot's top block in its map colour, shaded by height, from the chunks you have
+ * loaded). Old land (someone was there) is tinted green, new land is left as it is, and trails are as thick yellow lines with an arrow on the end that
+ * leads away from spawn. It reaches as far as your render distance. Under it, in small words: where the nearest trail
+ * is, which way it runs, and how to turn to follow it. Off until you turn it on (J, or Settings); three sizes.
  */
 public final class TrailRadar {
-	private static final int SIZE = 112;
-	/** Chunks from the middle to the edge. */
-	private static final int SPAN = 32;
-	private static final int FRESH = 0x60000000 | ChunkOverlay.FRESH, OLD_LAND = 0x80000000 | ChunkOverlay.OLD, UNKNOWN_DOT = 0x60FFFFFF,
-			TRAIL = 0xFF000000 | ChunkOverlay.TRAIL, BACK = 0xB0101418, EDGE = 0xFF3A4048;
+	/** Its size on screen for Small, Medium and Large. */
+	private static final int[] SIZES = {80, 112, 150};
+	private static final int OLD_LAND = 0x70000000 | ChunkOverlay.OLD,
+			FRESH_FAR = 0x70000000 | ChunkOverlay.FRESH, OLD_FAR = 0x80000000 | ChunkOverlay.OLD, UNKNOWN_DOT = 0x60FFFFFF,
+			TRAIL = 0xFF000000 | ChunkOverlay.TRAIL, BACK = 0xC0101418, EDGE = 0xFF3A4048;
+	/** Blocks across each square of land drawn (a chunk is 2 by 2 of them). */
+	private static final int CELL = 8;
+	/** A chunk's land colours (2 by 2, ARGB), and when they were read: kept a while, read again as you pass. */
+	private record Land(int[] colors, long at) {}
+
+	private static final java.util.Map<Long, Land> land = new java.util.HashMap<>();
+	private static String landDim = "";
 
 	/** The last analysis, refreshed by the watcher every two seconds. */
 	static List<int[]> patches = new ArrayList<>();
 
 	private TrailRadar() {}
+
+	/** For the self-test: how many chunks' land has been read for the map. */
+	static int landRead() {
+		return land.size();
+	}
 
 	public static void render(DrawContext context, RenderTickCounter tickCounter) {
 		if (!NNConfig.on()) return;
@@ -39,47 +55,73 @@ public final class TrailRadar {
 		Vec3d me = client.player.getLerpedPos(delta);
 		float yaw = client.player.getYaw(delta);
 		TextRenderer font = client.textRenderer;
-		int x0 = context.getScaledWindowWidth() - SIZE - 6;
-		int y0 = context.getScaledWindowHeight() / 2 - SIZE / 2 - 20;
-		int cx = x0 + SIZE / 2, cy = y0 + SIZE / 2;
+		int size = SIZES[Math.max(0, Math.min(2, NNConfig.INSTANCE.radarSize))];
+		// As far as the land is loaded, a little past it.
+		int span = Math.max(6, Math.min(32, client.options.getClampedViewDistance() + 1));
+		if (!dim.equals(landDim)) {
+			land.clear();
+			landDim = dim;
+		}
+		int x0 = context.getScaledWindowWidth() - size - 6;
+		int y0 = context.getScaledWindowHeight() / 2 - size / 2 - 20;
+		int cx = x0 + size / 2, cy = y0 + size / 2;
 
-		context.fill(x0 - 1, y0 - 1, x0 + SIZE + 1, y0 + SIZE + 1, EDGE);
-		context.fill(x0, y0, x0 + SIZE, y0 + SIZE, BACK);
-		context.enableScissor(x0, y0, x0 + SIZE, y0 + SIZE);
+		context.fill(x0 - 1, y0 - 1, x0 + size + 1, y0 + size + 1, EDGE);
+		context.fill(x0, y0, x0 + size, y0 + size, BACK);
+		context.enableScissor(x0, y0, x0 + size, y0 + size);
 		Matrix3x2fStack m = context.getMatrices();
 		m.pushMatrix();
 		m.translate(cx, cy);
 		m.rotate((float) Math.toRadians(-(yaw + 180)));
-		float scale = SIZE / 2f / (SPAN * 16f);
+		float scale = size / 2f / (span * 16f);
 		m.scale(scale, scale);
 		// Land, chunk by chunk (a little past the corners, since the map turns).
 		int pcx = (int) Math.floor(me.x) >> 4, pcz = (int) Math.floor(me.z) >> 4;
-		int reach = (int) Math.ceil(SPAN * 1.45);
+		int reach = (int) Math.ceil(span * 1.45);
 		// What's been read around you, so it's clear the radar is working even with no trail in sight.
 		int fresh = 0, old = 0, unclear = 0;
+		long now = System.currentTimeMillis();
+		int reads = 0;
 		for (int i = -reach; i <= reach; i++) {
 			for (int j = -reach; j <= reach; j++) {
-				byte s = trails.state(dim, pcx + i, pcz + j);
-				if (Math.abs(i) <= SPAN && Math.abs(j) <= SPAN) {
+				int chx = pcx + i, chz = pcz + j;
+				byte s = trails.state(dim, chx, chz);
+				boolean loaded = client.world.getChunkManager().isChunkLoaded(chx, chz);
+				if (Math.abs(i) <= span && Math.abs(j) <= span) {
 					if (s == ChunkTrails.NEW) fresh++;
 					else if (s == ChunkTrails.OLD) old++;
-					else if (client.world.getChunkManager().isChunkLoaded(pcx + i, pcz + j)) unclear++;
+					else if (loaded) unclear++;
 				}
-				int bx = (int) Math.round((pcx + i) * 16 - me.x), bz = (int) Math.round((pcz + j) * 16 - me.z);
+				int bx = (int) Math.round(chx * 16 - me.x), bz = (int) Math.round(chz * 16 - me.z);
+				// The land itself, where it's loaded; read a few chunks a frame so it never stutters.
+				Land l = land.get(ChunkPos.toLong(chx, chz));
+				if (loaded && (l == null || now - l.at() > 15_000) && reads < 24) {
+					reads++;
+					l = read(client, chx, chz, me.y, now);
+					land.put(ChunkPos.toLong(chx, chz), l);
+				}
+				if (loaded && l != null) {
+					for (int k = 0; k < 4; k++) {
+						int ox = (k & 1) * CELL, oz = (k >> 1) * CELL;
+						context.fill(bx + ox, bz + oz, bx + ox + CELL, bz + oz + CELL, l.colors()[k]);
+					}
+				}
 				if (s == 0) {
 					// Loaded, but nothing in it to tell by: dotted, so it's clearly "looked, can't tell", not "never seen".
-					if (client.world.getChunkManager().isChunkLoaded(pcx + i, pcz + j)) {
-						context.fill(bx + 6, bz + 6, bx + 10, bz + 10, UNKNOWN_DOT);
-					}
+					if (loaded) context.fill(bx + 6, bz + 6, bx + 10, bz + 10, UNKNOWN_DOT);
 					continue;
 				}
-				context.fill(bx, bz, bx + 16, bz + 16, s == ChunkTrails.NEW ? FRESH : OLD_LAND);
+				// Loaded land keeps its own colours where it's new (most of it, exploring), and old land is tinted green so it stands
+				// out; past what's loaded there's no land to show, so both are drawn in their colours, as remembered.
+				if (loaded && s == ChunkTrails.NEW) continue;
+				context.fill(bx, bz, bx + 16, bz + 16, s == ChunkTrails.NEW ? FRESH_FAR : loaded ? OLD_LAND : OLD_FAR);
 			}
 		}
+		if (land.size() > 6000) land.entrySet().removeIf(e -> now - e.getValue().at() > 60_000);
 		// Trails: thick lines, an arrow on the end away from spawn.
 		for (ChunkTrails.Trail t : trails.trails) {
 			if (!t.dimension.equals(dim)) continue;
-			if (ChunkTrails.segmentDistance(t, me.x, me.z) > SPAN * 16 * 2) continue;
+			if (ChunkTrails.segmentDistance(t, me.x, me.z) > span * 16 * 2) continue;
 			line(context, t.x1 - me.x, t.z1 - me.z, t.x2 - me.x, t.z2 - me.z, Math.max(10, t.width * 4), TRAIL);
 			if (t.away != 0) {
 				int[] end = t.awayEnd();
@@ -93,7 +135,7 @@ public final class TrailRadar {
 		// You, pointing ahead; north on the edge.
 		context.drawText(font, "▲", cx - font.getWidth("▲") / 2, cy - 4, 0xFFFFFFFF, true);
 		double north = Math.toRadians(-(yaw + 180)) - Math.PI / 2;
-		double half = SIZE / 2.0 - 5;
+		double half = size / 2.0 - 5;
 		double nx = Math.cos(north), nz = Math.sin(north);
 		double edge = half / Math.max(Math.abs(nx), Math.abs(nz));
 		int lx = (int) Math.round(cx + nx * edge), ly = (int) Math.round(cy + nz * edge);
@@ -122,16 +164,80 @@ public final class TrailRadar {
 			lines.add("§8Fly through fresh land to find one");
 		}
 		lines.add(String.format(java.util.Locale.ROOT, "§8Around you: §c%d new §8· §a%d old §8· %d can't tell", fresh, old, unclear));
-		int ty = y0 + SIZE + 4;
+		// In small words, under the map; the key above it.
+		float ts = CoordsHud.scale(client);
+		int lh = (int) Math.ceil(10 * ts);
+		int ty = y0 + size + 4;
 		for (String line : lines) {
-			int w = font.getWidth(line);
-			context.drawTextWithShadow(font, line, Math.min(x0 + SIZE - w, context.getScaledWindowWidth() - 4 - w), ty, 0xFFFFFFFF);
-			ty += 10;
+			small(context, font, line, x0 + size, ty, ts, context.getScaledWindowWidth() - 4);
+			ty += lh;
 		}
-		// The key.
-		// The key, in words.
-		context.drawTextWithShadow(font, "§c■§7 new  §a■§7 old (someone was here)", x0, y0 - 20, 0xFFFFFFFF);
-		context.drawTextWithShadow(font, "§f·§7 can't tell  §e■§7 trail", x0, y0 - 10, 0xFFFFFFFF);
+		small(context, font, "§a■§7 old (someone was here)  §e■§7 trail  §7rest: new", x0 + size, y0 - lh - 1, ts, context.getScaledWindowWidth() - 4);
+	}
+
+	/** A line of text at scale {@code s}, its right end at {@code right} (never past {@code limit}). */
+	private static void small(DrawContext context, TextRenderer font, String line, int right, int y, float s, int limit) {
+		int w = (int) Math.ceil(font.getWidth(line) * s);
+		int x = Math.min(right - w, limit - w);
+		var m = context.getMatrices();
+		m.pushMatrix();
+		m.translate(x, y);
+		m.scale(s, s);
+		context.drawTextWithShadow(font, line, 0, 0, 0xFFFFFFFF);
+		m.popMatrix();
+	}
+
+	/**
+	 * A chunk's land as a map shows it: for each 8 by 8 square, the top block's map colour, lighter where it's higher
+	 * than the square north of it and darker where lower. In the nether, whose top is the bedrock roof, the floor
+	 * nearest your height instead.
+	 */
+	private static Land read(MinecraftClient client, int chx, int chz, double myY, long now) {
+		var world = client.world;
+		var chunk = world.getChunk(chx, chz);
+		boolean roof = world.getDimension().hasCeiling();
+		int[] colors = new int[4];
+		int[] heights = new int[4];
+		BlockPos.Mutable pos = new BlockPos.Mutable();
+		for (int k = 0; k < 4; k++) {
+			int lx = (k & 1) * CELL + CELL / 2, lz = (k >> 1) * CELL + CELL / 2;
+			int wx = chx * 16 + lx, wz = chz * 16 + lz;
+			int y;
+			if (roof) {
+				y = Integer.MIN_VALUE;
+				int top = Math.min(world.getTopYInclusive() - 1, (int) myY + 24);
+				for (int yy = top; yy > world.getBottomY(); yy--) {
+					pos.set(wx, yy, wz);
+					if (!chunk.getBlockState(pos).isAir()) {
+						pos.set(wx, yy + 1, wz);
+						if (chunk.getBlockState(pos).isAir()) {
+							y = yy;
+							break;
+						}
+					}
+				}
+				if (y == Integer.MIN_VALUE) y = (int) myY;
+			} else {
+				y = chunk.sampleHeightmap(net.minecraft.world.Heightmap.Type.WORLD_SURFACE, lx, lz);
+			}
+			pos.set(wx, y, wz);
+			var state = chunk.getBlockState(pos);
+			int rgb = state.isAir() ? 0x202428 : state.getMapColor(world, pos).color;
+			heights[k] = y;
+			colors[k] = rgb;
+		}
+		for (int k = 0; k < 4; k++) {
+			// Shade by the square to the north (the one above it in the chunk, or itself on the top row).
+			int north = k >= 2 ? heights[k - 2] : heights[k];
+			float f = heights[k] > north ? 1.12f : heights[k] < north ? 0.82f : 1f;
+			colors[k] = 0xFF000000 | shade(colors[k], f);
+		}
+		return new Land(colors, now);
+	}
+
+	private static int shade(int rgb, float f) {
+		int r = Math.min(255, (int) ((rgb >> 16 & 0xFF) * f)), g = Math.min(255, (int) ((rgb >> 8 & 0xFF) * f)), b = Math.min(255, (int) ((rgb & 0xFF) * f));
+		return r << 16 | g << 8 | b;
 	}
 
 	/** Old land all around and no fresh land in sight: you can't see where it ends. */

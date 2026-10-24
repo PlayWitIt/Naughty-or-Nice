@@ -99,12 +99,44 @@ public final class NNConfig {
 	public boolean chunkTrails = true;
 	/** Show the chunk-trail radar (J toggles it). */
 	public boolean trailRadar = false;
+	/** The radar's size: 0 small, 1 medium, 2 large. */
+	public int radarSize = 0;
+	/** Set once 1.14.0 has put the radar away (it's off until you turn it on). */
+	public boolean radarPutAway = false;
 	/** Your coordinates in the bottom left (hidden in stream-safe mode). */
 	public boolean showCoords = true;
+	/** Draw them one GUI scale step smaller than the rest of the HUD. */
+	public boolean smallCoords = true;
+	/** In the bottom-right corner, clear of the chat; off: the bottom left. */
+	public boolean coordsRight = true;
 	/** Set once 1.13.11 has turned the coordinates back on for everyone who'd lost them. */
 	public boolean coordsRestored = false;
 	/** A chat note when a new chunk trail is found. */
 	public boolean trailAlerts = true;
+	/** The lists' sort, and whether Intel shows as a map: as you last left them. */
+	public String listSort = "RECENT";
+	public boolean intelMap = false;
+
+	/** The bar at the top while Baritone takes you somewhere: where to, how far, how long, how fast. */
+	public boolean tripBar = true;
+
+	// ---- Highway roam (the Baritone screen): kept until you change them ----
+	public String roamAxis = "+X";
+	public boolean roamElytra = false;
+	/** The highway's height; null for "where I am". */
+	public Integer roamHeight = null;
+	public int roamDistance = 50_000;
+	/** Go to coordinates (roamX, roamZ) rather than a distance. */
+	public boolean roamToCoords = false;
+	public Integer roamX = null, roamZ = null;
+	/** The coordinates are overworld ones: in the nether, go to the matching spot (÷8). */
+	public boolean roamOverworld = false;
+	/** At the highway's nearest point, carry on off it to the spot (or stop on the highway). */
+	public boolean roamGoOn = true;
+	public boolean roamBreak = true, roamBridge = true, roamParkour = true, roamLava = false, roamStopTrails = true, roamStopStrangers = true;
+
+	/** A note when new chunks (or, from new land, old ones) come up ahead as you travel. */
+	public boolean aheadAlerts = true;
 	/** Draw the chunks that have been read in the world, as coloured squares (K toggles it). */
 	public boolean chunkOverlay = true;
 	/** The height the squares are drawn at, or {@link ChunkOverlay#FOLLOW} for at your feet. */
@@ -190,6 +222,7 @@ public final class NNConfig {
 	public static void load() {
 		if (!Files.exists(file())) {
 			INSTANCE.coordsRestored = true;
+			INSTANCE.radarPutAway = true;
 			return;
 		}
 		try (Reader reader = Files.newBufferedReader(file())) {
@@ -203,6 +236,11 @@ public final class NNConfig {
 				if (loaded.circles == null || loaded.circles.isEmpty()) loaded.circles = Friends.defaultCircles();
 				if (loaded.skippedVersion == null) loaded.skippedVersion = "";
 				if (loaded.whisperCommand == null || loaded.whisperCommand.isBlank()) loaded.whisperCommand = "msg";
+				boolean putAway = !loaded.radarPutAway;
+				if (putAway) {
+					loaded.trailRadar = false;
+					loaded.radarPutAway = true;
+				}
 				boolean restore = !loaded.coordsRestored;
 				if (restore) {
 					loaded.showCoords = true;
@@ -214,7 +252,7 @@ public final class NNConfig {
 					if (changed) ModsPanel.saveProfiles(profiles);
 				}
 				INSTANCE = loaded;
-				if (restore) save();
+				if (restore || putAway) save();
 			}
 		} catch (IOException | RuntimeException e) {
 			NaughtyOrNiceClient.LOGGER.error("Could not read {}", file(), e);

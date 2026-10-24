@@ -443,37 +443,130 @@ public class BaritoneScreen extends Screen {
 
 	// ---- Highway ----
 
+	/** Labels beside the Highway roam page's fields: text, x, y. */
+	private final List<Object[]> highwayLabels = new java.util.ArrayList<>();
+	/** Where the description of the roam goes on that page. */
+	private int highwayInfoY;
+
 	private void initHighway(int x, int y) {
-		int bx = x;
-		for (HighwayRoam.Axis a : HighwayRoam.AXES) {
-			boolean on = a == HighwayRoam.axis;
-			button(bx, y, 46, (on ? "›" : "") + a.name(), () -> {
-				HighwayRoam.axis = a;
-				clearAndInit();
-			});
-			bx += 50;
-		}
-		y += 24;
-		button(x, y, 96, (HighwayRoam.elytra ? "Elytra" : "Walk") + " ▸", () -> {
-			HighwayRoam.elytra = !HighwayRoam.elytra;
+		NNConfig c = NNConfig.INSTANCE;
+		highwayLabels.clear();
+		// What to go by: a distance along a highway, or coordinates.
+		button(x, y, 198, (c.roamToCoords ? "" : "› ") + "A distance along a highway", () -> {
+			c.roamToCoords = false;
+			if (HighwayRoam.axis() == null) HighwayRoam.pick(HighwayRoam.AXES[0]);
+			NNConfig.save();
 			clearAndInit();
 		});
-		heightField = field(x + 150, y, 60, "here", HighwayRoam.height == Integer.MIN_VALUE ? "" : String.valueOf(HighwayRoam.height));
-		distanceField = field(x + 290, y, 110, "blocks", String.valueOf(HighwayRoam.distance));
-		y += 26;
-		check(x, y, "Break through blocked parts", () -> HighwayRoam.breakThrough, v -> HighwayRoam.breakThrough = v);
-		check(x + 205, y, "Bridge gaps and missing floor", () -> HighwayRoam.bridgeGaps, v -> HighwayRoam.bridgeGaps = v);
+		button(x + 202, y, 198, (c.roamToCoords ? "› " : "") + "To coordinates", () -> {
+			c.roamToCoords = true;
+			NNConfig.save();
+			clearAndInit();
+		});
+		y += 24;
+		// Which highway; going to coordinates, Best picks the quickest (through spawn if need be).
+		int bw = c.roamToCoords ? 40 : 46, step = c.roamToCoords ? 44 : 50, bx = x;
+		for (HighwayRoam.Axis a : HighwayRoam.AXES) {
+			boolean on = a == HighwayRoam.axis();
+			button(bx, y, bw, (on ? "›" : "") + a.name(), () -> {
+				HighwayRoam.pick(a);
+				clearAndInit();
+			});
+			bx += step;
+		}
+		if (c.roamToCoords) button(bx, y, 400 - (bx - x), (HighwayRoam.axis() == null ? "›" : "") + HighwayRoam.BEST, () -> {
+			HighwayRoam.pick(null);
+			clearAndInit();
+		});
+		y += 24;
+		button(x, y, 96, (c.roamElytra ? "Elytra" : "Walk") + " ▸", () -> {
+			c.roamElytra = !c.roamElytra;
+			NNConfig.save();
+			clearAndInit();
+		});
+		highwayLabels.add(new Object[] {"Height", x + 108, y + 5});
+		heightField = field(x + 150, y, 60, "here", c.roamHeight == null ? "" : String.valueOf(c.roamHeight));
+		heightField.setChangedListener(t -> {
+			String h = t.strip();
+			if (h.isEmpty()) c.roamHeight = null;
+			else if (h.matches("-?\\d{1,4}")) c.roamHeight = Integer.parseInt(h);
+			else return;
+			NNConfig.save();
+		});
+		if (!c.roamToCoords) {
+			highwayLabels.add(new Object[] {"Distance", x + 240, y + 5});
+			distanceField = field(x + 290, y, 110, "blocks", String.valueOf(c.roamDistance));
+			distanceField.setChangedListener(t -> {
+				String d = t.strip().replace(",", "");
+				if (!d.matches("\\d{3,9}")) return;
+				c.roamDistance = Math.max(100, Integer.parseInt(d));
+				NNConfig.save();
+			});
+			y += 26;
+		} else {
+			y += 24;
+			highwayLabels.add(new Object[] {"x", x + 2, y + 5});
+			xField = field(x + 12, y, 80, "x", c.roamX == null ? "" : String.valueOf(c.roamX));
+			highwayLabels.add(new Object[] {"z", x + 100, y + 5});
+			zField = field(x + 110, y, 80, "z", c.roamZ == null ? "" : String.valueOf(c.roamZ));
+			Runnable readCoords = () -> {
+				c.roamX = whole(xField.getText());
+				c.roamZ = whole(zField.getText());
+				NNConfig.save();
+			};
+			xField.setChangedListener(t -> readCoords.run());
+			zField.setChangedListener(t -> readCoords.run());
+			button(x + 196, y, 100, "Paste coordinates", () -> {
+				List<ChatIntel.Coord> coords = ChatIntel.coords(client.keyboard.getClipboard());
+				if (coords.isEmpty()) {
+					status = "No coordinates on the clipboard";
+					statusColor = 0xFFFFC14D;
+					return;
+				}
+				xField.setText(String.valueOf(coords.get(0).x()));
+				zField.setText(String.valueOf(coords.get(0).z()));
+				if (coords.get(0).dimension() != null) c.roamOverworld = coords.get(0).dimension().endsWith("overworld");
+				NNConfig.save();
+				clearAndInit();
+			});
+			button(x + 300, y, 100, "Latest trail's end", () -> {
+				List<ChunkTrails.Trail> trails = NaughtyOrNiceClient.INSTANCE.ledger.chunkTrails.trails;
+				if (trails.isEmpty()) {
+					status = "No chunk trails found yet";
+					statusColor = 0xFFFFC14D;
+					return;
+				}
+				int[] end = trails.stream().max(java.util.Comparator.comparingLong(tr -> tr.lastSeen)).orElseThrow().awayEnd();
+				xField.setText(String.valueOf(end[0]));
+				zField.setText(String.valueOf(end[1]));
+				c.roamOverworld = false;
+				NNConfig.save();
+				clearAndInit();
+			});
+			y += 22;
+			check(x, y, "They're overworld coordinates (÷8 in the nether)", () -> c.roamOverworld, v -> {
+				c.roamOverworld = v;
+				NNConfig.save();
+			});
+			y += 20;
+			check(x, y, "Then go on to them off the highway (off: stop on it)", () -> c.roamGoOn, v -> {
+				c.roamGoOn = v;
+				NNConfig.save();
+			});
+			y += 24;
+		}
+		saved(x, y, "Break through blocked parts", () -> c.roamBreak, v -> c.roamBreak = v);
+		saved(x + 205, y, "Bridge gaps and missing floor", () -> c.roamBridge, v -> c.roamBridge = v);
 		y += 22;
-		check(x, y, "Parkour jumps", () -> HighwayRoam.parkour, v -> HighwayRoam.parkour = v);
-		check(x + 205, y, "Walk on lava (Fire Resistance)", () -> HighwayRoam.walkOnLava, v -> HighwayRoam.walkOnLava = v);
+		saved(x, y, "Parkour jumps", () -> c.roamParkour, v -> c.roamParkour = v);
+		saved(x + 205, y, "Walk on lava (Fire Resistance)", () -> c.roamLava, v -> c.roamLava = v);
 		y += 22;
-		check(x, y, "Stop and ask at chunk trails", () -> HighwayRoam.stopAtTrails, v -> HighwayRoam.stopAtTrails = v);
-		check(x + 205, y, "Stop when a stranger shows up", () -> HighwayRoam.stopForStrangers, v -> HighwayRoam.stopForStrangers = v);
+		saved(x, y, "Stop and ask at chunk trails", () -> c.roamStopTrails, v -> c.roamStopTrails = v);
+		saved(x + 205, y, "Stop when a stranger shows up", () -> c.roamStopStrangers, v -> c.roamStopStrangers = v);
 		y += 28;
 		button(x, y, 196, HighwayRoam.active() ? "Roaming to " + HighwayRoam.target() : "Start roaming", () -> {
-			if (!readHighwayFields()) return;
 			String why = HighwayRoam.start(client);
-			status = why == null ? "Roaming the " + HighwayRoam.axis.name() + " highway" : why;
+			status = why == null ? "Roaming to " + HighwayRoam.target() : why;
 			statusColor = why == null ? 0xFF7CE0A0 : 0xFFFF8A80;
 			clearAndInit();
 		});
@@ -482,18 +575,25 @@ public class BaritoneScreen extends Screen {
 			BaritoneBridge.run("stop");
 			clearAndInit();
 		});
+		highwayInfoY = y + 26;
 	}
 
-	private boolean readHighwayFields() {
+	/** A switch on the Highway roam page, saved as soon as it's clicked. */
+	private void saved(int x, int y, String label, Supplier<Boolean> get, Consumer<Boolean> set) {
+		check(x, y, label, get, v -> {
+			set.accept(v);
+			NNConfig.save();
+		});
+	}
+
+	/** A whole number typed in a field (commas and "k" allowed: 12k is 12000), or null. */
+	static Integer whole(String text) {
+		String t = text.strip().replace(",", "").replace("_", "").toLowerCase(java.util.Locale.ROOT);
 		try {
-			String h = heightField.getText().strip();
-			HighwayRoam.height = h.isEmpty() ? Integer.MIN_VALUE : Integer.parseInt(h);
-			HighwayRoam.distance = Math.max(100, Integer.parseInt(distanceField.getText().strip().replace(",", "")));
-			return true;
+			if (t.endsWith("k")) return (int) Math.round(Double.parseDouble(t.substring(0, t.length() - 1)) * 1000);
+			return t.isEmpty() ? null : Integer.parseInt(t);
 		} catch (NumberFormatException e) {
-			status = "Height and distance need whole numbers (leave height empty to keep your own)";
-			statusColor = 0xFFFF8A80;
-			return false;
+			return null;
 		}
 	}
 
@@ -502,6 +602,10 @@ public class BaritoneScreen extends Screen {
 	private void initSettings(int x, int y) {
 		check(x, y + 24, "Nether trips: ride the highways when quicker", () -> NNConfig.INSTANCE.tripUseHighways, v -> {
 			NNConfig.INSTANCE.tripUseHighways = v;
+			NNConfig.save();
+		});
+		check(x + 260, y + 24, "Trip bar at the top", () -> NNConfig.INSTANCE.tripBar, v -> {
+			NNConfig.INSTANCE.tripBar = v;
 			NNConfig.save();
 		});
 		check(x, y, "On trips: pause when a stranger shows up", () -> NNConfig.INSTANCE.tripStopForStrangers, v -> {
@@ -531,6 +635,7 @@ public class BaritoneScreen extends Screen {
 			});
 			button(x + 328, by, 72, "Reset", () -> {
 				BaritoneBridge.reset(picked.name());
+				BaritoneBridge.saveSettings();
 				status = picked.name() + " back to " + picked.defaultValue();
 				statusColor = 0xFFDDDDDD;
 				settingsReadAt = 0;
@@ -575,6 +680,7 @@ public class BaritoneScreen extends Screen {
 						if (s.bool()) {
 							boolean on = !s.value().equals("true");
 							BaritoneBridge.setBool(s.name(), on);
+							BaritoneBridge.saveSettings();
 							status = s.name() + (on ? ": on" : ": off");
 							statusColor = 0xFFDDDDDD;
 							settingsReadAt = 0;
@@ -767,11 +873,17 @@ public class BaritoneScreen extends Screen {
 			context.drawTextWithShadow(textRenderer, "Player", x, y + 83, 0xFFAAAAAA);
 			context.drawTextWithShadow(textRenderer, "Block", x, y + 107, 0xFFAAAAAA);
 		} else if (page == Page.HIGHWAY) {
-			int y = 70;
-			context.drawTextWithShadow(textRenderer, "Height", x + 108, y + 5, 0xFFAAAAAA);
-			context.drawTextWithShadow(textRenderer, "Distance", x + 240, y + 5, 0xFFAAAAAA);
-			int hy = y + 126;
-			for (var l : textRenderer.wrapLines(Text.literal("Damaged highway? It breaks through, bridges gaps with blocks you carry, or goes round the side."), 400)) {
+			for (Object[] l : highwayLabels) context.drawTextWithShadow(textRenderer, (String) l[0], (int) l[1], (int) l[2], 0xFFAAAAAA);
+			int hy = highwayInfoY;
+			// The way it'll go, worked out from where you are now.
+			String way = HighwayRoam.active() ? "" : Safe.get("describing the roam", () -> HighwayRoam.describe(client), "");
+			for (var l : textRenderer.wrapLines(Text.literal(way), 400)) {
+				context.drawText(textRenderer, l, x, hy, 0xFFDDDDDD, true);
+				hy += 10;
+			}
+			if (!way.isEmpty()) hy += 4;
+			for (var l : textRenderer.wrapLines(Text.literal("Damaged highway? It breaks through, bridges gaps with blocks you carry, or goes round the side. "
+					+ "What you set here is kept until you change it."), 400)) {
 				context.drawText(textRenderer, l, x, hy, 0xFF888888, true);
 				hy += 10;
 			}
