@@ -1435,6 +1435,8 @@ public final class SelfTest {
 				log("Radar says: " + (say == null ? "nothing" : say[0] + " / " + say[1]));
 				check("the radar finds the trail beside you and says how to follow it", say != null && say[0].startsWith("Trail:"));
 				screenshot(client, "59_trail_radar");
+				String radarKey = NaughtyOrNiceClient.radarKeyName();
+				check("the radar's key isn't J, which Trade Seeker uses (" + radarKey + ")", !radarKey.equals("J") && !radarKey.equals("no key"));
 				// What's really on screen in the bottom left, not just what the line would say.
 				int scale = (int) client.getWindow().getScaleFactor();
 				float ts = CoordsHud.scale(client);
@@ -1473,7 +1475,7 @@ public final class SelfTest {
 				check("...a size smaller than the rest of the HUD, on whole pixels", NNConfig.INSTANCE.smallCoords
 						&& CoordsHud.scale(client) < 1 && (client.getWindow().getScaleFactor() == 2 || Math.abs(CoordsHud.scale(client) * client.getWindow().getScaleFactor() - Math.round(CoordsHud.scale(client) * client.getWindow().getScaleFactor())) < 0.01));
 				check("the chunks are drawn in the world (" + ChunkOverlay.shown() + " squares)", ChunkOverlay.shown() > 100);
-				check("the radar draws the real land under the chunks (" + TrailRadar.landRead() + " chunks read)", TrailRadar.landRead() > 20);
+				check("the radar shows the land it has read (" + TrailRadar.lastOld + " old, " + TrailRadar.lastNew + " new chunks)", TrailRadar.lastOld + TrailRadar.lastNew > 20);
 				screenshot(client, "59b_chunks_in_world");
 				client.player.setPitch(0);
 			}
@@ -2131,6 +2133,9 @@ public final class SelfTest {
 					if (state.isOf(net.minecraft.block.Blocks.WHEAT) && state.get(net.minecraft.block.CropBlock.AGE) == 7) ripe++;
 				}
 				check("Farm nearby walks over and harvests the wheat (" + ripe + " of 3 still ripe)", ripe == 0);
+			}
+			// A moment later: the screen notices the job ended on its next frame.
+			case 142 -> {
 				check("...and says so when it's done (" + b.testStatus() + ")", BaritoneBridge.processActive("getFarmProcess")
 						? b.testStatus().equals("Farming nearby") : b.testStatus().startsWith("Farming stopped: nothing"));
 				b.testPress("Stop");

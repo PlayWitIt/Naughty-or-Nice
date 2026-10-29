@@ -4291,7 +4291,7 @@ public class ShopScreen extends Screen {
 			NNConfig.save();
 		});
 		bx += sw + 6;
-		String radar = "Radar: " + (c.trailRadar ? "on" : "off") + " (J)";
+		String radar = "Radar: " + (c.trailRadar ? "on" : "off") + " (" + NaughtyOrNiceClient.radarKeyName() + ")";
 		int rw = textRenderer.getWidth(radar) + 14;
 		pill(context, mouseX, mouseY, bx, by, rw, 14, radar, SOFT, BORDER, c.chunkTrails ? TEXT : MUTED, "chunks-radar", () -> {
 			c.trailRadar = !c.trailRadar;

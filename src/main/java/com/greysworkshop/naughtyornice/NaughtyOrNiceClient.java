@@ -63,7 +63,10 @@ public class NaughtyOrNiceClient implements ClientModInitializer {
 
 		KeyBinding.Category category = KeyBinding.Category.create(Identifier.of(MOD_ID, "main"));
 		openKey = KeyBindingHelper.registerKeyBinding(new KeyBinding("key.naughtyornice.open", InputUtil.Type.KEYSYM, GLFW.GLFW_KEY_N, category));
-		radarKey = KeyBindingHelper.registerKeyBinding(new KeyBinding("key.naughtyornice.radar", InputUtil.Type.KEYSYM, GLFW.GLFW_KEY_J, category));
+		// Not J: Trade Seeker (and map mods) use J. With Base Insurance, its map key (M) cycles map, radar, minimap and
+		// off, so the radar needs no key of its own; without it, O.
+		radarKey = KeyBindingHelper.registerKeyBinding(new KeyBinding("key.naughtyornice.radar", InputUtil.Type.KEYSYM,
+				withBaseInsurance() ? GLFW.GLFW_KEY_UNKNOWN : GLFW.GLFW_KEY_O, category));
 		baritoneKey = KeyBindingHelper.registerKeyBinding(new KeyBinding("key.naughtyornice.baritone", InputUtil.Type.KEYSYM, GLFW.GLFW_KEY_B, category));
 		stopKey = KeyBindingHelper.registerKeyBinding(new KeyBinding("key.naughtyornice.stop", InputUtil.Type.KEYSYM, GLFW.GLFW_KEY_Z, category));
 		chunksKey = KeyBindingHelper.registerKeyBinding(new KeyBinding("key.naughtyornice.chunks", InputUtil.Type.KEYSYM, GLFW.GLFW_KEY_K, category));
@@ -202,9 +205,11 @@ public class NaughtyOrNiceClient implements ClientModInitializer {
 			// Finding trails happens out of sight: say once where to see it.
 			NNConfig.INSTANCE.seenRadarTip = true;
 			NNConfig.save();
+			// With Base Insurance, its map key goes to the map first, then the radar.
+			boolean viaMap = withBaseInsurance() && keyName("key.naughtyornice.radar").equals("no key");
 			Alerts.chat(Text.literal("Chunk trails are on. Press ").formatted(Formatting.GRAY)
-					.append(Text.keybind("key.naughtyornice.radar").formatted(Formatting.YELLOW))
-					.append(Text.literal(" for the radar (new land red, old land green, trails yellow), or ").formatted(Formatting.GRAY))
+					.append(Text.literal(radarKeyName() + (viaMap ? " twice" : "")).formatted(Formatting.YELLOW))
+					.append(Text.literal(" for the trail radar (green: someone was here, amber line: their path), or ").formatted(Formatting.GRAY))
 					.append(Text.literal("[show it]").styled(st -> st.withColor(Formatting.AQUA).withUnderline(true)
 							.withClickEvent(new ClickEvent.RunCommand("/nn radar")))));
 		}
@@ -281,6 +286,56 @@ public class NaughtyOrNiceClient implements ClientModInitializer {
 		return new ShopScreen();
 	}
 
+	static boolean withBaseInsurance() {
+		return net.fabricmc.loader.api.FabricLoader.getInstance().isModLoaded("baseinsurance");
+	}
+
+	/** The key that shows the radar: its own if it has one, else Base Insurance's map key, which cycles to it. */
+	public static String radarKeyName() {
+		// While the game is still starting there are no key settings yet: say the default.
+		if (MinecraftClient.getInstance() == null || MinecraftClient.getInstance().options == null) return withBaseInsurance() ? "M" : "O";
+		String own = keyName("key.naughtyornice.radar");
+		if (!own.equals("no key") || !withBaseInsurance()) return own;
+		return keyName("key.baseinsurance.map");
+	}
+
+	/** How to show the radar, in a few words: "O shows or hides it", or "M: map, radar, minimap, off". */
+	public static String radarKeyHow() {
+		if (MinecraftClient.getInstance() == null || MinecraftClient.getInstance().options == null) {
+			return withBaseInsurance() ? "M: map, radar, minimap, off" : "O shows or hides it";
+		}
+		if (!keyName("key.naughtyornice.radar").equals("no key") || !withBaseInsurance()) return radarKeyName() + " shows or hides it";
+		return radarKeyName() + ": map, radar, minimap, off";
+	}
+
+	/** What one of our keys is bound to now, as Controls shows it ("O"). */
+	public static String keyName(String id) {
+		if (MinecraftClient.getInstance() == null || MinecraftClient.getInstance().options == null) return "?";
+		for (KeyBinding key : MinecraftClient.getInstance().options.allKeys) {
+			if (key.getId().equals(id)) return key.isUnbound() ? "no key" : key.getBoundKeyLocalizedText().getString();
+		}
+		return "?";
+	}
+
+	private boolean keysChecked;
+
+	/** Once a game: if a key of ours is also bound to something else (another mod's), both would act at once. Say so. */
+	private static void warnKeyClashes(MinecraftClient client) {
+		KeyBinding[] all = client.options.allKeys;
+		for (KeyBinding ours : all) {
+			if (!ours.getId().startsWith("key.naughtyornice.") || ours.isUnbound()) continue;
+			for (KeyBinding other : all) {
+				if (other == ours || other.isUnbound() || !other.getBoundKeyTranslationKey().equals(ours.getBoundKeyTranslationKey())) continue;
+				Alerts.chat(Text.literal("Key clash: ").formatted(Formatting.GOLD)
+						.append(Text.translatable(ours.getId()).formatted(Formatting.YELLOW))
+						.append(Text.literal(" and ").formatted(Formatting.GRAY))
+						.append(Text.translatable(other.getId()).formatted(Formatting.YELLOW))
+						.append(Text.literal(" are both on " + ours.getBoundKeyLocalizedText().getString() + ". Change one in Options → Controls → Key Binds.").formatted(Formatting.GRAY)));
+				break;
+			}
+		}
+	}
+
 	private void tick(MinecraftClient client) {
 		Alerts.tick();
 		UpdateCheck.tick(client);
@@ -292,6 +347,23 @@ public class NaughtyOrNiceClient implements ClientModInitializer {
 		}
 		if (client.world == null || client.player == null) return;
 		ledger.switchTo(Ledger.worldKey(client));
+		if (!keysChecked) {
+			keysChecked = true;
+			if (!NNConfig.INSTANCE.radarKeyMoved) {
+				// The radar used to be on J, which Trade Seeker (and map mods) use too: move it, once.
+				NNConfig.INSTANCE.radarKeyMoved = true;
+				NNConfig.save();
+				if (radarKey.getBoundKeyTranslationKey().equals("key.keyboard.j")) {
+					radarKey.setBoundKey(radarKey.getDefaultKey());
+					KeyBinding.updateKeysByCode();
+					client.options.write();
+					Alerts.chat(Text.literal(withBaseInsurance()
+							? "The trail radar is off J now (it clashed with other mods): press " + radarKeyName() + " to go map, radar, minimap, off."
+							: "The trail radar is on O now (J clashed with other mods). Change it in Options → Controls → Key Binds.").formatted(Formatting.GRAY));
+				}
+			}
+			warnKeyClashes(client);
+		}
 
 		while (openKey.wasPressed()) {
 			if (client.currentScreen == null) client.setScreen(openScreen(client));
@@ -405,7 +477,7 @@ public class NaughtyOrNiceClient implements ClientModInitializer {
 				ModsPanel.section("Chunk trails"),
 				ModsPanel.toggle("Find chunk trails", "Tells old land from new land by how each chunk arrives, and finds the paths players left. K shows the squares in the world.",
 						() -> c.chunkTrails, v -> c.chunkTrails = v),
-				ModsPanel.toggle("Chunk trail radar", "The small turning map on the right (J shows or hides it in game).", () -> c.trailRadar, v -> {
+				ModsPanel.toggle("Chunk trail radar", "The round radar on the right: where someone has been, and their trails (" + radarKeyHow() + ").", () -> c.trailRadar, v -> {
 					c.trailRadar = v;
 					if (v) c.chunkTrails = true;
 				}),

@@ -136,7 +136,8 @@ public final class Commands {
 					NNConfig.INSTANCE.trailRadar = !NNConfig.INSTANCE.trailRadar;
 					if (NNConfig.INSTANCE.trailRadar) NNConfig.INSTANCE.chunkTrails = true;
 					NNConfig.save();
-					c.getSource().sendFeedback(Alerts.prefix().append(Text.literal("Chunk trail radar " + (NNConfig.INSTANCE.trailRadar ? "on (J toggles it)" : "off"))
+					c.getSource().sendFeedback(Alerts.prefix().append(Text.literal("Chunk trail radar " + (NNConfig.INSTANCE.trailRadar
+							? "on (" + NaughtyOrNiceClient.radarKeyHow() + ")" : "off"))
 							.formatted(Formatting.GRAY)));
 					return 1;
 				}))

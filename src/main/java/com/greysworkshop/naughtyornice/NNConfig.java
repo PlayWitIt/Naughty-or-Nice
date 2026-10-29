@@ -99,7 +99,7 @@ public final class NNConfig {
 	public boolean askBeforeSending = false;
 	/** Tell old land from fresh land and look for trails through it. */
 	public boolean chunkTrails = true;
-	/** Show the chunk-trail radar (J toggles it). */
+	/** Show the chunk-trail radar (its key toggles it, O to start with). */
 	public boolean trailRadar = false;
 	/** The radar's size: 0 small, 1 medium, 2 large. */
 	public int radarSize = 0;
@@ -217,8 +217,10 @@ public final class NNConfig {
 	/** Suggested groups you said aren't groups (their players' ids, sorted and joined). */
 	public java.util.List<String> dismissedSuggestions = new java.util.ArrayList<>();
 
-	/** Whether the "chunk trails are on: press J for the radar" tip has been shown. */
+	/** Whether the "chunk trails are on: press the radar key" tip has been shown. */
 	public boolean seenRadarTip = false;
+	/** Set once the radar key has been moved off J (1.x: it clashed with Trade Seeker and map mods). */
+	public boolean radarKeyMoved = false;
 
 	/** Whether the first-time "press N" tip has been shown. */
 	public boolean seenTip = false;
