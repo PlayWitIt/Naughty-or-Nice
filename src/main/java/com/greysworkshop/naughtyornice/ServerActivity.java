@@ -39,7 +39,8 @@ public final class ServerActivity {
 
 	/**
 	 * Things the server tells every player about, wherever they happen: a wither finishing its spawn, an end portal
-	 * being lit, the dragon dying. Each comes with its exact position. Newest last.
+	 * being lit, the dragon dying. Each comes with its exact position when it was within your view distance, else only
+	 * its direction ({@link WorldEvent#far}). Newest last.
 	 */
 	public java.util.List<WorldEvent> events = new java.util.ArrayList<>();
 
@@ -51,6 +52,12 @@ public final class ServerActivity {
 		public int x, y, z;
 		/** Who did it, when that's certain (one player got the matching advancement just before); "" otherwise. */
 		public String who = "";
+		/**
+		 * Beyond your view distance: the server then sends no position, only a point 32 blocks from you in its
+		 * direction. x, y, z are that point, so not where it happened; {@link #bearing} is the direction ("NE").
+		 */
+		public boolean far;
+		public String bearing = "";
 	}
 
 	public void event(WorldEvent e) {

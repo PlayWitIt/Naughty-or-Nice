@@ -349,9 +349,12 @@ public final class ChatIntel {
 			+ "(?:(?:an?|the|some|this|that|little|all|my|your|ur|these|those|anime)\\s+){0,3}" + MINOR + "\\b");
 	/** "babies are plap meat". */
 	private static final Pattern ABUSE_ARE = Pattern.compile("\\b" + MINOR + "\\s+(?:are|is|r)\\s+(?:\\w+\\s+){0,2}(?:plap\\w*|rap(?:e|eable)|fuckable|sexy|hot)\\b");
-	/** Saying they are one: "i am a genuine predator", "im a pedo", "i am a danger to all the anime children". */
-	private static final Pattern ABUSE_SELF = Pattern.compile("\\b(?:i am|i'?m|im)\\s+(?:a|an)\\s+(?:\\w+\\s+){0,2}(?:pedo\\w*|paedo\\w*|(?<!apex\\s)predator|child predator|"
-			+ "danger to (?:all\\s+)?(?:the\\s+)?(?:\\w+\\s+)?" + MINOR + ")\\b");
+	/**
+	 * Saying they are one: "im a pedo", "i am a child predator", "i am a danger to all the anime children". Not a
+	 * plain "predator" ("i'm a predator in pvp"), and not someone who goes after them ("im a pedo hunter").
+	 */
+	private static final Pattern ABUSE_SELF = Pattern.compile("\\b(?:i am|i'?m|im)\\s+(?:a|an)\\s+(?:\\w+\\s+){0,2}(?:(?:pedo|paedo)(?:phile)?s?|child predator|"
+			+ "danger to (?:all\\s+)?(?:the\\s+)?(?:\\w+\\s+)?" + MINOR + ")\\b(?!\\s*(?:hunter|hunting|catcher|killer|slayer|exposer|basher))");
 	/**
 	 * Someone speaking against it, or saying it of someone else ("sexualizing children is gross", "pedos should be banned",
 	 * "she's grooming little girls"), isn't saying it of themselves.
@@ -361,8 +364,9 @@ public final class ChatIntel {
 			+ "(?:rap(?:e|ed|ing)|molest\\w*|groom\\w*|diddl\\w*))\\b");
 
 	private static final Pattern RUDE_STRONG = Pattern.compile("\\b(?:kys|kill (?:your ?self|urself|yourself)|stfu|shut (?:the fuck |tf )?up|fuck (?:you|u|off|ur)|"
-			+ "f(?:u|ck) off|cry about it|skill issue|cope harder|cope and seethe|seethe|get good|get gud|retard(?:ed)?|ratio'?d|l bozo|"
-			+ "nobody asked|no one asked|who asked)\\b");
+			+ "f(?:u|ck) off|cry about it|skill issue|cope harder|cope and seethe|seethe|retard(?:ed)?|ratio'?d|l bozo)\\b"
+			// Only said as a jab on their own, not "who asked for the coords" or "get good gear first".
+			+ "|\\b(?:get good|get gud|nobody asked|no one asked|who asked|who even asked)(?=\\s*(?:$|[!.?,]|lol|lmao|kid|noob|bozo|bro|tho))");
 	private static final String INSULT = "(?:trash|noob|n00b|nub|bozo|idiot|clown|loser|bad|garbage|dogshit|shit|braindead|dumb|stupid|ugly|fat|cringe|pathetic|"
 			+ "worthless|moron|dumbass|dipshit|bitch|cunt|fag(?:got)?|irrelevant|washed)(?:e?s)?";
 	private static final String SOFTENERS = "(?:a\\s+|an\\s+|such\\s+a\\s+|so\\s+|really\\s+|actually\\s+|literally\\s+|fucking\\s+|fkn\\s+|a\\s+fucking\\s+)?";
@@ -371,8 +375,9 @@ public final class ChatIntel {
 			+ SOFTENERS + INSULT + "\\b");
 	/** "your trash" / "ur trash" (for "you're") only when the insult ends the sentence, so "take your trash out" isn't one. */
 	private static final Pattern RUDE_YOUR = Pattern.compile("\\b(?:your|ur)\\s+" + SOFTENERS + INSULT + "(?=\\s*(?:$|[!.?,]|lol|lmao|kid|bro|man|dude|ngl|tbh|fr|asf|af))");
-	private static final Pattern RUDE_ALONE = Pattern.compile("^(?:gg\\s+)?(?:ez+|easy|too easy|so easy|noob|nub|bozo|clown|loser|idiot|moron|trash|"
-			+ "l|ratio|cope|cry)(?:\\s+[a-z0-9_]{3,16})?[\\s!.?]*$");
+	/** A jab on its own: "ez", "L", "noob", "gg too easy". Not a plain "easy" or "cry", which are as often innocent. */
+	private static final Pattern RUDE_ALONE = Pattern.compile("^(?:(?:gg\\s+)?(?:ez+|noob|nub|bozo|clown|loser|idiot|moron|trash|l|ratio|cope)"
+			+ "|gg\\s+(?:easy|too easy|so easy))(?:\\s+[a-z0-9_]{3,16})?[\\s!.?]*$");
 	private static final Pattern NAMED_INSULT = Pattern.compile("^([a-z0-9_]{3,16})\\s+(?:is\\s+)?(?:a\\s+|so\\s+)?(?:ez+|noob|nub|bozo|clown|loser|idiot|moron|trash|garbage)[\\s!.]*$");
 	private static final Pattern KIND = Pattern.compile("\\b(?:thanks|thank you|thank u|thx|tysm|tyvm|ty|np|no problem|no worries|you'?re welcome|ur welcome|yw|"
 			+ "ggs?|good game|wp|well played|gl|good luck|have fun|here you go|have this|take this|gift for you|appreciate (?:it|you|u))\\b");

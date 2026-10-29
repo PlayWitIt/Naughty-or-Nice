@@ -359,7 +359,7 @@ public final class TrailFollow {
 				Profile profile = NaughtyOrNiceClient.INSTANCE.ledger.get(p.getUuid());
 				if (profile != null && (profile.verdict == Profile.Verdict.FRIEND || profile.verdict == Profile.Verdict.NICE)) continue;
 				pause();
-				Alerts.warn(Text.literal("Paused: " + p.getGameProfile().name() + " is " + (int) p.distanceTo(client.player) + " blocks away. ").formatted(Formatting.RED)
+				Alerts.warn(Text.literal("Paused: " + p.getGameProfile().name() + " is " + Alerts.blocks((int) p.distanceTo(client.player)) + " away. ").formatted(Formatting.RED)
 						.append(button("[Keep following]", Formatting.GREEN, "/nn trail resume")).append(Text.literal(" "))
 						.append(button("[Stop]", Formatting.RED, "/nn trail stop")), Alerts.Sound.STRANGER);
 			}

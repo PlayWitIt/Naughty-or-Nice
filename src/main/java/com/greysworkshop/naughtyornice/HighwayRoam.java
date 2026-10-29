@@ -260,7 +260,7 @@ public final class HighwayRoam {
 				if (friendly) continue;
 				warned.add(p.getUuid());
 				pause();
-				Alerts.warn(Text.literal("Paused: " + p.getGameProfile().name() + " is " + (int) p.distanceTo(client.player) + " blocks away. ").formatted(Formatting.RED)
+				Alerts.warn(Text.literal("Paused: " + p.getGameProfile().name() + " is " + Alerts.blocks((int) p.distanceTo(client.player)) + " away. ").formatted(Formatting.RED)
 						.append(resumeButton()).append(Text.literal(" ")).append(stopButton()), Alerts.Sound.STRANGER);
 			}
 		}

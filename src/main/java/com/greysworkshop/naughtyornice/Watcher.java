@@ -79,6 +79,7 @@ public final class Watcher {
 
 	public void reset() {
 		lastHurt.clear();
+		mining.clear();
 		recentKills.clear();
 		TotemCounter.clear();
 		LogoutSpots.clear();
@@ -163,12 +164,34 @@ public final class Watcher {
 		}
 	}
 
-	/** Someone (maybe you) broke or is breaking a block. */
+	/** Who has been mining where in your bases lately: only a block that then really breaks counts against them. */
+	private record Mining(UUID player, String name, String base, long time) {}
+	private final Map<Long, Mining> mining = new HashMap<>();
+	private static final long MINING_WINDOW = 15_000;
+
+	/**
+	 * Someone (maybe you) is breaking a block. Starting to mine proves nothing (they may stop, or it may be their
+	 * own block in a shared base); it's noted, and counts once the server says that block broke (see onBlockBroken).
+	 * Friends you trust at your bases never count.
+	 */
 	public void onBlockBreaking(MinecraftClient client, Entity breaker, BlockPos pos) {
 		PlayerEntity player = otherPlayer(client, breaker);
 		if (player == null || client.world == null) return;
 		String base = BaseInsuranceBridge.baseAt(client.world.getRegistryKey().getValue().toString(), pos);
-		if (base != null) record(profile(player), Profile.Kind.BROKE_IN_BASE, base);
+		if (base == null) return;
+		Profile profile = profile(player);
+		if (Friends.trusted(profile)) return;
+		long now = System.currentTimeMillis();
+		mining.put(pos.asLong(), new Mining(player.getUuid(), profile.name, base, now));
+		if (mining.size() > 256) mining.values().removeIf(m -> now - m.time > MINING_WINDOW);
+	}
+
+	/** The server's "block broken" effect (sent to everyone near, but not to whoever broke it). */
+	public void onBlockBroken(BlockPos pos) {
+		Mining m = mining.remove(pos.asLong());
+		if (m == null || System.currentTimeMillis() - m.time > MINING_WINDOW) return;
+		Profile profile = ledger.get(m.player);
+		if (profile != null && !Friends.trusted(profile)) record(profile, Profile.Kind.BROKE_IN_BASE, m.base);
 	}
 
 	private void killedMe(UUID killer, String killerName) {
@@ -507,6 +530,10 @@ public final class Watcher {
 		String killer = null;
 		UUID killerId = null;
 		while (words.find()) {
+			// The killer comes where the game's wording puts one: "slain by Y", "while fighting Y", "to escape Y",
+			// "trying to hurt Y". Not any name in the line: "slain by Zombie named Bob" isn't Bob's doing.
+			String before = line.substring(0, words.start()).stripTrailing().toLowerCase(Locale.ROOT);
+			if (!KILLER_BEFORE.matcher(before).find()) continue;
 			UUID id = playerId(client, words.group());
 			if (id != null && !words.group().equalsIgnoreCase(victim)) {
 				killer = words.group();
@@ -526,6 +553,8 @@ public final class Watcher {
 	}
 
 	private static final Pattern WORD = Pattern.compile("[A-Za-z0-9_]{3,16}");
+	/** The words a death message puts just before whoever did it. */
+	private static final Pattern KILLER_BEFORE = Pattern.compile("(?:\\bby|\\bfighting|\\bescape|\\bhurt)$");
 
 	/** Lower-case names of everyone online, to blank out of lines the chat check couldn't read. */
 	private static Set<String> onlineNames(MinecraftClient client) {
@@ -716,6 +745,7 @@ public final class Watcher {
 
 	/** A sound the server sent to everyone in the dimension, with where it happened. */
 	public void onWorldEvent(MinecraftClient client, int id, BlockPos pos, boolean global) {
+		if (id == net.minecraft.world.WorldEvents.BLOCK_BROKEN && !global) onBlockBroken(pos);
 		if (!global || client.world == null) return;
 		String kind = switch (id) {
 			case net.minecraft.world.WorldEvents.WITHER_SPAWNS -> "wither";
@@ -724,10 +754,20 @@ public final class Watcher {
 			default -> null;
 		};
 		if (kind == null) return;
-		worldEvent(kind, client.world.getRegistryKey().getValue().toString(), pos.getX(), pos.getY(), pos.getZ(), System.currentTimeMillis());
+		// Further off than your view distance, the server puts it 32 blocks from you in its direction instead: then
+		// all it tells is which way.
+		double dx = pos.getX() + 0.5 - client.player.getX(), dy = pos.getY() + 0.5 - client.player.getY(), dz = pos.getZ() + 0.5 - client.player.getZ();
+		boolean far = Math.abs(Math.sqrt(dx * dx + dy * dy + dz * dz) - 32) <= 2;
+		worldEvent(kind, client.world.getRegistryKey().getValue().toString(), pos.getX(), pos.getY(), pos.getZ(), System.currentTimeMillis(),
+				far ? ChunkTrails.compass(dx, dz) : null);
 	}
 
 	void worldEvent(String kind, String dimension, int x, int y, int z, long now) {
+		worldEvent(kind, dimension, x, y, z, now, null);
+	}
+
+	/** {@code bearing}: the direction it's in, when only that is known (it was beyond your view distance). */
+	void worldEvent(String kind, String dimension, int x, int y, int z, long now, String bearing) {
 		ServerActivity.WorldEvent e = new ServerActivity.WorldEvent();
 		e.time = now;
 		e.kind = kind;
@@ -735,6 +775,8 @@ public final class Watcher {
 		e.x = x;
 		e.y = y;
 		e.z = z;
+		e.far = bearing != null;
+		e.bearing = bearing == null ? "" : bearing;
 		ledger.activity.event(e);
 		if (kind.equals("wither")) {
 			recentWithers.add(e);
@@ -763,7 +805,8 @@ public final class Watcher {
 			if (who.size() != 1 || others > 0) continue;
 			Profile p = (Profile) who.get(0)[0];
 			e.who = p.name;
-			p.stats.addPlace(e.x, e.y, e.z, e.dimension, "wither", "Summoned a wither here (its spawn was heard server-wide)", e.time);
+			// Its place only when the spawn was close enough for the server to say where.
+			if (!e.far) p.stats.addPlace(e.x, e.y, e.z, e.dimension, "wither", "Summoned a wither here (its spawn was heard server-wide)", e.time);
 			recentWithers.remove(e);
 			witherSummoners.remove(who.get(0));
 			ledger.markDirty();

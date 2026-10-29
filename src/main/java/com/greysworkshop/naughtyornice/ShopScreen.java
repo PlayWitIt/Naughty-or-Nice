@@ -983,7 +983,7 @@ public class ShopScreen extends Screen {
 
 	private String whereabouts(Profile p) {
 		PlayerEntity player = entity(p);
-		if (player != null && client.player != null) return "Here now · " + (int) player.distanceTo(client.player) + " blocks away";
+		if (player != null && client.player != null) return "Here now · " + Alerts.blocks((int) player.distanceTo(client.player)) + " away";
 		if (isOnline(p)) return "Online now";
 		if (p.stats.lastOnline > 0) return "Last online " + ago(p.stats.lastOnline);
 		return p.lastSeen <= 0 ? "Not seen yet" : "Seen " + ago(p.lastSeen);
@@ -1632,6 +1632,8 @@ public class ShopScreen extends Screen {
 		String about;
 		if (open == null) {
 			about = "Friends are people you know. Their type says how (close friend, base mate...). Who plays with whom is Groups, a separate tab.";
+			// Never cut off mid-sentence: a shorter way of saying it when there's no room.
+			if (textRenderer.getWidth(about) > w - 16) about = "Friends are people you know, by type. Crews and teams go in Groups.";
 		} else {
 			List<String> parts = new ArrayList<>();
 			parts.add(open.trusted ? "Trusted at your bases (no Base Insurance alerts)" : "Not trusted at your bases");
@@ -4273,7 +4275,7 @@ public class ShopScreen extends Screen {
 		int h = 116;
 		roundedBorder(context, x, y, w, h, CARD, c.chunkTrails ? NICE : BORDER);
 		context.drawText(textRenderer, Text.literal("Chunk trails").styled(s -> s.withBold(true)), x + 10, y + 7, TEXT, false);
-		textTrim(context, c.chunkTrails ? "On: as chunks load, new land shows red, old land green (someone was there), trails yellow."
+		textTrim(context, c.chunkTrails ? "On: in the world (K), new land is red, old land green (someone was there), trails yellow. The radar shows old land and trails."
 				: "Off: no chunks are read and nothing is drawn.", x + 10, y + 19, w - 20, c.chunkTrails ? NICE : MUTED);
 		int bx = x + 10, by = y + 33;
 		String main = c.chunkTrails ? "Turn chunk trails off" : "Turn chunk trails on";
@@ -4725,6 +4727,7 @@ public class ShopScreen extends Screen {
 			if (!q.isEmpty() && !r.sender().toLowerCase(Locale.ROOT).contains(q) && !r.text().toLowerCase(Locale.ROOT).contains(q)) continue;
 			if (shown++ >= 300) break;
 			boolean located = r.place() != null || r.event() != null || r.trail() != null;
+			// (A far-off event's line says its direction instead.)
 			boolean twoLines = !r.text().isEmpty() && textRenderer.getWidth(r.text()) > rw - 12;
 			int h = 16 + (located ? 11 : 0) + (r.text().isEmpty() ? 0 : twoLines ? 20 : 10);
 			if (y + h >= BODY && y <= height) intelRow(context, mouseX, mouseY, r, rx, y, rw, h, twoLines);
@@ -4921,7 +4924,7 @@ public class ShopScreen extends Screen {
 		}
 		// World events.
 		for (ServerActivity.WorldEvent e : mod.ledger.activity.events) {
-			if (!e.dimension.equals(mapDim)) continue;
+			if (!e.dimension.equals(mapDim) || e.far) continue;
 			int px = mapPx(e.x), pz = mapPz(e.z);
 			context.fill(px - 3, pz - 3, px + 3, pz + 3, 0xFF000000);
 			context.fill(px - 2, pz - 2, px + 2, pz + 2, MAP_EVENT);
@@ -5100,7 +5103,14 @@ public class ShopScreen extends Screen {
 		}
 		ty += 12;
 		// Where, and how far from your bases and you.
-		if (r.place() != null || r.event() != null || r.trail() != null) {
+		if (r.event() != null && r.event().far) {
+			String dim = r.event().dimension;
+			String where = "Far away, to the " + r.event().bearing + (dim.isEmpty() ? "" : " (" + dimensionName(dim) + ")");
+			context.drawText(textRenderer, Text.literal(where).styled(st -> st.withBold(true)), x + 6, ty, TEXT, false);
+			int wx = x + 6 + textRenderer.getWidth(Text.literal(where).styled(st -> st.withBold(true))) + 6;
+			textTrim(context, "beyond your view distance, so the server only tells the direction", wx, ty, x + w - 6 - wx, MUTED);
+			ty += 11;
+		} else if (r.place() != null || r.event() != null || r.trail() != null) {
 			ChunkTrails.Trail trail = r.trail();
 			int[] far = trail == null ? null : trail.awayEnd();
 			String dim = trail != null ? trail.dimension : r.place() != null ? r.place().dimension : r.event().dimension;
@@ -7049,11 +7059,16 @@ public class ShopScreen extends Screen {
 		return shareLinkKey.equals(shareChoiceKey()) ? shareLink : null;
 	}
 
+	/**
+	 * What the link holds: who, on which list, with which details and groups. Not every change to the ledger (someone
+	 * walking about changes it every second), or the link you just made would vanish straight away.
+	 */
 	private String shareChoiceKey() {
-		List<Profile> chosen = shareChoice();
-		int details = 0;
-		for (Profile p : chosen) details += p.details.size();
-		return shareScope + "/" + shareChat + "/" + chosen.size() + "/" + details + "/" + mod.ledger.changes();
+		int hash = 1;
+		for (Profile p : shareChoice()) {
+			hash = 31 * hash + java.util.Objects.hash(p.id, p.verdict, p.circle, p.details.size(), p.groups);
+		}
+		return shareScope + "/" + shareChat + "/" + hash;
 	}
 
 	/** Makes the share link (once), then copies it, or whispers it to {@code sendTo}. */

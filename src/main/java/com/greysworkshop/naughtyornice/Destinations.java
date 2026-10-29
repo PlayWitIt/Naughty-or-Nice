@@ -146,6 +146,8 @@ public final class Destinations {
 			if (sg != null) list.add(new Destination(Kind.SEEN, p.name, "Last seen " + ShopScreen.ago(sg.until), sg.lastX, sg.lastY, sg.lastZ, sg.dimension, sg.until));
 		}
 		for (ServerActivity.WorldEvent e : ledger.activity.events) {
+			// Only its direction is known: nowhere to go.
+			if (e.far) continue;
 			String what = switch (e.kind) {
 				case "end_portal" -> "End portal lit (a stronghold)";
 				case "wither" -> "A wither spawned";

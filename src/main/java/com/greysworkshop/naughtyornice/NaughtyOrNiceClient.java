@@ -170,7 +170,7 @@ public class NaughtyOrNiceClient implements ClientModInitializer {
 			}
 		}
 		for (ServerActivity.WorldEvent e : ledger.activity.events) {
-			if (!e.dimension.equals(dimension) || e.time < oldest || !e.who.isEmpty()) continue;
+			if (!e.dimension.equals(dimension) || e.time < oldest || !e.who.isEmpty() || e.far) continue;
 			String what = switch (e.kind) {
 				case "wither" -> "A wither spawned";
 				case "end_portal" -> "End portal lit";

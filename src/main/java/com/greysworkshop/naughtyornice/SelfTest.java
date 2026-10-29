@@ -39,6 +39,7 @@ public final class SelfTest {
 	private static boolean started;
 	private static int tick = -1;
 	private static FakePlayer griefer;
+	private static int minedBefore;
 	private static int passed;
 	private static int failed;
 	private static int frames;
@@ -54,6 +55,8 @@ public final class SelfTest {
 			// Keep the game running while the window isn't focused (someone using the computer meanwhile), or the
 			// singleplayer server pauses and nothing that needs time (walking, flowing water) happens.
 			client.options.pauseOnLostFocus = false;
+			// No "move with WASD" pop-up over the screenshots.
+			client.getTutorialManager().setStep(net.minecraft.client.tutorial.TutorialStep.NONE);
 			client.send(() -> openWorld(client));
 		});
 		ClientTickEvents.END_CLIENT_TICK.register(SelfTest::tick);
@@ -206,9 +209,42 @@ public final class SelfTest {
 			}
 			case 135 -> hitMe(client, 1f);
 			case 150 -> hitMe(client, 1f);
+			case 154 -> {
+				log("The player hits the griefer, who wears Thorns: the thorns damage names the griefer");
+				IntegratedServer server = client.getServer();
+				server.execute(() -> {
+					ServerPlayerEntity me = server.getPlayerManager().getPlayerList().get(0);
+					me.timeUntilRegen = 0;
+					me.damage(me.getEntityWorld(), me.getEntityWorld().getDamageSources().thorns(griefer), 1f);
+				});
+			}
+			case 158 -> {
+				log("In your base, the griefer starts mining a block, then stops");
+				BaseInsuranceBridge.testBase = "Home";
+				minedBefore = ledger.get(id(GRIEFER)).count(Profile.Kind.BROKE_IN_BASE);
+				IntegratedServer server = client.getServer();
+				server.execute(() -> griefer.getEntityWorld().setBlockBreakingInfo(griefer.getId(), griefer.getBlockPos().down().east(2), 4));
+			}
+			case 163 -> {
+				check("starting to mine in your base isn't counted as breaking it", ledger.get(id(GRIEFER)).count(Profile.Kind.BROKE_IN_BASE) == minedBefore);
+				log("…then mines another all the way through");
+				IntegratedServer server = client.getServer();
+				server.execute(() -> {
+					BlockPos at = griefer.getBlockPos().down().west(2);
+					// (The world is kept between runs: put a block there to break.)
+					griefer.getEntityWorld().setBlockState(at, net.minecraft.block.Blocks.STONE.getDefaultState());
+					griefer.getEntityWorld().setBlockBreakingInfo(griefer.getId(), at, 9);
+					griefer.getEntityWorld().breakBlock(at, false, griefer);
+				});
+			}
+			case 168 -> {
+				check("a block they really break in your base is counted (" + ledger.get(id(GRIEFER)).count(Profile.Kind.BROKE_IN_BASE) + ")",
+						ledger.get(id(GRIEFER)).count(Profile.Kind.BROKE_IN_BASE) == minedBefore + 1);
+				BaseInsuranceBridge.testBase = null;
+			}
 			case 170 -> {
 				Profile gary = ledger.get(id(GRIEFER));
-				check("hits seen through the damage packet (" + (gary == null ? 0 : gary.count(Profile.Kind.HIT_YOU)) + ")",
+				check("hits seen through the damage packet, and not the thorns from your own hit (" + (gary == null ? 0 : gary.count(Profile.Kind.HIT_YOU)) + ")",
 						gary != null && gary.count(Profile.Kind.HIT_YOU) == 3);
 				check("hits folded into one activity entry", gary != null && gary.actions.stream().filter(a -> a.kind == Profile.Kind.HIT_YOU).count() == 1);
 				DeathRecap.testOpen = true;
@@ -225,7 +261,8 @@ public final class SelfTest {
 						.filter(e -> e.type == EventLog.Type.HIT && e.target.equals(meName)).map(e -> e.health).toList();
 				// Creative mode: the small hits leave you at 20. The killing hit shows 0, which it only can if the health is read after the
 				// server's health update (read straight away, it was still 20).
-				check("each hit logs the health left after it (" + health + ")", health.size() == 4 && health.get(3) == 0f);
+				// Three hits, the thorns from your own hit (logged: you did take it, it just isn't their doing), the kill.
+				check("each hit logs the health left after it (" + health + ")", health.size() == 5 && health.get(4) == 0f);
 				long now = System.currentTimeMillis();
 				long inWindow = EventLog.since(now - DeathRecap.WINDOW_MS).stream().filter(e -> e.type == EventLog.Type.HIT && e.target.equals(meName)).count();
 				DeathRecap.Recap recap = DeathRecap.build(meName, now);
@@ -801,6 +838,10 @@ public final class SelfTest {
 				mod.watcher.onGameMessage(client, Text.literal(GRIEFER + " was slain by xX_Toxic_Xx using [Diamond Sword]"));
 				check("a plain-text death message is read as a kill", d.count(Diagnostics.Kind.KILL) == kills + 1
 						&& toxic.count(Profile.Kind.KILLED_PLAYER) == toxicKills + 1);
+				mod.watcher.onGameMessage(client, Text.literal(GRIEFER + " was slain by Zombie named xX_Toxic_Xx"));
+				mod.watcher.onGameMessage(client, Text.literal(GRIEFER + " fell from a high place, xX_Toxic_Xx laughed"));
+				check("…but not a mob named after a player, or a name elsewhere in the line (" + (toxic.count(Profile.Kind.KILLED_PLAYER) - toxicKills) + " kills)",
+						toxic.count(Profile.Kind.KILLED_PLAYER) == toxicKills + 1 && d.count(Diagnostics.Kind.KILL) == kills + 1);
 				int joins = d.count(Diagnostics.Kind.JOIN_LEAVE);
 				mod.watcher.onGameMessage(client, Text.translatable("multiplayer.player.joined.renamed", Text.literal(GRIEFER), Text.literal("OldGary")));
 				mod.watcher.onGameMessage(client, Text.literal("Helpful_Hana left the game"));
@@ -844,6 +885,7 @@ public final class SelfTest {
 				mod.watcher.onGameMessage(client, Text.literal("<RandomRick> nothing to see"));
 				last = mod.chatLogger.feed().get(mod.chatLogger.feed().size() - 1);
 				check("ordinary chat isn't flagged", last.alert == null);
+				checkTones();
 				check("coordinates are matched to a base, in either dimension", new BaseInsuranceBridge.BaseArea("Home", "minecraft:overworld", 1000, 1100, -2000, -1900)
 						.distance(1050, -1950) == 0 && new BaseInsuranceBridge.BaseArea("Home", "minecraft:overworld", 1000, 1100, -2000, -1900).distance(1300, -1950) == 200);
 				client.setScreen(new ShopScreen(ShopScreen.Tab.CHAT, null));
@@ -1292,6 +1334,15 @@ public final class SelfTest {
 				mod.watcher.summonedWither(rick, t0 + 100_500);
 				mod.watcher.worldEvent("wither", "minecraft:overworld", 9000, 70, 9000, t0 + 111_000);
 				check("...but not when two players could have done it", hanaW.stats.places.size() == hanaPlaces && rick.stats.places.stream().noneMatch(pl -> pl.x == 9000));
+				// Beyond your view distance the server sends a point 32 blocks from you in its direction, not where it was.
+				int rickPlaces = rick.stats.places.size();
+				mod.watcher.summonedWither(rick, System.currentTimeMillis() - 11_000);
+				BlockPos marker = BlockPos.ofFloored(client.player.getEntityPos().add(32 * 0.6, 0, -32 * 0.8));
+				mod.watcher.onWorldEvent(client, net.minecraft.world.WorldEvents.WITHER_SPAWNS, marker, true);
+				ServerActivity.WorldEvent farEvent = ledger.activity.events.get(ledger.activity.events.size() - 1);
+				check("a far-off wither is kept as a direction only (" + farEvent.bearing + "), not a place",
+						farEvent.far && farEvent.bearing.equals(ChunkTrails.compass(19.2, -25.6)) && rick.stats.places.size() == rickPlaces
+						&& Destinations.all(client).stream().noneMatch(d -> d.x() == marker.getX() && d.z() == marker.getZ()));
 				check("the coordinate guard reads your messages", !CoordGuard.reasons("meet me at 1200 -3400").isEmpty() && CoordGuard.reasons("hello there").isEmpty()
 						&& !CoordGuard.reasons("im at " + client.player.getBlockX() + " lol").isEmpty() == (Math.abs(client.player.getBlockX()) >= 500));
 				check("...holds a message that gives coordinates away", !CoordGuard.allowChat("base at 1200 -3400") && CoordGuard.allowChat("hello there"));
@@ -1931,6 +1982,93 @@ public final class SelfTest {
 
 	private static ShopScreen screen(MinecraftClient client) {
 		return client.currentScreen instanceof ShopScreen s ? s : new ShopScreen();
+	}
+
+	/**
+	 * The chat-tone rules on lines that must and mustn't count against someone. Wrongly calling a player a child
+	 * abuser, or rude, is the worst mistake the mod can make, so every line here was a real mix-up or a near one.
+	 */
+	private static final String[][] TONES = {
+			{"NONE", "i need to rape this raid farm"},
+			{"NONE", "lets rape the end city"},
+			{"NONE", "the baby zombies are hot garbage"},
+			{"NONE", "baby zombies r hot"},
+			{"NONE", "ur base is trash lol"},
+			{"NONE", "your trash can is full"},
+			{"NONE", "this server is trash"},
+			{"NONE", "that shulker is sexy"},
+			{"NONE", "bring the babies to the farm"},
+			{"NONE", "groom the horse"},
+			{"NONE", "i'm a predator in pvp"},
+			{"NONE", "apex predator"},
+			{"NONE", "im a pedo hunter"},
+			{"NONE", "i'm a pedophile hunter on this server"},
+			{"NONE", "who asked for the coords"},
+			{"NONE", "nobody asked me to help but i did"},
+			{"NONE", "get good gear first"},
+			{"NONE", "he is grooming the dog"},
+			{"NONE", "easy"},
+			{"NONE", "cry"},
+			{"NONE", "that was easy"},
+			{"NONE", "no thanks"},
+			{"NONE", "thanks for nothing"},
+			{"NONE", "i'm going to kill myself in the lava lol"},
+			{"NONE", "my noob armor"},
+			{"NONE", "the noob trap"},
+			{"NONE", "dumb question but"},
+			{"NONE", "stupid creeper blew up my house"},
+			{"NONE", "you are so good"},
+			{"NONE", "you are not bad"},
+			{"NONE", "you're not trash"},
+			{"NONE", "ur not bad"},
+			{"NONE", "pedos should be banned"},
+			{"NONE", "sexualizing children is gross"},
+			{"NONE", "she's grooming little girls report her"},
+			{"NONE", "the kids farm is broken"},
+			{"NONE", "my little brother is 10 year old"},
+			{"NONE", "is it easy to find"},
+			{"RUDE", "l"},
+			{"RUDE", "ez"},
+			{"RUDE", "L"},
+			{"RUDE", "cope"},
+			{"RUDE", "gg ez"},
+			{"RUDE", "gg easy"},
+			{"RUDE", "gg too easy"},
+			{"RUDE", "you're trash"},
+			{"RUDE", "u r a noob"},
+			{"RUDE", "you are so bad"},
+			{"RUDE", "ur trash lol"},
+			{"RUDE", "kys"},
+			{"RUDE", "stfu"},
+			{"RUDE", "fuck you"},
+			{"RUDE", "skill issue"},
+			{"RUDE", "who asked"},
+			{"RUDE", "nobody asked lol"},
+			{"RUDE", "get good kid"},
+			{"RUDE", "get gud"},
+			{"RUDE", "bob is trash"},
+			{"RUDE", "ez bob"},
+			{"KIND", "gg wp"},
+			{"KIND", "ty for the gapples"},
+			{"KIND", "thank u"},
+			{"KIND", "good luck finding it"},
+			{"KIND", "thanks"},
+			{"ABUSE", "im a pedo"},
+			{"ABUSE", "i am a child predator"},
+			{"ABUSE", "i'm a pedophile"},
+			{"ABUSE", "i am a danger to all the anime children"},
+			{"ABUSE", "i want to rape a child"},
+			{"ABUSE", "children are fuckable"},
+			{"ABUSE", "molest the little girls"}
+	};
+
+	private static void checkTones() {
+		List<String> wrong = new java.util.ArrayList<>();
+		for (String[] t : TONES) {
+			ChatIntel.Tone got = ChatIntel.tone(t[1], java.util.Set.of("bob", "alice"));
+			if (!got.name().equals(t[0])) wrong.add("\"" + t[1] + "\" is " + got + ", not " + t[0]);
+		}
+		check("chat tone: " + TONES.length + " lines, none misjudged" + (wrong.isEmpty() ? "" : " " + wrong), wrong.isEmpty());
 	}
 
 	private static void hitMe(MinecraftClient client, float amount) {

@@ -46,7 +46,9 @@ public abstract class ClientPlayNetworkHandlerMixin {
 		if (client.world == null || mod == null) return;
 		Entity target = client.world.getEntityById(packet.entityId());
 		Entity attacker = client.world.getEntityById(packet.sourceCauseId());
-		Safe.run("watching damage", () -> mod.watcher.onDamage(client, target, attacker));
+		// Thorns hurts whoever hits its wearer, and names the wearer as the attacker: that's the hitter's doing, not theirs.
+		boolean thorns = packet.sourceType().matchesKey(net.minecraft.entity.damage.DamageTypes.THORNS);
+		if (!thorns) Safe.run("watching damage", () -> mod.watcher.onDamage(client, target, attacker));
 		if (NNConfig.INSTANCE.eventLog) {
 			Entity direct = client.world.getEntityById(packet.sourceDirectId());
 			String type = packet.sourceType().getKey().map(k -> k.getValue().getPath()).orElse("damage");

@@ -86,7 +86,7 @@ public final class TrailRadar {
 				else newCount++;
 				double bx = (pcx + i) * 16 + 8 - me.x, bz = (pcz + j) * 16 + 8 - me.z;
 				int[] p = toScreen(bx, bz, scale, cos, sin, cx, cy);
-				if (Math.hypot(p[0] - cx, p[1] - cy) > radius - 3) continue;
+				if (Math.hypot(p[0] - cx, p[1] - cy) + cell * 0.71 > radius - 3) continue;
 				boolean loaded = client.world.getChunkManager().isChunkLoaded(pcx + i, pcz + j);
 				int color = s == ChunkTrails.OLD ? (loaded ? OLD : OLD_FAR) : FRESH;
 				context.fill(p[0] - cell / 2, p[1] - cell / 2, p[0] - cell / 2 + cell, p[1] - cell / 2 + cell, color);
@@ -197,8 +197,11 @@ public final class TrailRadar {
 		for (int k = 0; k <= steps; k++) {
 			double t = (double) k / steps;
 			int x = (int) Math.round(a[0] + (b[0] - a[0]) * t), y = (int) Math.round(a[1] + (b[1] - a[1]) * t);
-			if (Math.hypot(x - cx, y - cy) > limit) continue;
-			context.fill(x - h, y - h, x - h + thickness, y - h + thickness, TRAIL);
+			// Thinner towards the rim, so the line never spills past the round screen.
+			double d = Math.hypot(x - cx, y - cy);
+			if (d > limit) continue;
+			int hh = Math.min(h, (int) ((limit - d) / 1.42));
+			context.fill(x - hh, y - hh, x + hh + 1, y + hh + 1, TRAIL);
 		}
 	}
 

@@ -191,7 +191,7 @@ public final class SmartTravel {
 				Profile profile = NaughtyOrNiceClient.INSTANCE.ledger.get(p.getUuid());
 				if (profile != null && (profile.verdict == Profile.Verdict.FRIEND || profile.verdict == Profile.Verdict.NICE)) continue;
 				BaritoneBridge.run("pause");
-				Alerts.warn(Text.literal("Paused: " + p.getGameProfile().name() + " is " + (int) p.distanceTo(client.player) + " blocks away. ").formatted(Formatting.RED)
+				Alerts.warn(Text.literal("Paused: " + p.getGameProfile().name() + " is " + Alerts.blocks((int) p.distanceTo(client.player)) + " away. ").formatted(Formatting.RED)
 						.append(Text.literal("[Keep going]").styled(st -> st.withColor(Formatting.GREEN).withUnderline(true)
 								.withClickEvent(new ClickEvent.RunCommand("/nn roam resume"))))
 						.append(Text.literal(" "))

@@ -70,7 +70,11 @@ public final class BaseInsuranceBridge {
 	}
 
 	/** The name of the insured base containing this block, or null. */
+	/** For the self-test (Base Insurance isn't loaded there): every spot is in this base. */
+	static String testBase;
+
 	public static String baseAt(String dimension, BlockPos pos) {
+		if (testBase != null) return testBase;
 		if (!resolve()) return null;
 		try {
 			Object manager = managerField.get(client);

@@ -192,4 +192,9 @@ public final class Alerts {
 		PhoneAlerts.send(message.getString());
 		play(sound);
 	}
+
+	/** "1 block", "25 blocks", "1,200 blocks". */
+	public static String blocks(int n) {
+		return String.format(java.util.Locale.ROOT, "%,d %s", n, n == 1 ? "block" : "blocks");
+	}
 }
