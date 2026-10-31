@@ -30,6 +30,42 @@ public final class TrailRadar {
 
 	private TrailRadar() {}
 
+	/** Where the radar's title was drawn last frame (for the self-tests). */
+	public static int lastTop = -1;
+
+	/** Where the radar circle's right edge was last frame (for the self-tests). */
+	public static int lastRight = -1;
+
+	private static java.lang.reflect.Method minimapBottom, minimapLeft;
+	private static Object topRight;
+	private static boolean minimapLooked;
+
+	/** Base Insurance's minimap in the top right corner last frame, as {left x, bottom y}, or null if it isn't there. */
+	static int[] minimapEdges() {
+		if (!minimapLooked) {
+			minimapLooked = true;
+			if (NaughtyOrNiceClient.withBaseInsurance()) {
+				try {
+					Class<?> corner = Class.forName("com.greysworkshop.baseinsurance.BIConfig$Corner");
+					Class<?> minimap = Class.forName("com.greysworkshop.baseinsurance.Minimap");
+					minimapBottom = minimap.getMethod("bottomIn", corner);
+					minimapLeft = minimap.getMethod("leftIn", corner);
+					topRight = corner.getField("TOP_RIGHT").get(null);
+				} catch (ReflectiveOperationException | LinkageError e) {
+					minimapBottom = null;
+				}
+			}
+		}
+		if (minimapBottom == null) return null;
+		try {
+			int bottom = (int) minimapBottom.invoke(null, topRight), left = (int) minimapLeft.invoke(null, topRight);
+			return bottom < 0 || left < 0 ? null : new int[] {left, bottom};
+		} catch (ReflectiveOperationException | LinkageError e) {
+			minimapBottom = null;
+			return null;
+		}
+	}
+
 	public static void render(DrawContext context, RenderTickCounter tickCounter) {
 		if (!NNConfig.on()) return;
 		MinecraftClient client = MinecraftClient.getInstance();
@@ -51,12 +87,24 @@ public final class TrailRadar {
 		int lh = (int) Math.ceil(10 * ts);
 
 		int x0 = context.getScaledWindowWidth() - size - 8;
-		// Top right, where a minimap goes (with Base Insurance's M key only one shows at a time), below the title
-		// and below potion effect icons, so the words under it stay clear of the hotbar and messages.
+		// Top right, below the title and below potion effect icons, so the words under it stay clear of the hotbar and
+		// messages. Base Insurance's minimap may be there too: then below that, or beside it if there's no room below.
 		int y0 = lh + 6;
 		var effects = client.player.getStatusEffects();
 		if (effects.stream().anyMatch(e -> e.shouldShowIcon() && e.getEffectType().value().isBeneficial())) y0 += 26;
 		if (effects.stream().anyMatch(e -> e.shouldShowIcon() && !e.getEffectType().value().isBeneficial())) y0 += 26;
+		int[] minimap = minimapEdges();
+		if (minimap != null) {
+			int below = Math.max(y0, minimap[1] + lh + 6);
+			// Room under it for the circle and the lines of words below it.
+			if (below + size + 3 * lh + 16 <= context.getScaledWindowHeight()) {
+				y0 = below;
+			} else {
+				x0 = minimap[0] - size - 8;
+			}
+		}
+		lastTop = y0 - lh - 3;
+		lastRight = x0 + size;
 		int cx = x0 + radius, cy = y0 + radius;
 
 		// Title, so it's clear what this is and whose it is.

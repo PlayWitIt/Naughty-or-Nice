@@ -63,10 +63,8 @@ public class NaughtyOrNiceClient implements ClientModInitializer {
 
 		KeyBinding.Category category = KeyBinding.Category.create(Identifier.of(MOD_ID, "main"));
 		openKey = KeyBindingHelper.registerKeyBinding(new KeyBinding("key.naughtyornice.open", InputUtil.Type.KEYSYM, GLFW.GLFW_KEY_N, category));
-		// Not J: Trade Seeker (and map mods) use J. With Base Insurance, its map key (M) cycles map, radar, minimap and
-		// off, so the radar needs no key of its own; without it, O.
-		radarKey = KeyBindingHelper.registerKeyBinding(new KeyBinding("key.naughtyornice.radar", InputUtil.Type.KEYSYM,
-				withBaseInsurance() ? GLFW.GLFW_KEY_UNKNOWN : GLFW.GLFW_KEY_O, category));
+		// Not J: Trade Seeker (and map mods) use J.
+		radarKey = KeyBindingHelper.registerKeyBinding(new KeyBinding("key.naughtyornice.radar", InputUtil.Type.KEYSYM, GLFW.GLFW_KEY_O, category));
 		baritoneKey = KeyBindingHelper.registerKeyBinding(new KeyBinding("key.naughtyornice.baritone", InputUtil.Type.KEYSYM, GLFW.GLFW_KEY_B, category));
 		stopKey = KeyBindingHelper.registerKeyBinding(new KeyBinding("key.naughtyornice.stop", InputUtil.Type.KEYSYM, GLFW.GLFW_KEY_Z, category));
 		chunksKey = KeyBindingHelper.registerKeyBinding(new KeyBinding("key.naughtyornice.chunks", InputUtil.Type.KEYSYM, GLFW.GLFW_KEY_K, category));
@@ -205,10 +203,8 @@ public class NaughtyOrNiceClient implements ClientModInitializer {
 			// Finding trails happens out of sight: say once where to see it.
 			NNConfig.INSTANCE.seenRadarTip = true;
 			NNConfig.save();
-			// With Base Insurance, its map key goes to the map first, then the radar.
-			boolean viaMap = withBaseInsurance() && keyName("key.naughtyornice.radar").equals("no key");
 			Alerts.chat(Text.literal("Chunk trails are on. Press ").formatted(Formatting.GRAY)
-					.append(Text.literal(radarKeyName() + (viaMap ? " twice" : "")).formatted(Formatting.YELLOW))
+					.append(Text.literal(radarKeyName()).formatted(Formatting.YELLOW))
 					.append(Text.literal(" for the trail radar (green: someone was here, amber line: their path), or ").formatted(Formatting.GRAY))
 					.append(Text.literal("[show it]").styled(st -> st.withColor(Formatting.AQUA).withUnderline(true)
 							.withClickEvent(new ClickEvent.RunCommand("/nn radar")))));
@@ -290,22 +286,17 @@ public class NaughtyOrNiceClient implements ClientModInitializer {
 		return net.fabricmc.loader.api.FabricLoader.getInstance().isModLoaded("baseinsurance");
 	}
 
-	/** The key that shows the radar: its own if it has one, else Base Insurance's map key, which cycles to it. */
+	/** The key that shows or hides the radar ("O"). */
 	public static String radarKeyName() {
 		// While the game is still starting there are no key settings yet: say the default.
-		if (MinecraftClient.getInstance() == null || MinecraftClient.getInstance().options == null) return withBaseInsurance() ? "M" : "O";
-		String own = keyName("key.naughtyornice.radar");
-		if (!own.equals("no key") || !withBaseInsurance()) return own;
-		return keyName("key.baseinsurance.map");
+		if (MinecraftClient.getInstance() == null || MinecraftClient.getInstance().options == null) return "O";
+		return keyName("key.naughtyornice.radar");
 	}
 
-	/** How to show the radar, in a few words: "O shows or hides it", or "M: map, radar, minimap, off". */
+	/** How to show the radar, in a few words: "O shows or hides it". */
 	public static String radarKeyHow() {
-		if (MinecraftClient.getInstance() == null || MinecraftClient.getInstance().options == null) {
-			return withBaseInsurance() ? "M: map, radar, minimap, off" : "O shows or hides it";
-		}
-		if (!keyName("key.naughtyornice.radar").equals("no key") || !withBaseInsurance()) return radarKeyName() + " shows or hides it";
-		return radarKeyName() + ": map, radar, minimap, off";
+		String key = radarKeyName();
+		return key.equals("no key") ? "set a key in Options → Controls → Key Binds" : key + " shows or hides it";
 	}
 
 	/** What one of our keys is bound to now, as Controls shows it ("O"). */
@@ -357,9 +348,18 @@ public class NaughtyOrNiceClient implements ClientModInitializer {
 					radarKey.setBoundKey(radarKey.getDefaultKey());
 					KeyBinding.updateKeysByCode();
 					client.options.write();
-					Alerts.chat(Text.literal(withBaseInsurance()
-							? "The trail radar is off J now (it clashed with other mods): press " + radarKeyName() + " to go map, radar, minimap, off."
-							: "The trail radar is on O now (J clashed with other mods). Change it in Options → Controls → Key Binds.").formatted(Formatting.GRAY));
+					Alerts.chat(Text.literal("The trail radar is on O now (J clashed with other mods). Change it in Options → Controls → Key Binds.").formatted(Formatting.GRAY));
+				}
+			}
+			if (!NNConfig.INSTANCE.radarKeyOwn) {
+				// 1.17: with Base Insurance the radar had no key (its map key cycled to it). It has its own again: O.
+				NNConfig.INSTANCE.radarKeyOwn = true;
+				NNConfig.save();
+				if (radarKey.isUnbound() && withBaseInsurance()) {
+					radarKey.setBoundKey(radarKey.getDefaultKey());
+					KeyBinding.updateKeysByCode();
+					client.options.write();
+					Alerts.chat(Text.literal("The trail radar has its own key again: " + radarKeyName() + ". Base Insurance's M just opens the map.").formatted(Formatting.GRAY));
 				}
 			}
 			warnKeyClashes(client);

@@ -221,6 +221,8 @@ public final class NNConfig {
 	public boolean seenRadarTip = false;
 	/** Set once the radar key has been moved off J (1.x: it clashed with Trade Seeker and map mods). */
 	public boolean radarKeyMoved = false;
+	/** Set once the radar has its own key again with Base Insurance (1.17 left it unbound, for Base Insurance's M cycle). */
+	public boolean radarKeyOwn = false;
 
 	/** Whether the first-time "press N" tip has been shown. */
 	public boolean seenTip = false;

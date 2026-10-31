@@ -28,7 +28,7 @@ It also has:
   Insurance's minimap and map, and the coordinates in F3, while you record or stream.
 
 ## How to use it
-- Press **N** to open it. If you're looking at a player, it opens their page. With Base Insurance, its **M** key goes map → trail radar → minimap → off (without it, **O** shows the radar). **K** for chunks in the world, **B** for Baritone, **Z** to stop Baritone.
+- Press **N** to open it. If you're looking at a player, it opens their page. **O** shows or hides the trail radar. **K** for chunks in the world, **B** for Baritone, **Z** to stop Baritone.
 - Every player is shown as a card with their face, a star rating, a **☆** in the corner to make them a friend, and three buttons: **✔ Nice**, **? Look Into** (not
   sure yet, keep an eye on them) and **✖ Naughty**. Click again to take them off. Moving someone who's already on a list
   (or taking them off) asks first: the button says **Sure?** and the banner asks with a **Yes**, so a slip of the mouse
@@ -221,8 +221,8 @@ they were heading when they left your view are on their Stats tab.
 topic, or any coordinates at all (Settings).
 
 ## Chunk trails
-The **trail radar** is a round radar screen on the right, titled "TRAIL RADAR". With Base Insurance, press **M** to
-go map → radar → minimap → off; without it, **O** shows or hides it (or `/nn radar`). It's off until you turn it on,
+The **trail radar** is a round radar screen on the right, titled "TRAIL RADAR". Press **O** to show or hide
+it (or `/nn radar`). With Base Insurance's minimap on as well, the radar sits just below it. It's off until you turn it on,
 and Settings → Chunk trails sets its size (Small, Medium, Large). It turns with you, so ahead is always up, with N, E, S
 and W on the rim and rings for distance, out to your render distance. It shows no terrain (that's what the map is for),
 only what it's for:
