@@ -122,7 +122,19 @@ public final class SelfTestPanel {
 				panel.testPick("backups");
 			}
 			case 16 -> shot(client, "backups");
-			case 17 -> {
+			case 17 -> cloud(client, 0);
+			case 18 -> cloud(client, 1);
+			case 19 -> cloud(client, 2);
+			case 20 -> cloud(client, 3);
+			case 21 -> cloud(client, 4);
+			case 22 -> cloud(client, 5);
+			case 23 -> cloud(client, 6);
+			case 24 -> cloud(client, 7);
+			case 25 -> cloud(client, 8);
+			case 26 -> cloud(client, 9);
+			case 27 -> cloud(client, 10);
+			case 28 -> cloud(client, 11);
+			case 29 -> {
 				boolean reduced = client.options.getReducedDebugInfo().getValue();
 				ModsPanel.setStreamSafe(true);
 				check("stream-safe hides coordinates", ModsPanel.streamSafe() && ModsPanel.hide("12, 64, -40").equals("hidden"));
@@ -131,11 +143,173 @@ public final class SelfTestPanel {
 				check("off again shows them, and F3 is as it was", !ModsPanel.streamSafe() && ModsPanel.hide("12, 64, -40").equals("12, 64, -40")
 						&& client.options.getReducedDebugInfo().getValue() == reduced);
 			}
-			case 18 -> {
+			case 30 -> {
 				panel.close();
 				check("Esc goes back to the title screen", client.currentScreen == title);
 			}
 			default -> finish(client);
+		}
+	}
+
+	// ---- Backups off this computer: a folder, Google Drive and OneDrive (against a stand-in server) ----
+
+	private static SelfTestCloud cloud;
+	private static java.nio.file.Path syncFolder, lastBackup;
+	private static final PanelCloud.Service G = PanelCloud.Service.GOOGLE, M = PanelCloud.Service.ONEDRIVE;
+
+	private static void cloud(MinecraftClient client, int n) {
+		try {
+			cloudStep(client, n);
+		} catch (java.io.IOException e) {
+			check("cloud step " + n + ": " + e.getMessage(), false);
+		}
+		if (cloud != null && cloud.problem != null) {
+			check("the stand-in server saw nothing wrong (" + cloud.problem + ")", false);
+			cloud.problem = null;
+		}
+	}
+
+	private static long zips(PanelCloud.Service s) {
+		return cloud.files.values().stream().filter(f -> f.id().startsWith(s == G ? "g" : "m") && f.name().endsWith(".zip")).count();
+	}
+
+	private static long folderZips() throws java.io.IOException {
+		try (var files = java.nio.file.Files.list(syncFolder)) {
+			return files.filter(f -> f.getFileName().toString().endsWith(".zip")).count();
+		}
+	}
+
+	private static void cloudStep(MinecraftClient client, int n) throws java.io.IOException {
+		switch (n) {
+			case 0 -> {
+				cloud = new SelfTestCloud();
+				System.setProperty("playwit.cloud.base", cloud.base());
+				System.setProperty("playwit.cloud.client", "test-client");
+				PanelCloud.browser = SelfTestCloud::browse;
+				for (PanelCloud.Service s : PanelCloud.Service.values()) PanelCloud.disconnect(s);
+				syncFolder = client.runDirectory.toPath().resolve("test-sync-folder");
+				if (java.nio.file.Files.exists(syncFolder)) {
+					try (var walk = java.nio.file.Files.walk(syncFolder)) {
+						for (var f : walk.sorted(java.util.Comparator.reverseOrder()).toList()) java.nio.file.Files.delete(f);
+					}
+				}
+				PanelBackups.setFolder(syncFolder);
+				PanelBackups.settings().lastAuto = 0;
+				check("with a folder set and nothing backed up today, a backup is due", PanelBackups.due());
+				PanelCloud.connect(G);
+				check("Google Drive: signing in through the browser connects it (" + PanelCloud.account(G) + ")",
+						PanelCloud.connected(G) && PanelCloud.account(G).equals("player@gmail.test"));
+				PanelCloud.connect(M);
+				check("OneDrive: the same (" + PanelCloud.account(M) + ")", PanelCloud.connected(M) && PanelCloud.account(M).equals("player@outlook.test"));
+				String saved = java.nio.file.Files.readString(PanelData.dir().resolve("cloud.json"));
+				check("staying signed in is kept in config/playwit/cloud.json, which backups leave out",
+						saved.contains("refresh") && ModsPanel.allDataPaths().stream().noneMatch(p -> p.equals("playwit") || p.startsWith("playwit/cloud")));
+			}
+			case 1 -> {
+				PanelBackups.run(ModsPanel.allDataPaths(), true, false);
+				lastBackup = PanelData.list().get(0);
+				byte[] local = java.nio.file.Files.readAllBytes(lastBackup);
+				check("a daily backup goes without a problem (" + PanelBackups.status + ")", !PanelBackups.failed && lastBackup.getFileName().toString().endsWith(" auto.zip"));
+				check("…a copy in the folder", folderZips() == 1
+						&& java.util.Arrays.equals(local, java.nio.file.Files.readAllBytes(syncFolder.resolve(lastBackup.getFileName()))));
+				boolean g = cloud.files.values().stream().anyMatch(f -> f.id().startsWith("g") && f.name().equals(lastBackup.getFileName().toString()) && java.util.Arrays.equals(f.data(), local));
+				boolean m = cloud.files.values().stream().anyMatch(f -> f.id().startsWith("m") && f.name().equals(lastBackup.getFileName().toString()) && java.util.Arrays.equals(f.data(), local));
+				check("…in Google Drive, in a PlayWit backups folder, byte for byte", g && cloud.files.values().stream().anyMatch(f -> f.name().equals("PlayWit backups")));
+				check("…and in OneDrive's app folder, byte for byte", m);
+				check("…and none is due again until tomorrow", !PanelBackups.due());
+			}
+			case 2 -> {
+				// A big backup (recordings) goes up in pieces.
+				java.nio.file.Path big = client.runDirectory.toPath().resolve("2000-01-01 00-00-00 big.zip");
+				byte[] data = new byte[11 * 1024 * 1024 + 12345];
+				new java.util.Random(7).nextBytes(data);
+				java.nio.file.Files.write(big, data);
+				int before = cloud.pieces.get();
+				PanelCloud.upload(G, big);
+				PanelCloud.upload(M, big);
+				boolean same = cloud.files.values().stream().filter(f -> f.name().equals("2000-01-01 00-00-00 big.zip")).allMatch(f -> java.util.Arrays.equals(f.data(), data))
+						&& cloud.files.values().stream().filter(f -> f.name().equals("2000-01-01 00-00-00 big.zip")).count() == 2;
+				check("an 11 MB backup goes up in pieces to both, whole (" + (cloud.pieces.get() - before) + " pieces)", same && cloud.pieces.get() - before == 4);
+				java.nio.file.Files.delete(big);
+			}
+			case 3 -> {
+				List<PanelCloud.Remote> g = PanelCloud.list(G), m = PanelCloud.list(M);
+				check("the backups there are listed, newest first (" + g.size() + " and " + m.size() + ")", g.size() == 2 && m.size() == 2
+						&& g.get(0).name().equals(lastBackup.getFileName().toString()) && m.get(0).name().equals(lastBackup.getFileName().toString()));
+				java.nio.file.Path dl = client.runDirectory.toPath().resolve("downloaded.zip");
+				PanelCloud.download(G, g.get(0), dl);
+				boolean fromG = java.util.Arrays.equals(java.nio.file.Files.readAllBytes(dl), java.nio.file.Files.readAllBytes(lastBackup));
+				PanelCloud.download(M, m.get(0), dl);
+				boolean fromM = java.util.Arrays.equals(java.nio.file.Files.readAllBytes(dl), java.nio.file.Files.readAllBytes(lastBackup));
+				check("downloading one gives the same file, from Google Drive and from OneDrive", fromG && fromM);
+				check("…and it's taken for a PlayWit backup; a stray file isn't", PanelBackups.isBackup(dl, ModsPanel.allDataPaths())
+						&& !PanelBackups.isBackup(PanelData.dir().resolve("cloud.json"), ModsPanel.allDataPaths()));
+				java.nio.file.Files.delete(dl);
+			}
+			case 4 -> {
+				// Only the newest ten automatic ones are kept; the big one (not automatic) stays.
+				java.nio.file.Path tmp = client.runDirectory.toPath().resolve("tmp");
+				java.nio.file.Files.createDirectories(tmp);
+				for (int i = 10; i < 22; i++) {
+					java.nio.file.Path f = tmp.resolve("2001-01-" + i + " 00-00-00 auto.zip");
+					java.nio.file.Files.write(f, new byte[] {1, 2, 3});
+					PanelCloud.upload(G, f);
+					java.nio.file.Files.delete(f);
+				}
+				PanelCloud.prune(G, PanelBackups.KEEP);
+				List<PanelCloud.Remote> g = PanelCloud.list(G);
+				long autos = g.stream().filter(r -> r.name().endsWith(" auto.zip")).count();
+				check("only the newest " + PanelBackups.KEEP + " automatic backups are kept (" + autos + "), today's among them, the big one too",
+						autos == PanelBackups.KEEP && g.stream().anyMatch(r -> r.name().equals(lastBackup.getFileName().toString()))
+								&& g.stream().anyMatch(r -> r.name().contains("big")));
+			}
+			case 5 -> {
+				// An hour on (or a restart): the saved sign-in gets a new access token by itself.
+				cloud.expireAccess();
+				PanelCloud.forgetAccess();
+				check("after an hour, it stays signed in by itself (Google Drive, OneDrive)", !PanelCloud.list(G).isEmpty() && !PanelCloud.list(M).isEmpty());
+				panel.testPick("backups");
+				panel.testShowRemote(M);
+				panel.testScroll(110);
+			}
+			case 6 -> shot(client, "backups_cloud");
+			// The download happens in the background, then the restore is set up on the game's thread: checked a second later.
+			case 7 -> panel.testRestoreFromCloud(M, PanelCloud.list(M).get(0));
+			case 8 -> {
+				java.nio.file.Path there = PanelData.backups().resolve(lastBackup.getFileName());
+				check("Restore on a backup in OneDrive downloads it and restores it at the next start", PanelData.restorePendingFor(there));
+				PanelData.cancelRestore();
+			}
+			case 9 -> {
+				// Signed out elsewhere (or access taken back): it says so, and shows as not connected.
+				cloud.revoked = true;
+				cloud.expireAccess();
+				PanelCloud.forgetAccess();
+				String said = "";
+				try {
+					PanelCloud.list(G);
+				} catch (java.io.IOException e) {
+					said = e.getMessage();
+				}
+				check("signed out by Google: it says to connect again (" + said + "), and shows as not connected", said.contains("connect it again") && !PanelCloud.connected(G));
+				cloud.revoked = false;
+			}
+			case 10 -> {
+				// Quitting: this computer and the folder only (no waiting on uploads as the game closes).
+				long folderBefore = folderZips(), mBefore = zips(M);
+				PanelBackups.run(ModsPanel.allDataPaths(), true, true);
+				check("when you quit, a backup goes to the folder but no upload holds the game up", folderZips() == folderBefore + 1 && zips(M) == mBefore);
+			}
+			case 11 -> {
+				for (PanelCloud.Service s : PanelCloud.Service.values()) PanelCloud.disconnect(s);
+				PanelBackups.setFolder(null);
+				System.clearProperty("playwit.cloud.base");
+				System.clearProperty("playwit.cloud.client");
+				cloud.stop();
+				check("with no folder and nothing connected, no backup is due", !PanelBackups.due());
+				for (java.nio.file.Path f : PanelData.list()) if (f.getFileName().toString().contains("auto")) java.nio.file.Files.delete(f);
+			}
+			default -> {}
 		}
 	}
 

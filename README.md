@@ -22,8 +22,14 @@ It also has:
 - **Profiles:** save how your switches are set under a name ("Anarchy", "SMP") and pick the servers it's for. Joining one
   of them sets the switches for you.
 - **Backups:** one click saves everything the mods keep (lists, notes, chat logs, recordings, bases, maps, containers,
-  settings) to config/playwit/backups. Restoring happens the next time you start the game, after what you have now is
-  backed up too.
+  settings) to config/playwit/backups. To keep a copy off the computer (in case it's lost):
+  - **Folder:** pick any folder (a USB stick, or one that Google Drive, OneDrive or Dropbox syncs: there's a one-click
+    button for each one found). A backup goes there every day you play and when you quit.
+  - **Google Drive** or **OneDrive:** Connect signs in through your browser, then a backup is uploaded every day you play,
+    into a "PlayWit backups" folder (Google Drive) or Apps/PlayWit (OneDrive). The mod can only see the files it made.
+  - The last 10 automatic backups are kept in each place. On a new computer: connect the same place and press
+    **Restore** on a backup there, or use **Restore from a file…**. Restoring happens the next time you start the game,
+    after what you have now is backed up too.
 - **Stream-safe mode** (**F7** in game, or the switch in the panel): hides coordinates everywhere in the mods, Base
   Insurance's minimap and map, and the coordinates in F3, while you record or stream.
 
