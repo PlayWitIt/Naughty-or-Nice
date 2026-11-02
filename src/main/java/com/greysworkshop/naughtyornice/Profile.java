@@ -179,6 +179,8 @@ public final class Profile {
 
 	/** One line of chat, as heard. */
 	public static final class Line {
+		/** It came from the server's Discord relay, said while you were away. */
+		public boolean fromDiscord;
 		public long time;
 		public String sender = "";
 		public String text = "";

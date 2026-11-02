@@ -97,6 +97,22 @@ public final class ChatLogger {
 		ledger.markDirty();
 	}
 
+	/**
+	 * A line from before (the server's Discord relay, while you were away): into the Chat tab and the all-chat files at
+	 * the time it was said, between the lines around it. Not into the conversations open now (it wasn't part of them).
+	 */
+	public void history(Profile owner, String sender, String text, boolean system, String alert, long time) {
+		Profile.Line line = new Profile.Line();
+		line.time = time;
+		line.sender = sender;
+		line.text = text;
+		line.system = system;
+		line.alert = alert;
+		line.fromDiscord = true;
+		toFeed(line);
+		ledger.markDirty();
+	}
+
 	/** A join/leave note for a player with an open conversation. */
 	public void system(Profile profile, String text, long now) {
 		Profile.Conversation conversation = profile == null ? null : open.get(profile.id);
@@ -121,7 +137,15 @@ public final class ChatLogger {
 	}
 
 	private void toFeed(Profile.Line line) {
-		feed.addLast(line);
+		if (!feed.isEmpty() && line.time < feed.peekLast().time) {
+			// Older than the newest line (it came from Discord after you'd joined): in its place by time.
+			Deque<Profile.Line> later = new ArrayDeque<>();
+			while (!feed.isEmpty() && feed.peekLast().time > line.time) later.addFirst(feed.removeLast());
+			feed.addLast(line);
+			feed.addAll(later);
+		} else {
+			feed.addLast(line);
+		}
 		while (feed.size() > FEED_MAX) feed.removeFirst();
 		feedVersion++;
 		feedDirty = true;

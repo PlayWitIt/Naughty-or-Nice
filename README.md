@@ -172,6 +172,34 @@ where you disagree (highlighted). By default their lists fill in players you hav
 disagree; both can be changed. Details arrive marked with who they came from, what the sender's mod saw comes along
 in their words ("Killed Alex ×2"), and the whole import can be undone from the banner.
 
+## Chat while you're away (from the server's Discord)
+Most servers' Discords have a channel that shows the in-game chat. Naughty or Nice can read it, so you don't have to be
+online to collect chat. Nothing runs while you're offline: Discord keeps the channel's history, so **each time you join
+the server it catches up** on everything said there since you left. Each line is filed at the time it was said, like
+chat you saw yourself: the Chat tab (in its place among the rest), player pages (messages, words, topics, coordinates
+they posted), places and Intel. Lines from while you were online are skipped (you saw those live), so nothing is
+counted twice. Old lines never ping or play sounds; one line in chat says what came in ("Caught up from Discord: 1,240
+lines while you were away, 3 said your name"), and lines that would have set off an alert are marked in the Chat tab.
+The first catch-up goes back 3 days.
+
+It reads the relay's usual shapes: lines posted as the player (webhooks named after them), `<Name> text`,
+`Name: text`, `[Rank] Name » text`, bold names, embeds, joins and leaves, and deaths. Anything else is counted as
+not understood and shown in Settings, never guessed.
+
+Set it up in Settings → Discord:
+- **The channel**: in Discord, right-click the chat relay channel → Copy Link, and paste it. It's for the server you're
+  on when you paste it.
+- **A bot (the allowed way)**: at discord.com/developers, New Application → Bot → Reset Token, and turn on **Message
+  Content Intent**. Paste the token. **Copy the request for staff** puts a short message on your clipboard with the
+  bot's invite link (View Channel and Read Message History only, it never posts): send it to the server's staff. It
+  works once they add it.
+- **Your own account (against Discord's rules)**: off unless you choose it. It reads with your account's token instead,
+  so it needs no staff. Discord can ban accounts that do this: use a spare one.
+
+**Check it** tests the token and channel; **Catch up now** fetches straight away. The token is kept in its own file
+(`config/naughtyornice-discord.token`), outside the folder backups copy and never in shares; it's only ever sent to
+Discord. Hidden in stream-safe mode.
+
 ## Chat log
 Everyone on your Nice, Look Into or Naughty list has their chat logged. When they say something, a conversation opens on their page:
 it starts with the last minute of chat before they spoke (so you see what they were answering), takes in everything said

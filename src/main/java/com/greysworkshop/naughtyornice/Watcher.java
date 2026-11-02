@@ -595,7 +595,7 @@ public final class Watcher {
 			st.words += text.isBlank() ? 0 : text.strip().split("\\s+").length;
 			if (st.firstMessage == 0) st.firstMessage = now;
 			st.lastMessage = now;
-			chatAnalytics(client, profile, text);
+			chatAnalytics(profile, text, now, onlineNames(client), client.player.getGameProfile().name());
 			said(profile, text);
 		}
 		String alert = alertFor(client, text, whisper);
@@ -633,13 +633,15 @@ public final class Watcher {
 	private static final Pattern CHAT_WORD = Pattern.compile("[a-z][a-z']{3,15}");
 	private static final Pattern URL = Pattern.compile("(?i)\\b(?:https?://\\S+|www\\.\\S+|discord\\.gg/\\S+|discord\\.com/invite/\\S+)");
 
-	/** What a line says about them: who they name, their words, caps, questions, and coordinates or links they post. */
-	private void chatAnalytics(MinecraftClient client, Profile profile, String text) {
+	/**
+	 * What a line says about them: who they name, their words, caps, questions, and coordinates or links they post.
+	 * {@code time} is when it was said; {@code online}, who was on then (as far as is known).
+	 */
+	private void chatAnalytics(Profile profile, String text, long time, Set<String> online, String myName) {
 		PlayerStats st = profile.stats;
-		st.chatHours[java.time.LocalTime.now().getHour()]++;
+		st.chatHours[java.time.Instant.ofEpochMilli(time).atZone(java.time.ZoneId.systemDefault()).getHour()]++;
 		String lower = text.toLowerCase(Locale.ROOT);
-		Set<String> online = onlineNames(client);
-		String me = client.player.getGameProfile().name().toLowerCase(Locale.ROOT);
+		String me = myName.toLowerCase(Locale.ROOT);
 		Set<String> named = new HashSet<>();
 		Matcher w = WORD.matcher(text);
 		while (w.find()) {
@@ -661,10 +663,65 @@ public final class Watcher {
 		long letters = text.chars().filter(Character::isLetter).count();
 		if (letters >= 5 && text.chars().filter(Character::isUpperCase).count() >= letters * 0.8) st.capsMessages++;
 		if (text.strip().endsWith("?")) st.questions++;
-		st.placesFrom(text, System.currentTimeMillis());
+		st.placesFrom(text, time);
 		for (ChatIntel.Topic t : ChatIntel.topics(text, online)) PlayerStats.bump(st.topics, t.name(), 1, 20);
 		Matcher url = URL.matcher(text);
 		if (url.find()) PlayerStats.note(st.linksPosted, url.group(), 15);
+	}
+
+	/**
+	 * A line from the server's Discord relay, said while you were away (see {@link DiscordFeed}): filed like chat you
+	 * saw, at the time it was said, with no pings or sounds. Returns why it would have alerted you (it's marked so in the
+	 * Chat tab), or null.
+	 */
+	String fromDiscord(MinecraftClient client, DiscordFeed.Message m) {
+		Profile profile = ledger.byName(m.name());
+		String name = profile != null ? profile.name : m.name();
+		if (profile != null) profile.lastSeen = Math.max(profile.lastSeen, m.time());
+		switch (m.kind()) {
+			case JOIN, LEAVE -> {
+				chatLogger.history(null, name, m.text(), true, null, m.time());
+				return null;
+			}
+			case DEATH -> {
+				chatLogger.history(null, name, m.text(), true, null, m.time());
+				return null;
+			}
+			case CHAT -> {
+				String text = m.text();
+				if (profile != null) {
+					PlayerStats st = profile.stats;
+					st.messages++;
+					st.words += text.isBlank() ? 0 : text.strip().split("\\s+").length;
+					if (st.firstMessage == 0 || m.time() < st.firstMessage) st.firstMessage = m.time();
+					st.lastMessage = Math.max(st.lastMessage, m.time());
+					chatAnalytics(profile, text, m.time(), Set.of(), client.player == null ? "" : client.player.getGameProfile().name());
+					profile.recentChat.add(text.length() > 120 ? text.substring(0, 120) + "..." : text);
+					while (profile.recentChat.size() > 10) profile.recentChat.remove(0);
+					if (NNConfig.INSTANCE.watchChat) {
+						String quote = text.length() > 40 ? text.substring(0, 40) + "..." : text;
+						Profile.Kind kind = switch (ChatIntel.tone(text, Set.of())) {
+							case RUDE -> Profile.Kind.RUDE;
+							case ABUSE -> Profile.Kind.ABUSE_TALK;
+							case KIND -> Profile.Kind.KIND_WORDS;
+							case NONE -> null;
+						};
+						if (kind != null) {
+							Profile.Action a = profile.record(kind, kind == Profile.Kind.ABUSE_TALK ? (text.length() > 120 ? text.substring(0, 120) + "..." : text) : quote,
+									NNConfig.INSTANCE.maxActions);
+							a.time = m.time();
+						}
+					}
+				}
+				String alert = client.player == null ? null : alertFor(client, text, false);
+				chatLogger.history(profile, name, text, false, alert, m.time());
+				ledger.markDirty();
+				return alert;
+			}
+			default -> {
+				return null;
+			}
+		}
 	}
 
 	private boolean fresh(String key, long now) {

@@ -236,6 +236,10 @@ public class ShopScreen extends Screen {
 	private int alertFieldTop = -1000;
 	/** The Discord webhook link for phone alerts (Settings). */
 	private TextFieldWidget phoneField;
+	/** Discord catch-up: the relay channel's link, and where a token is pasted (it's saved and cleared at once). */
+	private TextFieldWidget discordChannelField, discordTokenField;
+	private int discordChannelTop = -1000, discordTokenTop = -1000;
+	private String discordStatus;
 	private int phoneFieldTop = -1000;
 	private String phoneStatus;
 	/** The Chat check panel is open. */
@@ -569,6 +573,40 @@ public class ShopScreen extends Screen {
 			phoneStatus = text.isBlank() ? null : PhoneAlerts.validUrl(text) ? "Looks right. Send a test to be sure." : "That isn't a Discord webhook link yet.";
 		});
 		addDrawableChild(phoneField);
+
+		discordChannelField = new Box(textRenderer, 0, -100, 100, 10, Text.literal("Relay channel link"));
+		discordChannelField.setDrawsBackground(false);
+		discordChannelField.setEditableColor(TEXT);
+		discordChannelField.setTextShadow(false);
+		discordChannelField.setMaxLength(200);
+		discordChannelField.setPlaceholder(Text.literal("Right-click the chat relay channel in Discord → Copy Link, paste here").withColor(MUTED));
+		discordChannelField.setText(NNConfig.INSTANCE.discordChannel);
+		// Show the start of the link (it's long), not its last digits.
+		discordChannelField.setCursorToStart(false);
+		discordChannelField.setChangedListener(text -> {
+			NNConfig c = NNConfig.INSTANCE;
+			String before = DiscordFeed.channelId(c.discordChannel);
+			c.discordChannel = text.strip();
+			// The channel's chat is for the server you're on when you set it.
+			if (client != null && client.world != null && client.getNetworkHandler() != null) c.discordServer = Ledger.worldKey(client);
+			if (!before.equals(DiscordFeed.channelId(c.discordChannel))) DiscordFeed.reset();
+			NNConfig.save();
+			discordStatus = text.isBlank() ? null : DiscordFeed.channelId(text).isEmpty() ? "That isn't a Discord channel link yet." : "Got the channel. Check it to be sure.";
+		});
+		addDrawableChild(discordChannelField);
+		discordTokenField = new Box(textRenderer, 0, -100, 100, 10, Text.literal("Token"));
+		discordTokenField.setDrawsBackground(false);
+		discordTokenField.setEditableColor(TEXT);
+		discordTokenField.setTextShadow(false);
+		discordTokenField.setMaxLength(200);
+		discordTokenField.setPlaceholder(Text.literal("Paste the token here (it's saved, then hidden)").withColor(MUTED));
+		discordTokenField.setChangedListener(text -> {
+			if (text.isBlank()) return;
+			DiscordFeed.setToken(text);
+			discordStatus = "Token saved. Check it to be sure.";
+			discordTokenField.setText("");
+		});
+		addDrawableChild(discordTokenField);
 
 		String typedCircle = circleField == null ? "" : circleField.getText();
 		circleField = new Box(textRenderer, 0, -100, 100, 10, Text.literal("Circle"));
@@ -1197,6 +1235,8 @@ public class ShopScreen extends Screen {
 		// The link is a key to post in your channel: not shown on a stream.
 		phoneField.setVisible(tab == Tab.SETTINGS && phoneFieldTop >= BODY && phoneFieldTop + 16 <= height && !ModsPanel.streamSafe());
 		circleField.setVisible(tab == Tab.SETTINGS && circleFieldTop >= BODY && circleFieldTop + 16 <= height);
+		discordChannelField.setVisible(tab == Tab.SETTINGS && discordChannelTop >= BODY && discordChannelTop + 16 <= height && !ModsPanel.streamSafe());
+		discordTokenField.setVisible(tab == Tab.SETTINGS && discordTokenTop >= BODY && discordTokenTop + 16 <= height && !ModsPanel.streamSafe());
 		boolean modal = modal();
 		super.render(context, modal ? -1000 : mouseX, modal ? -1000 : mouseY, delta);
 		if (adding) {
@@ -4437,6 +4477,8 @@ public class ShopScreen extends Screen {
 		y = chunkTrailsCard(context, mouseX, mouseY, x, y, w) + 10;
 		settingsAnchors.put("Notifications", y - y0);
 		y = notificationsCard(context, mouseX, mouseY, x, y, w) + 10;
+		settingsAnchors.put("Discord", y - y0);
+		y = discordCard(context, mouseX, mouseY, x, y, w) + 10;
 		int circlesAt = y;
 		settingsAnchors.put("Friend circles", y - y0);
 		y = circlesCard(context, mouseX, mouseY, x, y, w) + 10;
@@ -5858,6 +5900,164 @@ public class ShopScreen extends Screen {
 		ty += 16;
 		if (phoneStatus != null) textTrim(context, phoneStatus, x + 10, ty + 2, w - 20, phoneStatus.startsWith("Sent") || phoneStatus.startsWith("Looks") ? NICE : MUTED);
 		return y + h;
+	}
+
+	// ---- Chat while you're away, from the server's Discord ----
+
+	/** A bot's invite link with just what it needs (View Channel, Read Message History), from its token; null if it isn't a bot token. */
+	static String botInvite(String token) {
+		try {
+			String first = token.split("\\.")[0];
+			String id = new String(java.util.Base64.getUrlDecoder().decode(first.replace('+', '-').replace('/', '_')), java.nio.charset.StandardCharsets.UTF_8);
+			return id.matches("\\d{15,22}") ? "https://discord.com/oauth2/authorize?client_id=" + id + "&scope=bot&permissions=66560" : null;
+		} catch (RuntimeException e) {
+			return null;
+		}
+	}
+
+	private int discordCard(DrawContext context, int mouseX, int mouseY, int x, int y, int w) {
+		NNConfig c = NNConfig.INSTANCE;
+		String token = DiscordFeed.token();
+		boolean ownAccount = c.discordOwnAccount;
+		String help = "Chat while you're away. Most servers' Discords have a channel that shows the in-game chat. Each time you join, "
+				+ "this catches up on everything said there since you left and files it like chat you saw (Chat tab, player pages, places, "
+				+ "Intel), at the time it was said. Nothing runs while you're offline. "
+				+ (ownAccount ? "Reading with your own account is against Discord's rules: Discord can ban the account. Use a spare one."
+						: "It reads with a bot: make one at discord.com/developers (New Application, Bot, Reset Token, turn on Message Content "
+						+ "Intent), paste its token below, then send the server's staff the request so they add it (it can only read).");
+		List<net.minecraft.text.OrderedText> lines = textRenderer.wrapLines(Text.literal(help), w - 20);
+		String status = discordStatus != null ? discordStatus : DiscordFeed.status != null ? DiscordFeed.status
+				: DiscordFeed.state().lastResult.isEmpty() ? null : DiscordFeed.state().lastResult;
+		int h = 22 + lines.size() * 10 + 4 + 18 + 16 + 20 + 20 + 18 + (status == null ? 0 : 12) + 6;
+		roundedBorder(context, x, y, w, h, CARD, c.discordOn && DiscordFeed.ready() ? NICE : BORDER);
+		context.drawText(textRenderer, Text.literal("Discord: chat while you're away").styled(st -> st.withBold(true)), x + 10, y + 7, TEXT, false);
+		String state = !c.discordOn ? "Off" : DiscordFeed.ready() ? "On" + (c.discordServer.isEmpty() ? "" : " for " + Sharing.placeName(c.discordServer))
+				: "On, not set up yet";
+		text(context, state, x + w - 10 - textRenderer.getWidth(state), y + 7, c.discordOn && DiscordFeed.ready() ? NICE : MUTED);
+		int ty = y + 20;
+		for (var line : lines) {
+			context.drawText(textRenderer, line, x + 10, ty, ownAccount && line == lines.get(lines.size() - 1) ? LOOK : MUTED, false);
+			ty += 10;
+		}
+		ty += 4;
+		// On / off, and bot or own account.
+		ty = checkboxRow(context, mouseX, mouseY, x + 10, ty, "Catch up each time I join", c.discordOn, "discord-on", () -> {
+			c.discordOn = !c.discordOn;
+			NNConfig.save();
+		});
+		String mode = ownAccount ? "Reading with: my own account (against Discord's rules)" : "Reading with: a bot (the allowed way)";
+		boolean modeHover = over(mouseX, mouseY, x + 8, ty - 2, textRenderer.getWidth(mode) + 60, 14);
+		text(context, mode, x + 10, ty + 1, ownAccount ? LOOK : TEXT);
+		String sw = ownAccount ? "Use a bot" : "Use my account";
+		int sww = textRenderer.getWidth(sw) + 14;
+		pill(context, mouseX, mouseY, x + 14 + textRenderer.getWidth(mode), ty - 2, sww, 13, sw, SOFT, BORDER, modeHover ? LINK : TEXT, "discord-mode", () -> {
+			c.discordOwnAccount = !c.discordOwnAccount;
+			NNConfig.save();
+			discordStatus = c.discordOwnAccount ? "Own account: paste your account's token. Discord can ban accounts that do this." : "Bot: paste the bot's token.";
+		});
+		ty += 16;
+		// The channel link.
+		roundedBorder(context, x + 10, ty, w - 20, 16, FIELD, discordChannelField.isFocused() ? 0xFFE77600 : INPUT_BORDER);
+		if (ModsPanel.streamSafe()) {
+			text(context, "Hidden while stream-safe mode is on", x + 14, ty + 4, MUTED);
+			discordChannelTop = -1000;
+		} else {
+			discordChannelField.setX(x + 14);
+			discordChannelField.setY(ty + 4);
+			discordChannelField.setWidth(w - 28);
+			discordChannelTop = ty;
+			int fy = ty;
+			hit(x + 10, fy, w - 20, 16, "discord-channel", () -> setFocused(discordChannelField));
+		}
+		ty += 20;
+		// The token: never shown again once saved.
+		roundedBorder(context, x + 10, ty, w - 20, 16, FIELD, discordTokenField.isFocused() ? 0xFFE77600 : INPUT_BORDER);
+		if (ModsPanel.streamSafe() || !token.isEmpty() && !discordTokenField.isFocused()) {
+			String saved = token.isEmpty() ? "Hidden while stream-safe mode is on"
+					: "Token saved (ends …" + token.substring(Math.max(0, token.length() - 4)) + "). Click to replace it.";
+			text(context, saved, x + 14, ty + 4, token.isEmpty() ? MUTED : NICE);
+			discordTokenTop = -1000;
+			if (!ModsPanel.streamSafe()) {
+				int fy = ty;
+				hit(x + 10, fy, w - 20, 16, "discord-token", () -> {
+					discordTokenTop = fy;
+					setFocused(discordTokenField);
+				});
+			}
+		} else {
+			discordTokenField.setX(x + 14);
+			discordTokenField.setY(ty + 4);
+			discordTokenField.setWidth(w - 28);
+			discordTokenTop = ty;
+			int fy = ty;
+			hit(x + 10, fy, w - 20, 16, "discord-token", () -> setFocused(discordTokenField));
+		}
+		ty += 22;
+		// Check, catch up, the request for staff, and forget the token.
+		int bx = x + 10;
+		String check = "Check it";
+		int cw = textRenderer.getWidth(check) + 14;
+		pill(context, mouseX, mouseY, bx, ty, cw, 14, check, SOFT, BORDER, TEXT, "discord-check", () -> {
+			discordStatus = "Checking…";
+			DiscordFeed.checkAsync(r -> discordStatus = r);
+		});
+		bx += cw + 6;
+		String now = "Catch up now";
+		int nw = textRenderer.getWidth(now) + 14;
+		pill(context, mouseX, mouseY, bx, ty, nw, 14, now, YELLOW, YELLOW_EDGE, BUTTON_TEXT, "discord-now", () -> {
+			if (client == null || client.world == null) {
+				discordStatus = "Join the server first: it catches up into that server's lists.";
+				return;
+			}
+			if (c.discordServer.isEmpty()) c.discordServer = Ledger.worldKey(client);
+			discordStatus = null;
+			DiscordFeed.catchUp(client, mod.ledger, true);
+		});
+		bx += nw + 6;
+		if (!ownAccount) {
+			String ask = "Copy the request for staff";
+			int aw = textRenderer.getWidth(ask) + 14;
+			pill(context, mouseX, mouseY, bx, ty, aw, 14, ask, SOFT, BORDER, TEXT, "discord-ask", () -> {
+				String invite = botInvite(DiscordFeed.token());
+				if (invite == null) {
+					discordStatus = "Paste the bot's token first: the request needs its invite link.";
+					return;
+				}
+				client.keyboard.setClipboard("Hi! Could you add my bot to the Discord? It only reads the in-game chat relay channel "
+						+ "(View Channel and Read Message History, nothing else) and never posts. It lets my client mod catch up on chat "
+						+ "I missed while I was offline. Invite: " + invite);
+				discordStatus = "Copied: send it to the server's staff (a ticket or a DM to an admin).";
+			});
+			bx += aw + 6;
+		}
+		if (!token.isEmpty()) {
+			String forget = "Forget the token";
+			int fw = textRenderer.getWidth(forget) + 14;
+			pill(context, mouseX, mouseY, x + w - 10 - fw, ty, fw, 14, forget, SOFT, BORDER, MUTED, "discord-forget", () -> {
+				DiscordFeed.setToken("");
+				discordStatus = "Token forgotten.";
+			});
+		}
+		ty += 20;
+		String forLine = c.discordServer.isEmpty() ? "For: the server you're on when you paste the link."
+				: "For: " + Sharing.placeName(c.discordServer) + ". Last catch-up: "
+				+ (DiscordFeed.state().lastRun == 0 ? "never" : ago(DiscordFeed.state().lastRun)) + ".";
+		textTrim(context, forLine, x + 10, ty, w - 20, MUTED);
+		ty += 12;
+		if (status != null) textTrim(context, status, x + 10, ty, w - 20,
+				status.startsWith("Connected") || status.startsWith("Caught") || status.startsWith("Up to date") || status.startsWith("Copied") || status.startsWith("Token saved")
+						|| status.startsWith("Got") ? NICE : LOOK);
+		return y + h;
+	}
+
+	/** A checkbox and its label on one line; returns the y below it. */
+	private int checkboxRow(DrawContext context, int mouseX, int mouseY, int x, int y, String label, boolean on, String hitLabel, Runnable toggle) {
+		boolean hover = over(mouseX, mouseY, x - 2, y - 2, textRenderer.getWidth(label) + 22, 14);
+		roundedBorder(context, x, y, 10, 10, on ? LINK : FIELD, on ? LINK : INPUT_BORDER);
+		if (on) text(context, "✔", x + 1, y + 1, CARD);
+		text(context, label, x + 16, y + 1, hover ? LINK : TEXT);
+		hit(x - 2, y - 2, textRenderer.getWidth(label) + 22, 14, hitLabel, toggle);
+		return y + 16;
 	}
 
 	// ---- Friend circles ----
