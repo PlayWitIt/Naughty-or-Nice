@@ -23,6 +23,7 @@ public final class TrailRadar {
 	// The screen itself is grey, so green only ever means old land.
 	static final int SCREEN = 0xD00C1014, RIM = 0xFF5A6470, RING = 0x50A0A8B0, CROSS = 0x28A0A8B0,
 			OLD = 0xC0000000 | ChunkOverlay.OLD, OLD_FAR = 0x70000000 | ChunkOverlay.OLD, FRESH = 0x90000000 | ChunkOverlay.FRESH,
+			YOURS = 0x90000000 | ChunkOverlay.YOURS,
 			TRAIL = 0xFF000000 | ChunkOverlay.TRAIL, SWEEP = 0x30FFFFFF;
 
 	/** The last analysis, refreshed by the watcher every two seconds. */
@@ -130,7 +131,7 @@ public final class TrailRadar {
 		int oldCount = 0, newCount = 0;
 		for (int i = -span; i <= span; i++) {
 			for (int j = -span; j <= span; j++) {
-				byte s = trails.state(dim, pcx + i, pcz + j);
+				byte s = trails.shown(dim, pcx + i, pcz + j);
 				if (s == 0) continue;
 				if (s == ChunkTrails.OLD) oldCount++;
 				else newCount++;
@@ -138,7 +139,7 @@ public final class TrailRadar {
 				int[] p = toScreen(bx, bz, scale, cos, sin, cx, cy);
 				if (Math.hypot(p[0] - cx, p[1] - cy) + cell * 0.71 > radius - 3) continue;
 				boolean loaded = client.world.getChunkManager().isChunkLoaded(pcx + i, pcz + j);
-				int color = s == ChunkTrails.OLD ? (loaded ? OLD : OLD_FAR) : FRESH;
+				int color = s == ChunkTrails.OLD ? (loaded ? OLD : OLD_FAR) : s == ChunkTrails.YOURS ? YOURS : FRESH;
 				context.fill(p[0] - cell / 2, p[1] - cell / 2, p[0] - cell / 2 + cell, p[1] - cell / 2 + cell, color);
 			}
 		}
@@ -203,7 +204,7 @@ public final class TrailRadar {
 			small(context, font, line, x0 + size, ty, ts, context.getScaledWindowWidth() - 4);
 			ty += lh;
 		}
-		small(context, font, "§c■§7 new  §a■§7 someone was here  §e━§7 trail  §7◯ " + (int) (blocks / 2) + "m", x0 + size, ty + 2, ts * 0.9f, context.getScaledWindowWidth() - 4);
+		small(context, font, "§c■§7 new  §9■§7 yours  §a■§7 someone was here  §e━§7 trail  §7◯ " + (int) (blocks / 2) + "m", x0 + size, ty + 2, ts * 0.9f, context.getScaledWindowWidth() - 4);
 	}
 
 	/** A spot in blocks from you, on screen: turned so ahead is up, scaled. */

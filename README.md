@@ -234,6 +234,9 @@ and W on the rim and rings for distance, out to your render distance. It shows n
 only what it's for, in the same colours as the squares in the world (K) and the Intel map:
 - **Green squares: someone was here**: chunks loaded before you got there.
 - **Red squares: new land**, generated just now as you got there. Nobody had loaded it before.
+- **Blue squares: yours**: land you were the first in, on an earlier visit. You've been there, but as far as anyone can
+  tell from your side nobody else had been there before you. It never counts as a trail, so your own path isn't
+  taken for someone else's.
 - **Yellow line**: a **trail**, a long, narrow strip of old land with new land on both sides. That's someone's path.
   The **arrow** is on the end further from spawn (when one end clearly is). That's a fact about the trail, not a
   promise of a base: it's where they went, or came from.
@@ -248,7 +251,7 @@ When a new trail turns up you get a chat note with its far end. Every trail is k
 with Copy for the far end, and its far end is pinned on Base Insurance's map.
 
 **Chunks in the world** (**K**): every chunk that's been read is drawn as a flat square in the world, the same
-colours as the radar: new land red, old land green, and the chunks of a trail yellow. They're drawn at your feet by
+colours as the radar: new land red, yours from before blue, old land green, and the chunks of a trail yellow. They're drawn at your feet by
 default, or at a height you pick (Settings: "Chunks in the world are drawn at"), with the fill from outline only to
 60%.
 

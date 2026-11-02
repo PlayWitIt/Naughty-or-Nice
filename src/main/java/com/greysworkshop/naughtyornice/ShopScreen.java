@@ -4300,7 +4300,7 @@ public class ShopScreen extends Screen {
 		int h = 116;
 		roundedBorder(context, x, y, w, h, CARD, c.chunkTrails ? NICE : BORDER);
 		context.drawText(textRenderer, Text.literal("Chunk trails").styled(s -> s.withBold(true)), x + 10, y + 7, TEXT, false);
-		textTrim(context, c.chunkTrails ? "On: in the world (K), new land is red, old land green (someone was there), trails yellow. The radar and the Intel map use the same colours."
+		textTrim(context, c.chunkTrails ? "On: in the world (K), new land is red, yours from before blue, old land green (someone was there), trails yellow. The radar and Intel map match."
 				: "Off: no chunks are read and nothing is drawn.", x + 10, y + 19, w - 20, c.chunkTrails ? NICE : MUTED);
 		int bx = x + 10, by = y + 33;
 		String main = c.chunkTrails ? "Turn chunk trails off" : "Turn chunk trails on";
@@ -4866,7 +4866,8 @@ public class ShopScreen extends Screen {
 				cells[i] = 2;
 				olds[i]++;
 			} else {
-				if (cells[i] == 0) cells[i] = 1;
+				// Yours (an earlier visit) shows blue unless someone's old land shares the cell; for heat it's not old.
+				if (state == ChunkTrails.YOURS ? cells[i] != 2 : cells[i] == 0) cells[i] = state == ChunkTrails.YOURS ? 3 : 1;
 				freshes[i]++;
 			}
 		});
@@ -4881,7 +4882,7 @@ public class ShopScreen extends Screen {
 
 	// Land in the same colours as the squares in the world (K) and the radar: red new, green old, yellow trails (darker
 	// here, so places and events stand out on top). Bases are cyan, so green only ever means old land.
-	static final int MAP_BACK = 0xFF0E1216, MAP_FRESH = 0xFF5A1F22, MAP_OLD = 0xFF2F6B3C, MAP_TRAIL = 0xFF000000 | ChunkOverlay.TRAIL,
+	static final int MAP_BACK = 0xFF0E1216, MAP_FRESH = 0xFF5A1F22, MAP_YOURS = 0xFF1F3A66, MAP_OLD = 0xFF2F6B3C, MAP_TRAIL = 0xFF000000 | ChunkOverlay.TRAIL,
 			MAP_PLACE = 0xFFFF7A1A, MAP_EVENT = 0xFFB070FF, MAP_BASE = 0xFF4CC8FF;
 
 	private void renderIntelMap(DrawContext context, int mouseX, int mouseY, int x, int y, int w, int h) {
@@ -4909,7 +4910,7 @@ public class ShopScreen extends Screen {
 		});
 		cw += hw + 4;
 		String key = mapHeat ? "§c■§r all new  §e■§r some old  §a■§r all old  §e━§r trail  §6◆§r place  §b□§r base"
-				: "§c■§r new  §a■§r someone was here  §e━§r trail  §6◆§r place  §d●§r event  §b□§r base";
+				: "§c■§r new  §9■§r yours  §a■§r someone was here  §e━§r trail  §6◆§r place  §d●§r event  §b□§r base";
 		textTrim(context, key, bx + cw + 18, y + 3, x + w - (bx + cw + 18), MUTED);
 		y += 20;
 		h -= 20;
@@ -4933,7 +4934,7 @@ public class ShopScreen extends Screen {
 					int i = r * mapCols + c;
 					context.fill(px, py, px + mapCellSize, py + mapCellSize, heatColor(mapOld[i], mapFresh[i]));
 				} else {
-					context.fill(px, py, px + mapCellSize, py + mapCellSize, v == 2 ? MAP_OLD : MAP_FRESH);
+					context.fill(px, py, px + mapCellSize, py + mapCellSize, v == 2 ? MAP_OLD : v == 3 ? MAP_YOURS : MAP_FRESH);
 				}
 			}
 		}
@@ -5037,9 +5038,9 @@ public class ShopScreen extends Screen {
 		text(context, String.format(Locale.ROOT, "%,d blocks", barBlocks), x + 10 + barPx, y + h - 11, 0xFFDDDDDD);
 		if (over(mouseX, mouseY, x, y, w, h)) {
 			int bxm = (int) Math.floor(mapX + (mouseX - x - w / 2.0) / mapZoom), bzm = (int) Math.floor(mapZ + (mouseY - y - h / 2.0) / mapZoom);
-			byte st = mod.ledger.chunkTrails.state(mapDim, bxm >> 4, bzm >> 4);
-			String land = st == ChunkTrails.OLD ? "loaded before you (someone was here)" : st == ChunkTrails.NEW ? "new: first loaded by you"
-					: "can't tell (no water or lava here, or not seen)";
+			byte st = mod.ledger.chunkTrails.shown(mapDim, bxm >> 4, bzm >> 4);
+			String land = st == ChunkTrails.OLD ? "loaded before you (someone was here)" : st == ChunkTrails.NEW ? "new: generated as you got here"
+					: st == ChunkTrails.YOURS ? "yours: you were the first here, on an earlier visit" : "can't tell (no water or lava here, or not seen)";
 			String where = ModsPanel.hide(bxm + ", " + bzm) + " · " + land;
 			text(context, where, x + w - 6 - textRenderer.getWidth(where), y + h - 11, 0xFFDDDDDD);
 			if (tip != null) tooltip(mouseX, mouseY, tip.toArray(new String[0]));

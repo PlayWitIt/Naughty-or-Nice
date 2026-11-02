@@ -22,7 +22,8 @@ import java.util.List;
 public final class ChunkOverlay {
 	/** The height setting's value for "at your feet". */
 	public static final int FOLLOW = -1000;
-	public static final int FRESH = 0xFF4040, OLD = 0x3CDC5A, TRAIL = 0xFFE040, UNKNOWN = 0x9AA4AE;
+	/** Red new land, blue land you were first in (an earlier visit), green old land (someone was here), yellow trails. */
+	public static final int FRESH = 0xFF4040, YOURS = 0x4C8CFF, OLD = 0x3CDC5A, TRAIL = 0xFFE040, UNKNOWN = 0x9AA4AE;
 	/** A square a hair inside its chunk, so neighbours' outlines don't sit on top of each other. */
 	private static final double INSET = 0.15;
 	private static final VoxelShape SQUARE = VoxelShapes.cuboid(INSET, 0, INSET, 16 - INSET, 0.02, 16 - INSET);
@@ -98,9 +99,9 @@ public final class ChunkOverlay {
 		for (int i = -r; i <= r; i++) {
 			for (int j = -r; j <= r; j++) {
 				int cx = pcx + i, cz = pcz + j;
-				byte state = trails.state(dim, cx, cz);
+				byte state = trails.shown(dim, cx, cz);
 				if (state == 0) continue;
-				int rgb = state == ChunkTrails.NEW ? FRESH : onTrail(near, cx, cz) ? TRAIL : OLD;
+				int rgb = state == ChunkTrails.NEW ? FRESH : state == ChunkTrails.YOURS ? YOURS : onTrail(near, cx, cz) ? TRAIL : OLD;
 				list.add(new Square(cx, cz, rgb));
 			}
 		}

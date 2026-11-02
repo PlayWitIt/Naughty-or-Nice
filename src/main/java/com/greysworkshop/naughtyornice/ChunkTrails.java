@@ -54,6 +54,11 @@ import java.util.function.Predicate;
  */
 public final class ChunkTrails {
 	public static final byte NEW = 1, OLD = 2;
+	/**
+	 * Only for showing land ({@link #shown}): land you were the first in, on an earlier visit. (Finding and following
+	 * trails treats it like new land, so your own path is never taken for someone else's.)
+	 */
+	public static final byte YOURS = 3;
 	private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
 	private static final Predicate<BlockState> FLOWING = state -> {
 		FluidState fluid = state.getFluidState();
@@ -71,6 +76,8 @@ public final class ChunkTrails {
 	private final Map<String, Long2ByteOpenHashMap> states = new HashMap<>();
 	/** Chunks you've seen generated (they were fresh when you got there), per dimension. Saved. */
 	private final Map<String, LongOpenHashSet> mine = new HashMap<>();
+	/** Chunks generated for you this session (new right now, as opposed to yours from an earlier visit), per dimension. */
+	private final Map<String, LongOpenHashSet> freshNow = new HashMap<>();
 	/** Chunks that were within your reach while still unknown, per dimension: never read as old later. Saved. */
 	private final Map<String, LongOpenHashSet> walked = new HashMap<>();
 	/** Chunks beyond your simulation distance by this much can't have been run for you (the server's idea of where you are lags a little). */
@@ -133,6 +140,10 @@ public final class ChunkTrails {
 
 	private LongOpenHashSet mine(String dimension) {
 		return mine.computeIfAbsent(dimension, d -> new LongOpenHashSet());
+	}
+
+	private LongOpenHashSet freshNow(String dimension) {
+		return freshNow.computeIfAbsent(dimension, d -> new LongOpenHashSet());
 	}
 
 	private LongOpenHashSet walked(String dimension) {
@@ -214,9 +225,15 @@ public final class ChunkTrails {
 		if (verdict == NEW) {
 			if (states(dimension).put(key, NEW) != NEW) version++;
 			if (mine(dimension).add(key)) mineDirty = true;
+			freshNow(dimension).add(key);
 			return;
 		}
-		if (mine(dimension).contains(key) || walked(dimension).contains(key)) return;
+		// Your own land, loaded back from the server's disk: you've been here before, so it's no longer new.
+		if (mine(dimension).contains(key)) {
+			if (freshNow(dimension).remove(key)) version++;
+			return;
+		}
+		if (walked(dimension).contains(key)) return;
 		if (states(dimension).get(key) != NEW && states(dimension).put(key, OLD) != OLD) {
 			mineDirty = true;
 			version++;
@@ -308,13 +325,17 @@ public final class ChunkTrails {
 		if (palette != 0) return;
 		states(dimension).put(key, NEW);
 		if (mine(dimension).add(key)) mineDirty = true;
+		freshNow(dimension).add(key);
 		version++;
 	}
 
 	/** For testing: says what a chunk is. */
 	void set(String dimension, int x, int z, byte state) {
 		states(dimension).put(ChunkPos.toLong(x, z), state);
-		if (state == NEW) mine(dimension).add(ChunkPos.toLong(x, z));
+		if (state == NEW) {
+			mine(dimension).add(ChunkPos.toLong(x, z));
+			freshNow(dimension).add(ChunkPos.toLong(x, z));
+		}
 		mineDirty = true;
 		version++;
 	}
@@ -331,20 +352,30 @@ public final class ChunkTrails {
 		return states(dimension).get(key);
 	}
 
+	/**
+	 * What a chunk is, to show: NEW (generated for you just now), YOURS (you were the first here, on an earlier visit),
+	 * OLD (someone was here) or 0 (unknown).
+	 */
+	public byte shown(String dimension, int x, int z) {
+		long key = ChunkPos.toLong(x, z);
+		if (mine(dimension).contains(key)) return freshNow(dimension).contains(key) ? NEW : YOURS;
+		return states(dimension).get(key);
+	}
+
 	public interface ChunkVisitor {
 		void visit(int x, int z, byte state);
 	}
 
-	/** Every chunk known in a dimension: yours count as fresh. */
+	/** Every chunk known in a dimension, as it's shown: NEW, YOURS or OLD. */
 	public void forEachChunk(String dimension, ChunkVisitor visitor) {
-		LongOpenHashSet own = mine(dimension);
+		LongOpenHashSet own = mine(dimension), now = freshNow(dimension);
 		for (it.unimi.dsi.fastutil.longs.Long2ByteMap.Entry e : states(dimension).long2ByteEntrySet()) {
 			long k = e.getLongKey();
 			if (!own.contains(k)) visitor.visit(ChunkPos.getPackedX(k), ChunkPos.getPackedZ(k), e.getByteValue());
 		}
 		for (it.unimi.dsi.fastutil.longs.LongIterator it = own.iterator(); it.hasNext(); ) {
 			long k = it.nextLong();
-			visitor.visit(ChunkPos.getPackedX(k), ChunkPos.getPackedZ(k), NEW);
+			visitor.visit(ChunkPos.getPackedX(k), ChunkPos.getPackedZ(k), now.contains(k) ? NEW : YOURS);
 		}
 	}
 
@@ -676,6 +707,7 @@ public final class ChunkTrails {
 	public void clear() {
 		states.clear();
 		mine.clear();
+		freshNow.clear();
 		walked.clear();
 		// Not the chunks watched for flowing: that's about what's loaded right now, not saved data, and every chunk
 		// that arrives sets its own entry anyway.

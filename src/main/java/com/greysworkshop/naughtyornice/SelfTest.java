@@ -2730,6 +2730,11 @@ public final class SelfTest {
 		return x[0] > x[1] + 40 && x[0] > x[2] + 40;
 	}
 
+	private static boolean bluish(int c) {
+		int[] x = rgb(c);
+		return x[2] > x[0] + 40 && x[2] > x[1] + 20;
+	}
+
 	private static boolean greenish(int c) {
 		int[] x = rgb(c);
 		return x[1] > x[0] + 40 && x[1] > x[2] + 20;
@@ -2750,6 +2755,20 @@ public final class SelfTest {
 		check("the Intel map shows new land red, old land green, and bases not green",
 				reddish(ShopScreen.MAP_FRESH) && greenish(ShopScreen.MAP_OLD) && !greenish(ShopScreen.MAP_BASE)
 						&& (ShopScreen.MAP_TRAIL & 0xFFFFFF) == ChunkOverlay.TRAIL);
+		check("land you were first in shows blue everywhere, not red or green",
+				(TrailRadar.YOURS & 0xFFFFFF) == ChunkOverlay.YOURS && bluish(ChunkOverlay.YOURS) && bluish(ShopScreen.MAP_YOURS)
+						&& !greenish(ChunkOverlay.YOURS) && !reddish(ChunkOverlay.YOURS));
+		// Coming back to land you generated: new while it's being made, yours when you come back to it; someone else's is old.
+		ChunkTrails t = new ChunkTrails();
+		String d = "selftest:yours";
+		long mineKey = net.minecraft.util.math.ChunkPos.toLong(5, 5), theirKey = net.minecraft.util.math.ChunkPos.toLong(9, 9);
+		t.paletteSays(d, mineKey, ChunkTrails.NEW);
+		boolean newNow = t.shown(d, 5, 5) == ChunkTrails.NEW;
+		t.paletteSays(d, mineKey, ChunkTrails.OLD);
+		check("land you generated shows new while it's made, then yours when you come back (not new, not someone else's)",
+				newNow && t.shown(d, 5, 5) == ChunkTrails.YOURS && t.state(d, 5, 5) == ChunkTrails.NEW);
+		t.paletteSays(d, theirKey, ChunkTrails.OLD);
+		check("...and land someone else made is still someone else's", t.shown(d, 9, 9) == ChunkTrails.OLD && t.state(d, 9, 9) == ChunkTrails.OLD);
 		check("the heat map runs red (all new) to green (all old)",
 				reddish(ShopScreen.heatColor(0, 6)) && greenish(ShopScreen.heatColor(6, 0)) && !greenish(ShopScreen.heatColor(3, 3)) && !reddish(ShopScreen.heatColor(3, 3)));
 	}
