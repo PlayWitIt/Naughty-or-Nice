@@ -64,6 +64,14 @@ loom {
 			vmArgs "-Dnaughtyornice.paletteprobe=true", "-Xmx2g"
 			runDir "run"
 		}
+		// Proof that land shows right as you'd see it: new (red) as it's made, yours (blue) when you come back,
+		// someone else's (green) where it was made without you: ./gradlew runLandTest
+		landTest {
+			client()
+			name = "Land Test"
+			vmArgs "-Dnaughtyornice.landtest=true", "-Xmx1536m"
+			runDir "run"
+		}
 		// The mods panel on the title screen, with Base Insurance and Hoard Eye beside this mod (their jars go in
 		// run-panel/mods): ./gradlew runPanelTest
 		panelTest {

@@ -1832,8 +1832,8 @@ public final class SelfTest {
 		boolean savedOk = back.trails.size() == 1 && back.state(dim, 100, 99) == ChunkTrails.OLD && back.state(dim, 100, 80) == ChunkTrails.NEW
 				&& back.state(dim, 10, 10) == 0;
 		// Your own path again, flown faster than the server makes land: a strip beside you stayed unknown (its liquid
-		// flowed with you right there, or before it was sent). Coming back later it arrives flowed, far from you: still
-		// not old, so it's no trail.
+		// flowed with you right there, or before it was sent). Coming back later it arrives flowed, far from you: it's
+		// yours (you were there), never old, so it's no trail.
 		ChunkTrails fast = new ChunkTrails();
 		for (int x = 60; x <= 140; x++) {
 			for (int z = 60; z <= 140; z++) {
@@ -1844,8 +1844,10 @@ public final class SelfTest {
 		for (int x = 60; x <= 140; x++) {
 			for (int z = 99; z <= 101; z++) fast.arrived(dim, net.minecraft.util.math.ChunkPos.toLong(x, z), true, false);
 		}
-		boolean fastOk = fast.analyse(dim, 100, 100, 1000, null).isEmpty() && fast.state(dim, 100, 100) == 0;
-		// Arriving flowed within your reach can't be told; far from you, it's old. And what you were near is saved.
+		boolean fastOk = fast.analyse(dim, 100, 100, 1000, null).isEmpty() && fast.state(dim, 100, 100) != ChunkTrails.OLD
+				&& fast.shown(dim, 100, 100) == ChunkTrails.YOURS;
+		// Arriving flowed within your reach can't be told; far from you, it's old, unless you were near it before (then
+		// it's yours). And what you were near is saved.
 		ChunkTrails reach = new ChunkTrails();
 		reach.arrived(dim, net.minecraft.util.math.ChunkPos.toLong(1, 1), true, true);
 		reach.walk(dim, 50, 50, 1, k -> true);
@@ -1855,8 +1857,10 @@ public final class SelfTest {
 		ChunkTrails reachBack = new ChunkTrails();
 		reachBack.load(dir.resolve("r.trails.json"), dir.resolve("r.chunks.bin"));
 		reachBack.arrived(dim, net.minecraft.util.math.ChunkPos.toLong(50, 49), true, false);
-		boolean reachOk = reach.state(dim, 1, 1) == 0 && reach.state(dim, 50, 51) == 0 && reach.state(dim, 90, 90) == ChunkTrails.OLD
-				&& reachBack.state(dim, 50, 49) == 0 && reachBack.state(dim, 90, 90) == ChunkTrails.OLD;
+		boolean reachOk = reach.state(dim, 1, 1) == 0 && reach.shown(dim, 50, 51) == ChunkTrails.YOURS && reach.state(dim, 50, 51) != ChunkTrails.OLD
+				&& reach.state(dim, 90, 90) == ChunkTrails.OLD
+				&& reachBack.shown(dim, 50, 49) == ChunkTrails.YOURS && reachBack.state(dim, 50, 49) != ChunkTrails.OLD
+				&& reachBack.state(dim, 90, 90) == ChunkTrails.OLD;
 		log("Trail tests: corridor " + ok + ", square " + squareOk + ", edge " + edgeOk + ", own path " + ownOk + ", saved " + savedOk
 				+ ", fast own path " + fastOk + ", reach " + reachOk);
 		return ok && squareOk && edgeOk && ownOk && savedOk && fastOk && reachOk;
@@ -2769,6 +2773,34 @@ public final class SelfTest {
 				newNow && t.shown(d, 5, 5) == ChunkTrails.YOURS && t.state(d, 5, 5) == ChunkTrails.NEW);
 		t.paletteSays(d, theirKey, ChunkTrails.OLD);
 		check("...and land someone else made is still someone else's", t.shown(d, 9, 9) == ChunkTrails.OLD && t.state(d, 9, 9) == ChunkTrails.OLD);
+		// Land you were in while it couldn't be told (no water or lava, palette undecided), read as old when you come
+		// back: yours, never someone else's. A real chunk from this world, through the same code chunks arrive by.
+		MinecraftClient mc = MinecraftClient.getInstance();
+		net.minecraft.world.chunk.WorldChunk unclear = null;
+		int pcx = mc.player.getBlockX() >> 4, pcz = mc.player.getBlockZ() >> 4;
+		for (int i = -4; i <= 4 && unclear == null; i++) {
+			for (int j = -4; j <= 4 && unclear == null; j++) {
+				var c = mc.world.getChunkManager().getWorldChunk(pcx + i, pcz + j);
+				if (c != null && ChunkTrails.paletteVerdict(c) == 0 && !ChunkTrails.hasFlowing(c)) unclear = c;
+			}
+		}
+		if (unclear == null) {
+			check("a loaded chunk that can't be told was found to test with", false);
+		} else {
+			ChunkTrails u = new ChunkTrails();
+			String ud = "selftest:unclear";
+			int ux = unclear.getPos().x, uz = unclear.getPos().z;
+			u.chunkLoaded(ud, unclear, false);
+			boolean unknownFirst = u.shown(ud, ux, uz) == 0;
+			// Coming back: now it reads as loaded before.
+			u.paletteSays(ud, unclear.getPos().toLong(), ChunkTrails.OLD);
+			u.arrived(ud, unclear.getPos().toLong(), true, false);
+			check("land you were in while it couldn't be told shows yours (blue) when it reads old later, not someone else's ("
+					+ u.shown(ud, ux, uz) + ")", unknownFirst && u.shown(ud, ux, uz) == ChunkTrails.YOURS && u.state(ud, ux, uz) != ChunkTrails.OLD);
+			ChunkTrails v = new ChunkTrails();
+			v.paletteSays(ud, unclear.getPos().toLong(), ChunkTrails.OLD);
+			check("...but land you were never in that reads old is someone else's (green)", v.shown(ud, ux, uz) == ChunkTrails.OLD);
+		}
 		check("the heat map runs red (all new) to green (all old)",
 				reddish(ShopScreen.heatColor(0, 6)) && greenish(ShopScreen.heatColor(6, 0)) && !greenish(ShopScreen.heatColor(3, 3)) && !reddish(ShopScreen.heatColor(3, 3)));
 	}

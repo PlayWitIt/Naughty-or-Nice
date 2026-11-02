@@ -42,6 +42,18 @@ public final class ChunkOverlay {
 		return squares.size();
 	}
 
+	/** The squares being drawn, by colour: {red new, blue yours, green someone was here, yellow trail}; for the tests. */
+	static int[] colourCounts() {
+		int[] n = new int[4];
+		for (Square s : squares) {
+			if (s.rgb() == FRESH) n[0]++;
+			else if (s.rgb() == YOURS) n[1]++;
+			else if (s.rgb() == OLD) n[2]++;
+			else if (s.rgb() == TRAIL) n[3]++;
+		}
+		return n;
+	}
+
 	public static void render(WorldRenderContext context) {
 		MinecraftClient client = MinecraftClient.getInstance();
 		NNConfig c = NNConfig.INSTANCE;

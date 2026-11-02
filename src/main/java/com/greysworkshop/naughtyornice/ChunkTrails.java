@@ -78,7 +78,10 @@ public final class ChunkTrails {
 	private final Map<String, LongOpenHashSet> mine = new HashMap<>();
 	/** Chunks generated for you this session (new right now, as opposed to yours from an earlier visit), per dimension. */
 	private final Map<String, LongOpenHashSet> freshNow = new HashMap<>();
-	/** Chunks that were within your reach while still unknown, per dimension: never read as old later. Saved. */
+	/**
+	 * Chunks you were in (or near) while they couldn't be told, per dimension: never read as someone else's later; if
+	 * they read as old when you come back, they're yours from before. Saved.
+	 */
 	private final Map<String, LongOpenHashSet> walked = new HashMap<>();
 	/** Chunks beyond your simulation distance by this much can't have been run for you (the server's idea of where you are lags a little). */
 	static final int REACH_MARGIN = 2;
@@ -134,7 +137,7 @@ public final class ChunkTrails {
 
 	// ---- Reading chunks ----
 
-	private Long2ByteOpenHashMap states(String dimension) {
+	Long2ByteOpenHashMap states(String dimension) {
 		return states.computeIfAbsent(dimension, d -> new Long2ByteOpenHashMap());
 	}
 
@@ -191,6 +194,9 @@ public final class ChunkTrails {
 		}
 		if (chunk.getPos().toLong() == debugKey) NaughtyOrNiceClient.LOGGER.info("[SELFTEST] chunk {} arrived, flowing liquid in it: {}, in reach: {}", chunk.getPos(), flowing, inReach);
 		arrived(dimension, chunk.getPos().toLong(), flowing, inReach);
+		// You're in it and it can't be told yet: remember that, so if it reads as old when you come back, it's known to
+		// be land you were in, not someone else's.
+		if (states(dimension).get(key) == 0 && !mine(dimension).contains(key) && walked(dimension).add(key)) mineDirty = true;
 	}
 
 	void arrived(String dimension, long key, boolean flowing, boolean inReach) {
@@ -199,7 +205,12 @@ public final class ChunkTrails {
 			return;
 		}
 		pristine.remove(key);
-		if (inReach || mine(dimension).contains(key) || walked(dimension).contains(key)) return;
+		if (inReach || mine(dimension).contains(key)) return;
+		if (walked(dimension).contains(key)) {
+			yoursFromBefore(dimension, key);
+			return;
+		}
+		if (edgeOfYours(dimension, key)) return;
 		if (states(dimension).get(key) != NEW && states(dimension).put(key, OLD) != OLD) {
 			mineDirty = true;
 			version++;
@@ -233,7 +244,11 @@ public final class ChunkTrails {
 			if (freshNow(dimension).remove(key)) version++;
 			return;
 		}
-		if (walked(dimension).contains(key)) return;
+		if (walked(dimension).contains(key)) {
+			yoursFromBefore(dimension, key);
+			return;
+		}
+		if (edgeOfYours(dimension, key)) return;
 		if (states(dimension).get(key) != NEW && states(dimension).put(key, OLD) != OLD) {
 			mineDirty = true;
 			version++;
@@ -300,8 +315,11 @@ public final class ChunkTrails {
 	}
 
 	public void chunkUnloaded(int x, int z) {
-		pristine.remove(ChunkPos.toLong(x, z));
-		paletteOf.remove(ChunkPos.toLong(x, z));
+		long key = ChunkPos.toLong(x, z);
+		pristine.remove(key);
+		paletteOf.remove(key);
+		// New only while you're there: once it's gone and you come back, it's land you were in before (yours).
+		for (LongOpenHashSet set : freshNow.values()) if (set.remove(key)) version++;
 	}
 
 	/**
@@ -340,16 +358,57 @@ public final class ChunkTrails {
 		version++;
 	}
 
+	/** For testing: whether you generated a chunk. */
+	boolean mineHas(String dimension, int x, int z) {
+		return mine(dimension).contains(ChunkPos.toLong(x, z));
+	}
+
 	/** For testing: forgets that you generated a chunk. */
 	void forgetMine(String dimension, int x, int z) {
 		mine(dimension).remove(ChunkPos.toLong(x, z));
 	}
 
-	/** What a chunk is: NEW (fresh, or yours), OLD, or 0 (unknown). */
+	/**
+	 * How far (in chunks) the server generates land past what it sends you. When you come back, that margin arrives
+	 * as old land, though it was made for your own visit.
+	 */
+	static final int OWN_MARGIN = 2;
+
+	/**
+	 * Whether a chunk is within {@link #OWN_MARGIN} of land you generated on an earlier visit (not land being made for
+	 * you right now: old land beside that is someone else's, e.g. a trail you're crossing).
+	 */
+	boolean nearEarlierMine(String dimension, long key) {
+		LongOpenHashSet own = mine(dimension), now = freshNow(dimension);
+		if (own.isEmpty()) return false;
+		int x = ChunkPos.getPackedX(key), z = ChunkPos.getPackedZ(key);
+		for (int i = -OWN_MARGIN; i <= OWN_MARGIN; i++) {
+			for (int j = -OWN_MARGIN; j <= OWN_MARGIN; j++) {
+				long k = ChunkPos.toLong(x + i, z + j);
+				if (own.contains(k) && !now.contains(k)) return true;
+			}
+		}
+		return false;
+	}
+
+	/** Land you were in while it couldn't be told, now reading as old: it's yours from before (you were the one there). */
+	private void yoursFromBefore(String dimension, long key) {
+		if (states(dimension).get(key) != NEW && states(dimension).put(key, YOURS) != YOURS) version++;
+	}
+
+	/** Old land that's the margin of your own earlier visit: yours, not someone else's. True when it was. */
+	private boolean edgeOfYours(String dimension, long key) {
+		if (!nearEarlierMine(dimension, key)) return false;
+		if (states(dimension).put(key, YOURS) != YOURS) version++;
+		return true;
+	}
+
+	/** What a chunk is: NEW (fresh, or yours), OLD, or 0 (unknown). For finding trails, yours counts as fresh. */
 	public byte state(String dimension, int x, int z) {
 		long key = ChunkPos.toLong(x, z);
 		if (mine(dimension).contains(key)) return NEW;
-		return states(dimension).get(key);
+		byte s = states(dimension).get(key);
+		return s == YOURS ? NEW : s;
 	}
 
 	/**

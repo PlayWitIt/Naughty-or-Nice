@@ -113,10 +113,12 @@ public class NaughtyOrNiceClient implements ClientModInitializer {
 		ModsPanel.install(panelEntry());
 
 		// Scripted development tests (./gradlew runSelfTest, runPanelTest); the classes aren't shipped in the release jar.
-		if (Boolean.getBoolean("naughtyornice.selftest") || Boolean.getBoolean("naughtyornice.paneltest") || Boolean.getBoolean("naughtyornice.paletteprobe")) {
+		if (Boolean.getBoolean("naughtyornice.selftest") || Boolean.getBoolean("naughtyornice.paneltest") || Boolean.getBoolean("naughtyornice.paletteprobe")
+				|| Boolean.getBoolean("naughtyornice.landtest")) {
 			try {
 				Class.forName(Boolean.getBoolean("naughtyornice.paneltest") ? "com.greysworkshop.naughtyornice.SelfTestPanel"
 						: Boolean.getBoolean("naughtyornice.paletteprobe") ? "com.greysworkshop.naughtyornice.SelfTestPalette"
+						: Boolean.getBoolean("naughtyornice.landtest") ? "com.greysworkshop.naughtyornice.SelfTestLand"
 						: "com.greysworkshop.naughtyornice.SelfTest").getMethod("start").invoke(null);
 			} catch (ReflectiveOperationException e) {
 				LOGGER.error("Self-test not available", e);
