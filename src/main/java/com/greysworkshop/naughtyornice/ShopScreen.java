@@ -1266,50 +1266,57 @@ public class ShopScreen extends Screen {
 		counter(context, mouseX, mouseY, cx + 2 * (cw + 6), "Look Into", Tab.LOOK, 0xFFFFC14D);
 		counter(context, mouseX, mouseY, cx + 3 * (cw + 6), "Naughty list", Tab.NAUGHTY, 0xFFFF8A80);
 
-		// Tabs.
+		// Tabs: the sections, then, on a players page, which players (the lists are the counters above and the sidebar).
 		context.fill(0, HEADER, width, BODY, SUBNAV);
 		int tx = 6;
-		boolean compact = false;
-		int total = 0;
-		for (Tab t : Tab.values()) total += textRenderer.getWidth(tabLabel(t, false)) + 10;
-		if (total > width - 12) compact = true;
-		for (Tab t : Tab.values()) {
-			String label = tabLabel(t, compact);
-			boolean active = t == tab && (selected == null || t == Tab.SETTINGS);
+		Tab[] sections = {Tab.ALL, Tab.GROUPS, Tab.CHAT, Tab.INTEL, Tab.ACTIVITY, Tab.SERVER, Tab.BARITONE, Tab.SETTINGS};
+		for (Tab t : sections) {
+			String label = t == Tab.ALL ? "Players" : t.label;
+			boolean active = t == Tab.ALL ? playersTab(tab) : t == tab;
 			if (t == Tab.CHAT && !active && mod.chatLogger.feedVersion() != chatSeen && !mod.chatLogger.feed().isEmpty()) label += " •";
-			int w = textRenderer.getWidth(label) + 8;
-			boolean hover = over(mouseX, mouseY, tx, HEADER + 1, w, TABS - 2);
-			if (active || hover) context.drawStrokedRectangle(tx, HEADER + 1, w, TABS - 2, active ? WHITE : 0xFFAAAAAA);
-			text(context, label, tx + 4, HEADER + 4, WHITE);
-			hits.add(new Hit(tx, HEADER, tx + w, BODY, "tab:" + t.name(), () -> showTab(t)));
-			tx += w + 2;
+			tx += pill(context, mouseX, mouseY, tx, label, active, "tab:" + t.name(), () -> showTab(t)) + 2;
+		}
+		if (playersTab(tab) && selected == null) {
+			Tab[] views = {Tab.ALL, Tab.NEARBY, Tab.ONLINE, Tab.OFFLINE};
+			int need = 0;
+			for (Tab t : views) need += textRenderer.getWidth(viewLabel(t)) + 12;
+			boolean list = tab == Tab.FRIENDS || tab == Tab.NICE || tab == Tab.LOOK || tab == Tab.NAUGHTY;
+			if (list) need += textRenderer.getWidth(tab.label + " ✕") + 12;
+			int vx = width - 6 - need;
+			if (vx > tx + 12) {
+				context.fill(vx - 8, HEADER + 3, vx - 7, BODY - 3, 0x44FFFFFF);
+				for (Tab t : views) {
+					vx += pill(context, mouseX, mouseY, vx, viewLabel(t), t == tab, t == Tab.ALL ? "view:ALL" : "tab:" + t.name(), () -> showTab(t)) + 2;
+				}
+				// The list you're looking at, as a chip that goes back to everyone.
+				if (list) pill(context, mouseX, mouseY, vx, tab.label + " ✕", true, "view:clear", () -> showTab(Tab.ALL));
+			}
 		}
 	}
 
-	private String tabLabel(Tab t, boolean compact) {
-		if (compact) {
-			String shortLabel = switch (t) {
-				case ALL -> "All";
-				case NEARBY -> "Near";
-				case ONLINE -> "Online";
-				case OFFLINE -> "Offline";
-				case FRIENDS -> "Friends";
-				case NICE -> "Nice";
-				case NAUGHTY -> "Naughty";
-				case LOOK -> "Look";
-				case GROUPS -> "Groups";
-				case ACTIVITY -> "Activity";
-				case SERVER -> "Server";
-				case INTEL -> "Intel";
-				case CHAT -> "Chat";
-				case BARITONE -> "Baritone";
-				case SETTINGS -> "Settings";
-			};
-			return t == Tab.ALL ? "☰ All" : shortLabel;
-		}
-		int n = count(t);
-		String label = t == Tab.ALL ? "☰ All" : t.label;
-		return n > 0 && (t == Tab.LOOK || t == Tab.NEARBY || t == Tab.GROUPS || t == Tab.FRIENDS) ? label + " (" + n + ")" : label;
+	private static boolean playersTab(Tab t) {
+		return switch (t) {
+			case ALL, NEARBY, ONLINE, OFFLINE, FRIENDS, NICE, LOOK, NAUGHTY -> true;
+			default -> false;
+		};
+	}
+
+	private String viewLabel(Tab t) {
+		int n = t == Tab.NEARBY ? count(t) : 0;
+		String label = t == Tab.ALL ? "All" : t == Tab.NEARBY ? "Near" : t.label;
+		return n > 0 ? label + " " + n : label;
+	}
+
+	/** A tab: filled orange when it's the one open, lit up under the mouse. Returns its width. */
+	private int pill(DrawContext context, int mouseX, int mouseY, int x, String label, boolean active, String hit, Runnable action) {
+		int w = textRenderer.getWidth(label) + 10;
+		int y = HEADER + 1, h = TABS - 2;
+		boolean hover = over(mouseX, mouseY, x, y, w, h);
+		if (active) rounded(context, x, y, w, h, ORANGE);
+		else if (hover) rounded(context, x, y, w, h, 0x33FFFFFF);
+		context.drawText(textRenderer, label, x + 5, y + (h - 8) / 2 + 1, active ? 0xFF131A22 : hover ? WHITE : 0xFFC8D0DA, false);
+		hits.add(new Hit(x, HEADER, x + w, BODY, hit, action));
+		return w;
 	}
 
 	private void counter(DrawContext context, int mouseX, int mouseY, int x, String label, Tab target, int color) {
@@ -1320,6 +1327,7 @@ public class ShopScreen extends Screen {
 		text(context, label, x, 4, 0xFFCCCCCC);
 		context.drawText(textRenderer, Text.literal(n + (n == 1 ? " person" : " people")).styled(s -> s.withBold(true)), x, 14, color, false);
 		hits.add(new Hit(x - 2, 3, x - 2 + w, 23, "counter:" + target.name(), () -> showTab(target)));
+		hits.add(new Hit(x - 2, 3, x - 2 + w, 23, "tab:" + target.name(), () -> showTab(target)));
 	}
 
 	private static void magnifier(DrawContext context, int x, int y) {
@@ -1340,7 +1348,9 @@ public class ShopScreen extends Screen {
 		String shown = fit(icon + banner, width - 16 - extra);
 		int w = textRenderer.getWidth(shown) + extra;
 		int x = (width - w) / 2;
-		int y = BODY + 4;
+		// A toast at the bottom, clear of page titles (and above the chat box on the chat page).
+		int y = height - (tab == Tab.CHAT && selected == null ? 44 : 24);
+		context.fill(x + 2, y + 2, x + w + 2, y + 18, 0x66000000);
 		roundedBorder(context, x, y, w, 16, CARD, bannerColor);
 		context.fill(x + 1, y + 2, x + 3, y + 14, bannerColor);
 		text(context, shown, x + 8, y + 4, bannerColor);
@@ -4229,8 +4239,8 @@ public class ShopScreen extends Screen {
 						Friends.resync(mod.ledger);
 					}));
 		}
-		options.add(new Option("Tell me about updates", "Once per game session, a note in chat when a newer version is out on GitHub, "
-				+ "with a download link. Nothing installs by itself.", () -> c.checkUpdates, v -> c.checkUpdates = v));
+		options.add(new Option("Update by itself", "When a newer version is out on GitHub it downloads in the background, is checked, "
+				+ "and goes in when you close the game. Next time you play you're on it. Nothing to click.", () -> c.checkUpdates, v -> c.checkUpdates = v));
 		options.add(new Option("Record disconnects", "When you get disconnected: the reason, what did it (the server, a mod, an error) and who was near. "
 				+ "Told to you when you're back.", () -> c.recordDisconnects, v -> c.recordDisconnects = v));
 		options.add(new Option("Open share links from chat", "When someone sends you a Naughty or Nice share link in chat, offer a button to look at it.",
@@ -4343,6 +4353,9 @@ public class ShopScreen extends Screen {
 		});
 	}
 
+	/** Where each part of the settings starts (from the top of the page), for the "Jump to" chips; filled while drawing. */
+	private final java.util.LinkedHashMap<String, Integer> settingsAnchors = new java.util.LinkedHashMap<>();
+
 	private void renderSettings(DrawContext context, int mouseX, int mouseY) {
 		// The whole width, in two columns when there's room for them.
 		int w = Math.min(860, width - 16);
@@ -4352,7 +4365,19 @@ public class ShopScreen extends Screen {
 		int y = y0;
 		context.enableScissor(0, BODY, width, height);
 		big(context, "Settings", x, y, TEXT, 1.4f);
+		// Jump to a part of the page (where each starts was noted last frame).
+		int jx = x + (int) (textRenderer.getWidth("Settings") * 1.4f) + 14;
+		for (var anchor : List.copyOf(settingsAnchors.entrySet())) {
+			int jw = textRenderer.getWidth(anchor.getKey()) + 12;
+			if (jx + jw > x + w) break;
+			int target = anchor.getValue();
+			pill(context, mouseX, mouseY, jx, y, jw, 13, anchor.getKey(), SOFT, BORDER, TEXT, "jump:" + anchor.getKey(),
+					() -> scroll = Math.max(0, Math.min(target - 4, Math.max(0, contentHeight - (height - BODY)))));
+			jx += jw + 4;
+		}
+		settingsAnchors.clear();
 		y += 18;
+		settingsAnchors.put("Chat check", y - y0);
 		// Chat check: how well this server's chat is understood.
 		Diagnostics d = mod.diagnostics;
 		int ch = 62;
@@ -4392,9 +4417,13 @@ public class ShopScreen extends Screen {
 			scrollToDisconnects = false;
 			scroll = Math.max(0, disconnectsAt - y0 - 4);
 		}
+		settingsAnchors.put("Disconnects", disconnectsAt - y0);
+		settingsAnchors.put("Chunk trails", y - y0);
 		y = chunkTrailsCard(context, mouseX, mouseY, x, y, w) + 10;
+		settingsAnchors.put("Notifications", y - y0);
 		y = notificationsCard(context, mouseX, mouseY, x, y, w) + 10;
 		int circlesAt = y;
+		settingsAnchors.put("Friend circles", y - y0);
 		y = circlesCard(context, mouseX, mouseY, x, y, w) + 10;
 		if (scrollToCircles) {
 			scrollToCircles = false;
@@ -4431,6 +4460,7 @@ public class ShopScreen extends Screen {
 		int boxH = 14 + 20 + colH;
 		boxH += steppers().size() * 18 + 8;
 		boxH += 46;
+		settingsAnchors.put("Switches", y - y0);
 		roundedBorder(context, x, y, w, boxH, CARD, BORDER);
 		int ty = y + 10;
 		stepper(context, mouseX, mouseY, x + 26, ty - 2, sizeStepper());
@@ -4502,6 +4532,7 @@ public class ShopScreen extends Screen {
 		y += 14;
 		y = wrapped(context, "In config/naughtyornice: lists/ (your lists, per server), chatlogs/ (conversations and all chat), shared/ (shared lists). "
 				+ "Screenshots go in screenshots/naughtyornice.", x, y, w, MUTED, 3) + 8;
+		settingsAnchors.put("Commands", y - y0);
 		context.drawText(textRenderer, Text.literal("Commands").styled(st -> st.withBold(true)), x, y, TEXT, false);
 		y += 12;
 		int cmdW = 0;

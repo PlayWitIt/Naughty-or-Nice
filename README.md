@@ -461,9 +461,12 @@ message still comes), and **Alert / Off** turns the notification itself off wher
 say where they're set: alert words, topics, each player's or group's page). **All sounds** turns every sound off.
 
 ## Updates
-Once per game session, a little after you join a world, the mod says in chat if a newer version is out on GitHub,
-with a **[Download]** link and **[Skip this version]**. Nothing downloads or installs by itself. Turn it off in
-Settings (**Tell me about updates**).
+The mod keeps itself up to date. Once per game session it asks GitHub for the latest release. If there's a newer one
+for your Minecraft version, it downloads that jar into your mods folder (as `.jar.update`, which the game ignores) and
+checks it against the SHA-256 GitHub publishes. When you close the game, a small helper swaps it in for the old jar.
+Next time you play, you're on the new version, and one line in chat says so. Nothing to click. Nothing is sent
+except the request for the release. If it can't update by itself (for example, the mods folder can't be written
+to), it says in chat that a newer version is out, with a download link. Turn it off in Settings (**Update by itself**).
 
 ## Disconnects
 When you get disconnected, the mod notes the reason, **what did it**, who was near (and which list they're on) and the

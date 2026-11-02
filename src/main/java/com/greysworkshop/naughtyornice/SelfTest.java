@@ -1246,6 +1246,7 @@ public final class SelfTest {
 				check("hours not seen enough aren't guessed", act.average(ServerActivity.cell(java.time.DayOfWeek.WEDNESDAY, 2)) < 0);
 				check("newer versions are told apart", UpdateCheck.newer("1.10.0", "1.9.2") && !UpdateCheck.newer("1.5.0", "1.5.0")
 						&& !UpdateCheck.newer("1.4.9", "1.5.0") && UpdateCheck.newer("1.5.1", "1.5"));
+				updaterChecks();
 				// B (Baritone panel) and N (open) share letters with F3+B and F3+N, which only act while F3 is held: no warning.
 				check("F3 combos and JEI keys aren't key clashes", NaughtyOrNiceClient.neverClashes("key.debug.showHitboxes")
 						&& NaughtyOrNiceClient.neverClashes("key.jei.showRecipe") && !NaughtyOrNiceClient.neverClashes("key.tradeseeker.menu")
@@ -2712,6 +2713,55 @@ public final class SelfTest {
 	private static void screenshot(MinecraftClient client, String name) {
 		ScreenshotRecorder.saveScreenshot(client.runDirectory, "nn_" + name + ".png", client.getFramebuffer(), 1, message -> {});
 		log("Screenshot " + name);
+	}
+
+	/**
+	 * Updating by itself, for real: the latest release is found and downloaded from GitHub and checked against its
+	 * SHA-256, a wrong hash is refused, and the real helper program (started the way the game starts it when it
+	 * closes) deletes the old jar and puts the update in its place.
+	 */
+	private static void updaterChecks() {
+		check("an update's version is read from its file name", "1.18.1".equals(UpdateCheck.versionOf("naughty-or-nice-1.18.1+1.21.11.jar.update"))
+				&& UpdateCheck.versionOf("base-insurance-1.0.0+1.21.11.jar") == null);
+		try {
+			java.nio.file.Path dir = java.nio.file.Files.createTempDirectory("nn-update-test");
+			UpdateCheck.Release release = UpdateCheck.latest("PlayWitIt/Naughty-or-Nice", "1.21.11");
+			check("the latest release and its jar are found on GitHub (" + (release == null ? "none" : release.version() + ", " + release.jarName()) + ")",
+					release != null && release.sha256().length() == 64 && release.jarName().endsWith("+1.21.11.jar"));
+			if (release == null) return;
+			check("no jar is picked for another Minecraft version", UpdateCheck.latest("PlayWitIt/Naughty-or-Nice", "1.20.1") == null);
+			java.nio.file.Path update = dir.resolve(release.jarName() + ".update");
+			UpdateCheck.download(release, update, NaughtyOrNiceClient.MOD_ID);
+			check("the download matches GitHub's SHA-256 and is this mod", UpdateCheck.verify(update, release.sha256(), NaughtyOrNiceClient.MOD_ID, release.version()));
+			String wrong = (release.sha256().charAt(0) == '0' ? "1" : "0") + release.sha256().substring(1);
+			check("a download with the wrong hash is refused", !UpdateCheck.verify(update, wrong, NaughtyOrNiceClient.MOD_ID, release.version())
+					&& !UpdateCheck.verify(update, release.sha256(), "baseinsurance", release.version()));
+			boolean refused = false;
+			try {
+				UpdateCheck.download(new UpdateCheck.Release(release.version(), release.page(), release.jarName(), release.jarUrl(), wrong),
+						dir.resolve("bad.jar.update"), NaughtyOrNiceClient.MOD_ID);
+			} catch (Exception e) {
+				refused = true;
+			}
+			check("...and isn't kept", refused && !java.nio.file.Files.exists(dir.resolve("bad.jar.update")) && !java.nio.file.Files.exists(dir.resolve("bad.jar.update.part")));
+			java.nio.file.Path old = dir.resolve("naughty-or-nice-1.0.0+1.21.11.jar");
+			java.nio.file.Files.writeString(old, "old");
+			java.nio.file.Path target = dir.resolve(release.jarName());
+			// The helper waits for the game to close; give it a program that has already finished.
+			Process done = new ProcessBuilder(ProcessHandle.current().info().command().orElse("java"), "-version").redirectErrorStream(true).start();
+			done.getInputStream().readAllBytes();
+			done.waitFor();
+			Process helper = UpdateCheck.startSwap(done.pid(), old, update, target);
+			boolean finished = helper != null && helper.waitFor(60, java.util.concurrent.TimeUnit.SECONDS);
+			check("the helper program swaps the update in after the game closes (exit " + (finished ? helper.exitValue() : "none") + ")",
+					finished && helper.exitValue() == 0 && !java.nio.file.Files.exists(old) && !java.nio.file.Files.exists(update)
+							&& UpdateCheck.verify(target, release.sha256(), NaughtyOrNiceClient.MOD_ID, release.version()));
+			java.nio.file.Path a = dir.resolve("a.jar"), b = dir.resolve("b.jar.update");
+			java.nio.file.Files.writeString(a, "a");
+			check("with no update there, the old jar is left alone", !UpdateSwap.swap(a, b, dir.resolve("b.jar"), 1000) && java.nio.file.Files.exists(a));
+		} catch (Exception e) {
+			check("updating by itself works (" + e + ")", false);
+		}
 	}
 
 	private static void check(String what, boolean ok) {

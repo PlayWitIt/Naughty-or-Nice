@@ -201,8 +201,10 @@ public final class NNConfig {
 	public boolean phoneOnlyAway = true;
 
 	// ---- Updates ----
-	/** Say when a newer version is out on GitHub (once per game session). */
+	/** Update by itself: download a newer version from GitHub and put it in when the game closes. */
 	public boolean checkUpdates = true;
+	/** The version that ran last, to say once that it updated itself. */
+	public String lastVersion = "";
 	/** A version you said not to be told about again. */
 	public String skippedVersion = "";
 
@@ -253,6 +255,7 @@ public final class NNConfig {
 				if (loaded.circles != null) loaded.circles.removeIf(c -> c == null || c.id == null || c.id.isBlank() || c.name == null || c.name.isBlank());
 				if (loaded.circles == null || loaded.circles.isEmpty()) loaded.circles = Friends.defaultCircles();
 				if (loaded.skippedVersion == null) loaded.skippedVersion = "";
+				if (loaded.lastVersion == null) loaded.lastVersion = "";
 				if (loaded.whisperCommand == null || loaded.whisperCommand.isBlank()) loaded.whisperCommand = "msg";
 				boolean backLeft = !loaded.coordsBackLeft;
 				if (backLeft) {

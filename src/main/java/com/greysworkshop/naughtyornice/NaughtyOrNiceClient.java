@@ -60,6 +60,7 @@ public class NaughtyOrNiceClient implements ClientModInitializer {
 	public void onInitializeClient() {
 		INSTANCE = this;
 		NNConfig.load();
+		Safe.run("looking for a downloaded update", UpdateCheck::init);
 
 		KeyBinding.Category category = KeyBinding.Category.create(Identifier.of(MOD_ID, "main"));
 		openKey = KeyBindingHelper.registerKeyBinding(new KeyBinding("key.naughtyornice.open", InputUtil.Type.KEYSYM, GLFW.GLFW_KEY_N, category));
@@ -504,7 +505,7 @@ public class NaughtyOrNiceClient implements ClientModInitializer {
 						+ "(someone has been there) while you're in new land.", () -> c.aheadAlerts, v -> c.aheadAlerts = v),
 				ModsPanel.section("Other"),
 				ModsPanel.toggle("Offer to open shared links", "When a friend sends you a Naughty or Nice share link in chat.", () -> c.openSharedLinks, v -> c.openSharedLinks = v),
-				ModsPanel.toggle("Tell me about updates", "Once per game session, a note in chat when a newer version is out.", () -> c.checkUpdates, v -> c.checkUpdates = v));
+				ModsPanel.toggle("Update by itself", "New versions download in the background and go in when you close the game. Nothing to click.", () -> c.checkUpdates, v -> c.checkUpdates = v));
 		return java.util.Map.of("id", MOD_ID, "name", "Naughty or Nice", "version", version, "icon", Identifier.of(MOD_ID, "icon.png"),
 				"settings", (java.util.function.Function<net.minecraft.client.gui.screen.Screen, net.minecraft.client.gui.screen.Screen>)
 						parent -> new ShopScreen(ShopScreen.Tab.SETTINGS, null).withParent(parent),
