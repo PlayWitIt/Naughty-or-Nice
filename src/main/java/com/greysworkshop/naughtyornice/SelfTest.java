@@ -569,11 +569,15 @@ public final class SelfTest {
 			case 710 -> check("Screen size is at the top of Settings", screen(client).testClick("step-:Screen size") && NNConfig.INSTANCE.screenSize == 0);
 			case 715 -> {
 				smallWidth = screen(client).width;
+				check("at the normal size every tab and the search box fit", screen(client).testHeaderFits());
 				screen(client).testClick("step+:Screen size");
 				log("Small screen is " + smallWidth + " wide");
 			}
 			case 717 -> screen(client).testClick("step+:Screen size");
-			case 719 -> screenshot(client, "19b_settings_large");
+			case 719 -> {
+				screenshot(client, "19b_settings_large");
+				check("at the large size every tab and the search box fit (" + screen(client).width + " wide)", screen(client).testHeaderFits());
+			}
 			case 720 -> {
 				int large = screen(client).width;
 				log("Large screen is " + large + " wide, " + screen(client).height + " high");

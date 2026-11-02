@@ -205,6 +205,8 @@ public final class NNConfig {
 	public boolean checkUpdates = true;
 	/** The version that ran last, to say once that it updated itself. */
 	public String lastVersion = "";
+	/** Games in a row that started with an update downloaded but not yet put in. */
+	public int updateTries;
 	/** A version you said not to be told about again. */
 	public String skippedVersion = "";
 

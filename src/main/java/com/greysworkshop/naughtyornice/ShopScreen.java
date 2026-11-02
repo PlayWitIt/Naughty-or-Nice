@@ -209,7 +209,15 @@ public class ShopScreen extends Screen {
 		@Override
 		public void renderWidget(DrawContext context, int mouseX, int mouseY, float delta) {
 			super.renderWidget(context, mouseX, mouseY, delta);
-			if (getText().isEmpty() && !isFocused()) context.drawText(renderer, hint, getX(), getY(), 0xFFFFFFFF, false);
+			if (getText().isEmpty() && !isFocused()) {
+				// Cut to the box, so a long hint never runs into what's beside it (at big text sizes).
+				Text shown = hint;
+				if (renderer.getWidth(hint) > getWidth()) {
+					String cut = renderer.trimToWidth(hint.getString(), Math.max(0, getWidth() - renderer.getWidth("…")));
+					shown = Text.literal(cut + "…").setStyle(hint.getStyle());
+				}
+				context.drawText(renderer, shown, getX(), getY(), 0xFFFFFFFF, false);
+			}
 		}
 	}
 
@@ -1270,6 +1278,10 @@ public class ShopScreen extends Screen {
 		context.fill(0, HEADER, width, BODY, SUBNAV);
 		int tx = 6;
 		Tab[] sections = {Tab.ALL, Tab.GROUPS, Tab.CHAT, Tab.INTEL, Tab.ACTIVITY, Tab.SERVER, Tab.BARITONE, Tab.SETTINGS};
+		// Tighter when the window is narrow, so every section stays on screen.
+		int roomy = 0;
+		for (Tab t : sections) roomy += textRenderer.getWidth(t == Tab.ALL ? "Players" : t.label + (t == Tab.CHAT ? " •" : "")) + 12;
+		tabPad = roomy + 6 > width - 6 ? 4 : 10;
 		for (Tab t : sections) {
 			String label = t == Tab.ALL ? "Players" : t.label;
 			boolean active = t == Tab.ALL ? playersTab(tab) : t == tab;
@@ -1307,14 +1319,17 @@ public class ShopScreen extends Screen {
 		return n > 0 ? label + " " + n : label;
 	}
 
+	/** Room either side of a tab's label, together (less when the window is narrow). */
+	private int tabPad = 10;
+
 	/** A tab: filled orange when it's the one open, lit up under the mouse. Returns its width. */
 	private int pill(DrawContext context, int mouseX, int mouseY, int x, String label, boolean active, String hit, Runnable action) {
-		int w = textRenderer.getWidth(label) + 10;
+		int w = textRenderer.getWidth(label) + tabPad;
 		int y = HEADER + 1, h = TABS - 2;
 		boolean hover = over(mouseX, mouseY, x, y, w, h);
 		if (active) rounded(context, x, y, w, h, ORANGE);
 		else if (hover) rounded(context, x, y, w, h, 0x33FFFFFF);
-		context.drawText(textRenderer, label, x + 5, y + (h - 8) / 2 + 1, active ? 0xFF131A22 : hover ? WHITE : 0xFFC8D0DA, false);
+		context.drawText(textRenderer, label, x + tabPad / 2, y + (h - 8) / 2 + 1, active ? 0xFF131A22 : hover ? WHITE : 0xFFC8D0DA, false);
 		hits.add(new Hit(x, HEADER, x + w, BODY, hit, action));
 		return w;
 	}
@@ -7377,6 +7392,15 @@ public class ShopScreen extends Screen {
 	// ---- Self-test hooks ----
 
 	/** Clicks the first visible thing with this label (e.g. "nice:Steve", "tab:NICE"); used by the self-test. */
+	/** Whether every section tab and the search box's hint fit on screen; used by the self-test at each size. */
+	public boolean testHeaderFits() {
+		for (String t : new String[] {"ALL", "GROUPS", "CHAT", "INTEL", "ACTIVITY", "SERVER", "BARITONE", "SETTINGS"}) {
+			Hit hit = hits.stream().filter(h -> h.label.equals("tab:" + t)).findFirst().orElse(null);
+			if (hit == null || hit.x1 > width) return false;
+		}
+		return search.getX() + search.getWidth() <= themeLeft();
+	}
+
 	public boolean testClick(String label) {
 		for (Hit hit : List.copyOf(hits)) {
 			if (hit.label.equals(label)) {

@@ -87,8 +87,9 @@ public final class UpdateCheck {
 	}
 
 	/**
-	 * At game start: an update downloaded last time that hasn't been swapped in yet (the game was killed, or the helper
-	 * couldn't run) is set to go in when this game closes; old leftovers are cleared away.
+	 * At game start: clears away half-downloads, and updates that are no longer newer than what's running (or that
+	 * aren't wanted any more). An update downloaded last time that's still newer is kept: the check checks it against
+	 * GitHub again before it's set to go in.
 	 */
 	public static void init() {
 		Path jar = ownJar();
@@ -98,11 +99,8 @@ public final class UpdateCheck {
 				String n = f.getFileName().toString();
 				if (!n.startsWith(FILE_PREFIX) || !(n.endsWith(".jar" + UPDATE_SUFFIX) || n.endsWith(".jar.part"))) continue;
 				String version = versionOf(n);
-				if (n.endsWith(UPDATE_SUFFIX) && NNConfig.INSTANCE.checkUpdates && version != null && newer(version, current()) && !armed) {
-					arm(jar, f, f.resolveSibling(n.substring(0, n.length() - UPDATE_SUFFIX.length())));
-				} else {
-					Files.deleteIfExists(f);
-				}
+				boolean keep = n.endsWith(UPDATE_SUFFIX) && NNConfig.INSTANCE.checkUpdates && version != null && newer(version, current());
+				if (!keep) Files.deleteIfExists(f);
 			}
 		} catch (IOException e) {
 			NaughtyOrNiceClient.LOGGER.debug("Couldn't look for a downloaded update: {}", e.toString());
@@ -133,6 +131,7 @@ public final class UpdateCheck {
 		String before = NNConfig.INSTANCE.lastVersion;
 		if (!now.equals(before)) {
 			NNConfig.INSTANCE.lastVersion = now;
+			NNConfig.INSTANCE.updateTries = 0;
 			NNConfig.save();
 			if (!before.isEmpty() && newer(now, before)) {
 				told = true;
@@ -166,7 +165,15 @@ public final class UpdateCheck {
 		Path update = jar.resolveSibling(release.jarName + UPDATE_SUFFIX);
 		if (armed) return;
 		try {
-			if (!(Files.isRegularFile(update) && verify(update, release.sha256, MOD_ID, release.version))) download(release, update, MOD_ID);
+			if (Files.isRegularFile(update) && verify(update, release.sha256, MOD_ID, release.version)) {
+				// Downloaded in an earlier game but never put in (the game was killed, or the helper couldn't run).
+				// Twice in a row means it can't on this computer: say so, with a download link, rather than keep quiet.
+				NNConfig.INSTANCE.updateTries++;
+				NNConfig.save();
+				if (NNConfig.INSTANCE.updateTries >= 2) noteFor = release;
+			} else {
+				download(release, update, MOD_ID);
+			}
 			arm(jar, update, target);
 			NaughtyOrNiceClient.LOGGER.info("{} {} is downloaded and goes in when the game closes", NAME, release.version);
 		} catch (Exception e) {
