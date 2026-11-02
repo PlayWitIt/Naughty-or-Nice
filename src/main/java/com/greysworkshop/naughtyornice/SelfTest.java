@@ -1246,6 +1246,10 @@ public final class SelfTest {
 				check("hours not seen enough aren't guessed", act.average(ServerActivity.cell(java.time.DayOfWeek.WEDNESDAY, 2)) < 0);
 				check("newer versions are told apart", UpdateCheck.newer("1.10.0", "1.9.2") && !UpdateCheck.newer("1.5.0", "1.5.0")
 						&& !UpdateCheck.newer("1.4.9", "1.5.0") && UpdateCheck.newer("1.5.1", "1.5"));
+				// B (Baritone panel) and N (open) share letters with F3+B and F3+N, which only act while F3 is held: no warning.
+				check("F3 combos and JEI keys aren't key clashes", NaughtyOrNiceClient.neverClashes("key.debug.showHitboxes")
+						&& NaughtyOrNiceClient.neverClashes("key.jei.showRecipe") && !NaughtyOrNiceClient.neverClashes("key.tradeseeker.menu")
+						&& NaughtyOrNiceClient.keyClashes(client.options.allKeys).stream().noneMatch(p -> p[1].getId().startsWith("key.debug.")));
 				client.setScreen(new ShopScreen(ShopScreen.Tab.ACTIVITY, null));
 			}
 			case 1048 -> screenshot(client, "52_activity");

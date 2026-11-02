@@ -310,21 +310,39 @@ public class NaughtyOrNiceClient implements ClientModInitializer {
 
 	private boolean keysChecked;
 
+	/**
+	 * Keys that share a letter with ours without both acting: the F3 combos (key.debug.*, e.g. F3+B for hitboxes) only
+	 * work while F3 is held, and JEI's keys only work in its recipe screens.
+	 */
+	static boolean neverClashes(String id) {
+		return id.startsWith("key.debug.") || id.startsWith("key.jei.");
+	}
+
 	/** Once a game: if a key of ours is also bound to something else (another mod's), both would act at once. Say so. */
 	private static void warnKeyClashes(MinecraftClient client) {
-		KeyBinding[] all = client.options.allKeys;
+		for (KeyBinding[] pair : keyClashes(client.options.allKeys)) {
+			KeyBinding ours = pair[0], other = pair[1];
+			Alerts.chat(Text.literal("Key clash: ").formatted(Formatting.GOLD)
+					.append(Text.translatable(ours.getId()).formatted(Formatting.YELLOW))
+					.append(Text.literal(" and ").formatted(Formatting.GRAY))
+					.append(Text.translatable(other.getId()).formatted(Formatting.YELLOW))
+					.append(Text.literal(" are both on " + ours.getBoundKeyLocalizedText().getString() + ". Change one in Options → Controls → Key Binds.").formatted(Formatting.GRAY)));
+		}
+	}
+
+	/** Each key of ours that shares its key with something that would act at the same time: {ours, theirs}, one per key of ours. */
+	static List<KeyBinding[]> keyClashes(KeyBinding[] all) {
+		List<KeyBinding[]> found = new ArrayList<>();
 		for (KeyBinding ours : all) {
 			if (!ours.getId().startsWith("key.naughtyornice.") || ours.isUnbound()) continue;
 			for (KeyBinding other : all) {
-				if (other == ours || other.isUnbound() || !other.getBoundKeyTranslationKey().equals(ours.getBoundKeyTranslationKey())) continue;
-				Alerts.chat(Text.literal("Key clash: ").formatted(Formatting.GOLD)
-						.append(Text.translatable(ours.getId()).formatted(Formatting.YELLOW))
-						.append(Text.literal(" and ").formatted(Formatting.GRAY))
-						.append(Text.translatable(other.getId()).formatted(Formatting.YELLOW))
-						.append(Text.literal(" are both on " + ours.getBoundKeyLocalizedText().getString() + ". Change one in Options → Controls → Key Binds.").formatted(Formatting.GRAY)));
+				if (other == ours || other.isUnbound() || neverClashes(other.getId())
+						|| !other.getBoundKeyTranslationKey().equals(ours.getBoundKeyTranslationKey())) continue;
+				found.add(new KeyBinding[] {ours, other});
 				break;
 			}
 		}
+		return found;
 	}
 
 	private void tick(MinecraftClient client) {
