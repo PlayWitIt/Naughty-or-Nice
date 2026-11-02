@@ -1495,6 +1495,7 @@ public final class SelfTest {
 				log("Radar says: " + (say == null ? "nothing" : say[0] + " / " + say[1]));
 				check("the radar finds the trail beside you and says how to follow it", say != null && say[0].startsWith("Trail:"));
 				screenshot(client, "59_trail_radar");
+				colourChecks();
 				String radarKey = NaughtyOrNiceClient.radarKeyName();
 				check("the radar's key isn't J, which Trade Seeker uses (" + radarKey + ")", !radarKey.equals("J") && !radarKey.equals("no key"));
 				// What's really on screen in the bottom left, not just what the line would say.
@@ -2717,6 +2718,40 @@ public final class SelfTest {
 	private static void screenshot(MinecraftClient client, String name) {
 		ScreenshotRecorder.saveScreenshot(client.runDirectory, "nn_" + name + ".png", client.getFramebuffer(), 1, message -> {});
 		log("Screenshot " + name);
+	}
+
+	/** Red green blue of a colour, for the checks below. */
+	private static int[] rgb(int c) {
+		return new int[] {(c >> 16) & 0xFF, (c >> 8) & 0xFF, c & 0xFF};
+	}
+
+	private static boolean reddish(int c) {
+		int[] x = rgb(c);
+		return x[0] > x[1] + 40 && x[0] > x[2] + 40;
+	}
+
+	private static boolean greenish(int c) {
+		int[] x = rgb(c);
+		return x[1] > x[0] + 40 && x[1] > x[2] + 20;
+	}
+
+	/**
+	 * Land is the same colours everywhere: the squares in the world (K), the radar and the Intel map all show new land
+	 * red and old land (someone was here) green, and nothing else on them is green.
+	 */
+	private static void colourChecks() {
+		check("the radar shows new and old land in the same colours as the squares in the world (K)",
+				(TrailRadar.FRESH & 0xFFFFFF) == ChunkOverlay.FRESH && (TrailRadar.OLD & 0xFFFFFF) == ChunkOverlay.OLD
+						&& (TrailRadar.OLD_FAR & 0xFFFFFF) == ChunkOverlay.OLD && (TrailRadar.FRESH >>> 24) >= 0x80
+						&& reddish(ChunkOverlay.FRESH) && greenish(ChunkOverlay.OLD));
+		check("the radar's screen, rim, rings and sweep aren't green (green means someone was here)",
+				!greenish(TrailRadar.SCREEN) && !greenish(TrailRadar.RIM) && !greenish(TrailRadar.RING) && !greenish(TrailRadar.CROSS)
+						&& !greenish(TrailRadar.SWEEP));
+		check("the Intel map shows new land red, old land green, and bases not green",
+				reddish(ShopScreen.MAP_FRESH) && greenish(ShopScreen.MAP_OLD) && !greenish(ShopScreen.MAP_BASE)
+						&& (ShopScreen.MAP_TRAIL & 0xFFFFFF) == ChunkOverlay.TRAIL);
+		check("the heat map runs red (all new) to green (all old)",
+				reddish(ShopScreen.heatColor(0, 6)) && greenish(ShopScreen.heatColor(6, 0)) && !greenish(ShopScreen.heatColor(3, 3)) && !reddish(ShopScreen.heatColor(3, 3)));
 	}
 
 	/**

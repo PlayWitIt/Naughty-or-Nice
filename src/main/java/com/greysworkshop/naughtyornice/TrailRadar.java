@@ -19,9 +19,11 @@ import java.util.List;
 public final class TrailRadar {
 	/** Its diameter on screen for Small, Medium and Large. */
 	private static final int[] SIZES = {96, 128, 168};
-	private static final int SCREEN = 0xD00A140E, RIM = 0xFF3C6A4A, RING = 0x5050A070, CROSS = 0x2850A070,
-			OLD = 0xC040D060, OLD_FAR = 0x7040D060, FRESH = 0x14FFFFFF, TRAIL = 0xFF000000 | ChunkOverlay.TRAIL,
-			SWEEP = 0x3050FF80;
+	// The same colours as the squares in the world (K): red new land, green old land (someone was here), yellow trails.
+	// The screen itself is grey, so green only ever means old land.
+	static final int SCREEN = 0xD00C1014, RIM = 0xFF5A6470, RING = 0x50A0A8B0, CROSS = 0x28A0A8B0,
+			OLD = 0xC0000000 | ChunkOverlay.OLD, OLD_FAR = 0x70000000 | ChunkOverlay.OLD, FRESH = 0x90000000 | ChunkOverlay.FRESH,
+			TRAIL = 0xFF000000 | ChunkOverlay.TRAIL, SWEEP = 0x30FFFFFF;
 
 	/** The last analysis, refreshed by the watcher every two seconds. */
 	static List<int[]> patches = new ArrayList<>();
@@ -201,7 +203,7 @@ public final class TrailRadar {
 			small(context, font, line, x0 + size, ty, ts, context.getScaledWindowWidth() - 4);
 			ty += lh;
 		}
-		small(context, font, "§a■§7 someone was here  §6━§7 trail  §7◯ " + (int) (blocks / 2) + "m", x0 + size, ty + 2, ts * 0.9f, context.getScaledWindowWidth() - 4);
+		small(context, font, "§c■§7 new  §a■§7 someone was here  §e━§7 trail  §7◯ " + (int) (blocks / 2) + "m", x0 + size, ty + 2, ts * 0.9f, context.getScaledWindowWidth() - 4);
 	}
 
 	/** A spot in blocks from you, on screen: turned so ahead is up, scaled. */

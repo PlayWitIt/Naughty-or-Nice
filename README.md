@@ -231,10 +231,10 @@ The **trail radar** is a round radar screen on the right, titled "TRAIL RADAR". 
 it (or `/nn radar`). With Base Insurance's minimap on as well, the radar sits just below it. It's off until you turn it on,
 and Settings → Chunk trails sets its size (Small, Medium, Large). It turns with you, so ahead is always up, with N, E, S
 and W on the rim and rings for distance, out to your render distance. It shows no terrain (that's what the map is for),
-only what it's for:
+only what it's for, in the same colours as the squares in the world (K) and the Intel map:
 - **Green squares: someone was here**: chunks loaded before you got there.
-- **Dark: new land**, generated just now as you got there. Nobody had loaded it before.
-- **Amber line**: a **trail**, a long, narrow strip of old land with fresh land on both sides. That's someone's path.
+- **Red squares: new land**, generated just now as you got there. Nobody had loaded it before.
+- **Yellow line**: a **trail**, a long, narrow strip of old land with new land on both sides. That's someone's path.
   The **arrow** is on the end further from spawn (when one end clearly is). That's a fact about the trail, not a
   promise of a base: it's where they went, or came from.
 - **Told as you go**: no line stays on screen. When new chunks come up ahead while you're in old land, or old chunks
@@ -248,7 +248,7 @@ When a new trail turns up you get a chat note with its far end. Every trail is k
 with Copy for the far end, and its far end is pinned on Base Insurance's map.
 
 **Chunks in the world** (**K**): every chunk that's been read is drawn as a flat square in the world, the same
-colours as the radar: fresh land blue, old land grey, and the chunks of a trail amber. They're drawn at your feet by
+colours as the radar: new land red, old land green, and the chunks of a trail yellow. They're drawn at your feet by
 default, or at a height you pick (Settings: "Chunks in the world are drawn at"), with the fill from outline only to
 60%.
 
@@ -260,8 +260,9 @@ what it is and when; click to copy its coordinates. The mouse's coordinates and 
 the corner.
 
 **Heat** turns the map into a heat map of where people have been: each area is coloured by how much of the land
-there is old, blue where it's all fresh, through yellow, to red where it's all old. Highways and the routes players
-fly come out as hot lines through cool fresh land; areas where little could be read are drawn fainter.
+there is old, the same way round as everywhere else: red where it's all new, through yellow, to green where it's all old.
+Highways and the routes players fly come out as green lines through red new land; areas where little could be read are
+drawn fainter.
 
 What the mod learns about land is kept per server (old land and the land you generated), so trails build up over many
 sessions instead of starting over.

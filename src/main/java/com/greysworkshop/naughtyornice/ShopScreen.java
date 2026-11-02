@@ -4300,7 +4300,7 @@ public class ShopScreen extends Screen {
 		int h = 116;
 		roundedBorder(context, x, y, w, h, CARD, c.chunkTrails ? NICE : BORDER);
 		context.drawText(textRenderer, Text.literal("Chunk trails").styled(s -> s.withBold(true)), x + 10, y + 7, TEXT, false);
-		textTrim(context, c.chunkTrails ? "On: in the world (K), new land is red, old land green (someone was there), trails yellow. The radar shows old land and trails."
+		textTrim(context, c.chunkTrails ? "On: in the world (K), new land is red, old land green (someone was there), trails yellow. The radar and the Intel map use the same colours."
 				: "Off: no chunks are read and nothing is drawn.", x + 10, y + 19, w - 20, c.chunkTrails ? NICE : MUTED);
 		int bx = x + 10, by = y + 33;
 		String main = c.chunkTrails ? "Turn chunk trails off" : "Turn chunk trails on";
@@ -4879,8 +4879,10 @@ public class ShopScreen extends Screen {
 		mapBuiltZ = mapZ;
 	}
 
-	private static final int MAP_BACK = 0xFF0E1216, MAP_FRESH = 0xFF1C3A63, MAP_OLD = 0xFF55595F, MAP_TRAIL = 0xFFFFB020, MAP_PLACE = 0xFFFF7A1A,
-			MAP_EVENT = 0xFFB070FF, MAP_BASE = 0xFF4CD39B;
+	// Land in the same colours as the squares in the world (K) and the radar: red new, green old, yellow trails (darker
+	// here, so places and events stand out on top). Bases are cyan, so green only ever means old land.
+	static final int MAP_BACK = 0xFF0E1216, MAP_FRESH = 0xFF5A1F22, MAP_OLD = 0xFF2F6B3C, MAP_TRAIL = 0xFF000000 | ChunkOverlay.TRAIL,
+			MAP_PLACE = 0xFFFF7A1A, MAP_EVENT = 0xFFB070FF, MAP_BASE = 0xFF4CC8FF;
 
 	private void renderIntelMap(DrawContext context, int mouseX, int mouseY, int x, int y, int w, int h) {
 		if (mapDim == null) centreMap();
@@ -4906,8 +4908,8 @@ public class ShopScreen extends Screen {
 			mapCells = null;
 		});
 		cw += hw + 4;
-		String key = mapHeat ? "§9■§r all fresh  §e■§r some old  §c■§r all old  §6━§r trail  §6◆§r place  §a□§r base"
-				: "§9■§r new to you  §7■§r loaded before  §6━§r trail  §6◆§r place  §d●§r event  §a□§r base";
+		String key = mapHeat ? "§c■§r all new  §e■§r some old  §a■§r all old  §e━§r trail  §6◆§r place  §b□§r base"
+				: "§c■§r new  §a■§r someone was here  §e━§r trail  §6◆§r place  §d●§r event  §b□§r base";
 		textTrim(context, key, bx + cw + 18, y + 3, x + w - (bx + cw + 18), MUTED);
 		y += 20;
 		h -= 20;
@@ -5051,24 +5053,25 @@ public class ShopScreen extends Screen {
 	}
 
 	/**
-	 * How much of an area is old land, as a colour: blue where it's all fresh, through yellow, to red where it's all
-	 * old. Fainter where few chunks there could be told (so a guess from one chunk doesn't shout).
+	 * How much of an area is old land, as a colour, the same way round as everywhere else: red where it's all new,
+	 * through yellow, to green where it's all old. Fainter where few chunks there could be told (so a guess from one
+	 * chunk doesn't shout).
 	 */
-	private static int heatColor(int old, int fresh) {
+	static int heatColor(int old, int fresh) {
 		int known = old + fresh;
 		if (known == 0) return 0;
 		double share = old / (double) known;
 		int r, g, b;
 		if (share < 0.5) {
 			double t = share * 2;
-			r = (int) (40 + t * (240 - 40));
-			g = (int) (90 + t * (200 - 90));
-			b = (int) (200 - t * 170);
+			r = (int) (220 + t * (235 - 220));
+			g = (int) (60 + t * (205 - 60));
+			b = (int) (60 - t * (60 - 40));
 		} else {
 			double t = (share - 0.5) * 2;
-			r = (int) (240 + t * 10);
-			g = (int) (200 - t * 160);
-			b = (int) (30 + t * 10);
+			r = (int) (235 - t * (235 - 60));
+			g = (int) (205 + t * (210 - 205));
+			b = (int) (40 + t * (90 - 40));
 		}
 		int alpha = (int) (90 + Math.min(1, known / 6.0) * 150);
 		return alpha << 24 | r << 16 | g << 8 | b;
