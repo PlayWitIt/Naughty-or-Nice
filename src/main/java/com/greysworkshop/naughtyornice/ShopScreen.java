@@ -3981,7 +3981,19 @@ public class ShopScreen extends Screen {
 			boolean good = st.startsWith("Caught") || st.startsWith("Up to date") || st.startsWith("Connected");
 			boolean bad = st.startsWith("Couldn't") || st.startsWith("Discord") || st.startsWith("No such") || st.startsWith("Paste")
 					|| st.contains("refused") || st.contains("can't");
-			textTrim(context, st, 8, top + 5, width - 16 - nw - 6, good ? NICE : bad ? LOOK : MUTED);
+			// When a catch-up has saved a debug file (e.g. the relay's format wasn't understood), a way to open it to send over.
+			int dbgW = DiscordFeed.debugFile != null ? textRenderer.getWidth("Debug file") + 12 : 0;
+			textTrim(context, st, 8, top + 5, width - 16 - nw - dbgW - 12, good ? NICE : bad ? LOOK : MUTED);
+			if (dbgW > 0) {
+				pill(context, mouseX, mouseY, width - 8 - nw - 6 - dbgW, top + 2, dbgW, 14, "Debug file", SOFT, BORDER, TEXT, "chat-discord-debug", () -> {
+					try {
+						Util.getOperatingSystem().open(DiscordFeed.debugFile.getParent().toFile());
+						flash("Opened the exports folder — send discord-debug.txt over for the relay format", NICE, null);
+					} catch (RuntimeException e) {
+						flash("Couldn't open the folder", LOOK, null);
+					}
+				});
+			}
 			pill(context, mouseX, mouseY, width - 8 - nw, top + 2, nw, 14, now, busy ? SOFT : YELLOW, busy ? BORDER : YELLOW_EDGE,
 					busy ? MUTED : BUTTON_TEXT, "chat-discord-now", busy ? () -> {} : this::discordCatchUpNow);
 			context.fill(0, top + bh, width, top + bh + 1, BORDER);
