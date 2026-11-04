@@ -1511,6 +1511,9 @@ public final class SelfTest {
 				long now = 1_700_000_000_000L;
 				long twoYears = JoinDates.parseDate("first seen 2 years ago", now);
 				check("'2 years ago' is about two years back", Math.abs(now - twoYears - 2L * 365 * 86_400_000L) < 3L * 86_400_000L);
+				long combo = JoinDates.parseDate("joined 2 years, 3 months and 4 days ago", now);
+				long expect = now - Math.round(2 * 365.25 + 3 * 30.44 + 4) * 86_400_000L;
+				check("combined '2 years, 3 months and 4 days ago' is summed", Math.abs(combo - expect) < 86_400_000L);
 				check("a line with no date gives nothing", JoinDates.parseDate("Griefer_Gary is online now", now) == 0
 						&& JoinDates.parseDate("joined 1850-01-01", now) == 0);
 				// Pinned to a named player.

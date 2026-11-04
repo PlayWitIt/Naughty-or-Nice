@@ -148,7 +148,7 @@ public final class JoinDates {
 	private static final Pattern MONTH_DMY = Pattern.compile("\\b(\\d{1,2})(?:st|nd|rd|th)?\\s+([A-Za-z]{3,9})\\.?,?\\s+(\\d{4})\\b");
 	private static final Pattern MONTH_MDY = Pattern.compile("\\b([A-Za-z]{3,9})\\.?\\s+(\\d{1,2})(?:st|nd|rd|th)?,?\\s+(\\d{4})\\b");
 	private static final Pattern NUMERIC = Pattern.compile("\\b(\\d{1,2})[/.\\-](\\d{1,2})[/.\\-](\\d{2,4})\\b");
-	private static final Pattern RELATIVE = Pattern.compile("(\\d+)\\s*(year|yr|month|week|day|hour|minute|min)s?\\s+ago");
+	private static final Pattern RELATIVE_PART = Pattern.compile("(\\d+)\\s*(year|yr|month|mo|week|wk|day|hour|hr|minute|min)s?\\b");
 	/** Words that mark a line as being about when someone joined, so an unasked line can be trusted. */
 	private static final Pattern JOIN_WORDS = Pattern.compile("(?i)\\b(join|joined|first\\s*(seen|join|login|played)|member\\s*since|playing\\s*since|registered|first\\s*time|since)\\b");
 
@@ -196,16 +196,27 @@ public final class JoinDates {
 			long t = ymd(y, mon, day);
 			if (t != 0) return t;
 		}
-		if ((m = RELATIVE.matcher(line.toLowerCase(Locale.ROOT))).find()) {
-			long n = Long.parseLong(m.group(1));
-			long days = switch (m.group(2)) {
-				case "year", "yr" -> Math.round(n * 365.25);
-				case "month" -> Math.round(n * 30.44);
-				case "week" -> n * 7;
-				case "day" -> n;
-				default -> 0; // hours/minutes: same day
-			};
-			return now - days * 86_400_000L;
+		// Relative: "2 years, 3 months and 4 days ago" — sum every number+unit that comes before "ago".
+		String lower = line.toLowerCase(Locale.ROOT);
+		int ago = lower.indexOf(" ago");
+		if (ago < 0 && lower.endsWith("ago")) ago = lower.length() - 3;
+		if (ago >= 0) {
+			String span = lower.substring(Math.max(0, ago - 60), ago);
+			Matcher r = RELATIVE_PART.matcher(span);
+			double days = 0;
+			boolean any = false;
+			while (r.find()) {
+				any = true;
+				long n = Long.parseLong(r.group(1));
+				days += switch (r.group(2)) {
+					case "year", "yr" -> n * 365.25;
+					case "month", "mo" -> n * 30.44;
+					case "week", "wk" -> n * 7;
+					case "day" -> n;
+					default -> 0; // hours/minutes: same day
+				};
+			}
+			if (any) return now - Math.round(days) * 86_400_000L;
 		}
 		return 0;
 	}
