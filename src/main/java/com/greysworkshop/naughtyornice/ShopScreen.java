@@ -242,6 +242,8 @@ public class ShopScreen extends Screen {
 	private TextFieldWidget phoneField;
 	/** Discord catch-up: the relay channel's link, and where a token is pasted (it's saved and cleared at once). */
 	private TextFieldWidget discordChannelField, discordTokenField;
+	private TextFieldWidget joinCmdField;
+	private int joinCmdTop = -1000;
 	private int discordChannelTop = -1000, discordTokenTop = -1000;
 	private String discordStatus;
 	/** The result of the last data export (where the file went), shown on the card. */
@@ -659,7 +661,19 @@ public class ShopScreen extends Screen {
 			discordStatus = text.isBlank() ? null : DiscordFeed.channelId(text).isEmpty() ? "That isn't a Discord channel link yet." : "Got the channel. Check it to be sure.";
 		});
 		addDrawableChild(discordChannelField);
-		discordTokenField = new Box(textRenderer, 0, -100, 100, 10, Text.literal("Token"));
+		joinCmdField = new Box(textRenderer, 0, -100, 100, 10, Text.literal("Join-date command"));
+		joinCmdField.setDrawsBackground(false);
+		joinCmdField.setEditableColor(TEXT);
+		joinCmdField.setTextShadow(false);
+		joinCmdField.setMaxLength(80);
+		joinCmdField.setPlaceholder(Text.literal("/joindate {player}").withColor(MUTED));
+		joinCmdField.setText(NNConfig.INSTANCE.joinDateCommand);
+		joinCmdField.setChangedListener(text -> {
+			NNConfig.INSTANCE.joinDateCommand = text;
+			NNConfig.save();
+		});
+		addDrawableChild(joinCmdField);
+				discordTokenField = new Box(textRenderer, 0, -100, 100, 10, Text.literal("Token"));
 		discordTokenField.setDrawsBackground(false);
 		discordTokenField.setEditableColor(TEXT);
 		discordTokenField.setTextShadow(false);
@@ -1302,6 +1316,7 @@ public class ShopScreen extends Screen {
 		circleField.setVisible(tab == Tab.SETTINGS && circleFieldTop >= BODY && circleFieldTop + 16 <= height);
 		discordChannelField.setVisible(tab == Tab.SETTINGS && discordChannelTop >= BODY && discordChannelTop + 16 <= height && !ModsPanel.streamSafe());
 		discordTokenField.setVisible(tab == Tab.SETTINGS && discordTokenTop >= BODY && discordTokenTop + 16 <= height && !ModsPanel.streamSafe());
+		joinCmdField.setVisible(tab == Tab.SETTINGS && joinCmdTop >= BODY && joinCmdTop + 16 <= height);
 		boolean modal = modal();
 		super.render(context, modal ? -1000 : mouseX, modal ? -1000 : mouseY, delta);
 		if (adding) {
@@ -6007,7 +6022,10 @@ public class ShopScreen extends Screen {
 		List<net.minecraft.text.OrderedText> lines = textRenderer.wrapLines(Text.literal(about), w - 20);
 		int people = mod.ledger.all().size();
 		String where = dataStatus != null ? dataStatus : "Files go to config/naughtyornice/exports. " + people + (people == 1 ? " player" : " players") + " on this server.";
-		int h = 22 + lines.size() * 10 + 6 + 18 + 12 + 6;
+		int known = (int) mod.ledger.all().stream().filter(p -> p.joinDate != 0).count();
+		String joinLine = JoinDates.progress() != null ? JoinDates.progress()
+				: "Join dates: " + known + " of " + people + " known. Runs the command below, one player at a time (needs you on the server).";
+		int h = 22 + lines.size() * 10 + 6 + 18 + 14 + 18 + 16 + 12 + 10;
 		roundedBorder(context, x, y, w, h, CARD, BORDER);
 		context.drawText(textRenderer, Text.literal("Your data").styled(st -> st.withBold(true)), x + 10, y + 7, TEXT, false);
 		int ty = y + 20;
@@ -6030,9 +6048,38 @@ public class ShopScreen extends Screen {
 			int ow = textRenderer.getWidth(open) + 14;
 			pill(context, mouseX, mouseY, bx, ty, ow, 14, open, SOFT, BORDER, TEXT, "data-folder", () -> DiscordFeed.openBrowser(dataFolder.toUri().toString()));
 		}
-		ty += 18;
+		ty += 16;
 		textTrim(context, where, x + 10, ty, w - 20, dataStatus != null ? (dataStatusColor != 0 ? dataStatusColor : NICE) : MUTED);
+		ty += 14;
+		// Join dates: the server command (editable, so it works on any server) and a button that fetches them all.
+		context.fill(x + 6, ty, x + w - 6, ty + 1, BORDER);
+		ty += 6;
+		int fetchW = textRenderer.getWidth("Fetch join dates") + 14;
+		roundedBorder(context, x + 10, ty, w - 20 - fetchW - 6, 16, FIELD, joinCmdField.isFocused() ? 0xFFE77600 : INPUT_BORDER);
+		joinCmdField.setX(x + 14);
+		joinCmdField.setY(ty + 4);
+		joinCmdField.setWidth(w - 28 - fetchW - 6);
+		joinCmdTop = ty;
+		hit(x + 10, ty, w - 20 - fetchW - 6, 16, "join-cmd", () -> setFocused(joinCmdField));
+		boolean busy = JoinDates.running();
+		pill(context, mouseX, mouseY, x + w - 10 - fetchW, ty, fetchW, 16, busy ? "Stop" : "Fetch join dates", busy ? SOFT : YELLOW,
+				busy ? BORDER : YELLOW_EDGE, busy ? TEXT : BUTTON_TEXT, "join-fetch", this::fetchJoinDates);
+		ty += 20;
+		textTrim(context, joinLine, x + 10, ty, w - 20, known == people && people > 0 ? NICE : MUTED);
 		return y + h;
+	}
+
+	private void fetchJoinDates() {
+		if (JoinDates.running()) {
+			JoinDates.reset();
+			JoinDates.status = "Stopped.";
+			return;
+		}
+		if (client == null || client.getNetworkHandler() == null) {
+			JoinDates.status = "Join the server first: the command is sent to it.";
+			return;
+		}
+		JoinDates.fetchAll(client, mod.ledger);
 	}
 
 	private java.nio.file.Path dataFolder;

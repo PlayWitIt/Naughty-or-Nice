@@ -1500,6 +1500,33 @@ public final class SelfTest {
 				ledger.switchTo(offlineReturnKey);
 				check("after offline viewing, the live server's lists are back", ledger.byName(GRIEFER) != null);
 			}
+			// Join dates: read out of any server's reply format, and pinned to the right player.
+			case 1118 -> {
+				long y2021 = JoinDates.parseDate("2021-03-14", 0L);
+				check("ISO date read", y2021 == java.time.LocalDate.of(2021, 3, 14).atStartOfDay(java.time.ZoneOffset.UTC).toInstant().toEpochMilli());
+				check("'14 March 2021' read", JoinDates.parseDate("first joined: 14 March 2021", 0L) == y2021);
+				check("'March 14, 2021' read", JoinDates.parseDate("Member since March 14, 2021.", 0L) == y2021);
+				check("'14/03/2021' read as day/month (14 can't be a month)", JoinDates.parseDate("joined 14/03/2021", 0L) == y2021);
+				check("'03/14/2021' read as month/day", JoinDates.parseDate("joined 03/14/2021", 0L) == y2021);
+				long now = 1_700_000_000_000L;
+				long twoYears = JoinDates.parseDate("first seen 2 years ago", now);
+				check("'2 years ago' is about two years back", Math.abs(now - twoYears - 2L * 365 * 86_400_000L) < 3L * 86_400_000L);
+				check("a line with no date gives nothing", JoinDates.parseDate("Griefer_Gary is online now", now) == 0
+						&& JoinDates.parseDate("joined 1850-01-01", now) == 0);
+				// Pinned to a named player.
+				JoinDates.reset();
+				ledger.getOrCreate(id(GRIEFER), GRIEFER);
+				boolean took = JoinDates.onMessage(client, ledger, GRIEFER + " first joined on 2019-06-01.");
+				check("a reply naming the player sets their join date", took && ledger.byName(GRIEFER).joinDate
+						== java.time.LocalDate.of(2019, 6, 1).atStartOfDay(java.time.ZoneOffset.UTC).toInstant().toEpochMilli());
+				// Pinned to the player we just asked about, even when the reply doesn't name them.
+				Profile rick = ledger.getOrCreate(id("RandomRick"), "RandomRick");
+				rick.joinDate = 0;
+				JoinDates.testAwait(rick.id);
+				check("an unnamed reply is pinned to the player we asked about", JoinDates.onMessage(client, ledger, "Joined: January 2, 2020")
+						&& rick.joinDate == java.time.LocalDate.of(2020, 1, 2).atStartOfDay(java.time.ZoneOffset.UTC).toInstant().toEpochMilli());
+				JoinDates.reset();
+			}
 			// Export all this server's data as JSON for analysis: complete and exactly as stored.
 			case 1119 -> {
 				String json = DataExport.json(ledger, mod.chatLogger);
@@ -1520,6 +1547,8 @@ public final class SelfTest {
 						&& gary.getAsJsonObject("stats").get("deaths").getAsInt() == real.stats.deaths
 						&& gary.get("firstSeen").getAsLong() == real.firstSeen);
 				check("the chat feed and server activity are included", root.has("chat") && root.has("serverActivity") && root.has("seenTogether"));
+				check("a known join date is in the export", gary != null && gary.get("joinDate").getAsLong() == ledger.byName(GRIEFER).joinDate
+						&& ledger.byName(GRIEFER).joinDate > 0);
 				// It really writes to a file too.
 				try {
 					java.nio.file.Path file = DataExport.write(ledger, mod.chatLogger);

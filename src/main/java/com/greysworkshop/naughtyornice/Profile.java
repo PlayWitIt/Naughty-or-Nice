@@ -91,6 +91,10 @@ public final class Profile {
 	public List<String> groups = new ArrayList<>();
 	public long firstSeen;
 	public long lastSeen;
+	/** The player's join date on the server, if read from a server command (0 = not known). Not the same as firstSeen. */
+	public long joinDate;
+	/** The exact line the join date was read from, so you can see where it came from. */
+	public String joinDateText = "";
 	/** When the verdict was last changed. */
 	public long listedAt;
 	public int secondsNear;

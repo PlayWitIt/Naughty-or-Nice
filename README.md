@@ -214,8 +214,14 @@ logins, kills and deaths, ping, skins, chat counts and words, who they mention, 
 posted, topics, death causes), plus the whole chat feed, who's been seen together, and how busy the server is when — as
 one JSON file in `config/naughtyornice/exports/`. It's the data exactly as it's stored, so nothing is rounded or left
 out, which makes it easy to hand to someone (or an AI) to go through. **Copy all data** puts the same JSON on your
-clipboard for smaller servers. Times are Unix milliseconds; `firstSeen` is when you first saw a player (a player's
-account join date is only included if the server offers a command for it).
+clipboard for smaller servers. Times are Unix milliseconds; `firstSeen` is when you first saw a player.
+
+**Join dates.** Minecraft doesn't tell you when a player first joined the server, but many servers have a command that
+does (Constantiam's is `/joindate <player>`). In the **Your data** card, the command is editable — set it to whatever
+your server uses — and **Fetch join dates** runs it for every player, one at a time so you're never kicked for spam,
+and reads the date out of the reply (ISO dates, "14 March 2021", "Mar 14, 2021", "03/14/2021" and "joined 2 years ago"
+are all understood, so it isn't tied to one server). You need to be on the server for this. The dates land on each
+player and go into the export.
 
 ## Chat log
 Everyone on your Nice, Look Into or Naughty list has their chat logged. When they say something, a conversation opens on their page:

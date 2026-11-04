@@ -341,6 +341,8 @@ public final class Watcher {
 		String raw = message.getString();
 		// Messages from this mod and its companions, shown only to you.
 		if (raw.startsWith("[Naughty/Nice] ") || raw.contains("[Base Insurance] ") || raw.contains("[Hoard Eye] ")) return;
+		// A server reply to our join-date command (one player at a time); pins the date to that player.
+		if (JoinDates.onMessage(client, ledger, raw)) return;
 		if (message.getContent() instanceof TranslatableTextContent t) {
 			String key = t.getKey();
 			Object[] args = t.getArgs();

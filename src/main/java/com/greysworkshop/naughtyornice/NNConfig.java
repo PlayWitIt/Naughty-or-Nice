@@ -19,6 +19,8 @@ public final class NNConfig {
 
 	/** The whole mod on or off (the Mods panel's first switch). Off: it watches, records and shows nothing; your lists are kept. */
 	public boolean enabled = true;
+	/** The server command that shows a player\'s join date; {player} is filled in. Edit it to fit your server. */
+	public String joinDateCommand = "/joindate {player}";
 
 	/** Whether the mod is on (see {@link #enabled}). */
 	public static boolean on() {
