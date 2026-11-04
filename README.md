@@ -15,8 +15,9 @@ By **PlayWit Creations**.
 Optional: [Mod Menu](https://modrinth.com/mod/modmenu) for a settings button, and Base Insurance for base-aware
 features. To share lists with a friend who has the mod, use **⇄ Share** in the lists screen.
 
-**Mods panel:** press **Right Shift** on the title screen, the server or world list, or the pause menu, or click
-**Mods panel** at the top left of the title screen. It shows the main switches of every PlayWit mod you have (Naughty or Nice,
+**PlayWit Hub:** press **Right Shift** on the title screen, the server or world list, or the pause menu, or click
+**PlayWit Hub** at the top of each PlayWit mod's settings (from Mod Menu or in game). Without Mod Menu there's also a
+**PlayWit Hub** button at the top left of the title screen. It isn't a list of every mod (that's Mod Menu); it shows the main switches of every PlayWit mod you have (Naughty or Nice,
 Base Insurance, Hoard Eye), so you can turn something off before you join a world, and opens each one's full settings.
 It also has:
 - **Profiles:** save how your switches are set under a name ("Anarchy", "SMP") and pick the servers it's for. Joining one
@@ -39,7 +40,7 @@ It also has:
   sure yet, keep an eye on them) and **✖ Naughty**. Click again to take them off. Moving someone who's already on a list
   (or taking them off) asks first: the button says **Sure?** and the banner asks with a **Yes**, so a slip of the mouse
   doesn't do it. Every change can be undone from the banner at the top.
-- **Naughty or Nice on/off:** the first switch in Settings (and in the Mods panel) turns the whole mod off. Your lists
+- **Naughty or Nice on/off:** the first switch in Settings (and in PlayWit Hub) turns the whole mod off. Your lists
   are kept.
 - **+ Add players** opens a panel where you type one or more names (spaces or commas between them), pick from
   suggestions, add an optional detail and group, and press **Nice list**, **Look Into** or **Naughty list**. Works for
@@ -525,7 +526,7 @@ is also written to a text file a day in `config/naughtyornice/chatlogs/<server>/
 
 ## Building
 Requires JDK 21. Run `./gradlew build`; the jar goes to `build/libs/`.
-`./gradlew runPanelTest` tests the Mods panel with Base Insurance and Hoard Eye beside it (their jars in run-panel/mods).
+`./gradlew runPanelTest` tests PlayWit Hub with Base Insurance and Hoard Eye beside it (their jars in run-panel/mods).
 `./gradlew testIntel` checks the chat detectors (coordinates, topics, trash talk) against 146 lines in a few seconds.
 `./gradlew runSelfTest` runs a scripted in-game test (about 240 checks) that spawns a fake griefer and saves screenshots to
 `run/screenshots/`.

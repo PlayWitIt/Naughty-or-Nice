@@ -10,7 +10,7 @@ import net.minecraft.client.util.ScreenshotRecorder;
 import java.util.List;
 
 /**
- * Development test of the mods panel on the title screen (./gradlew runPanelTest), with Base Insurance and Container
+ * Development test of PlayWit Hub (the mods panel) on the title screen (./gradlew runPanelTest), with Base Insurance and Container
  * Peek installed beside this mod: the button is there once, every mod is listed, switches flip and save, a mod's
  * main switch shows it as off, and each mod's full settings open and come back to the panel. Not shipped.
  */
@@ -46,8 +46,12 @@ public final class SelfTestPanel {
 	private static void step(MinecraftClient client, int n) {
 		switch (n) {
 			case 0 -> {
-				long buttons = Screens.getButtons(title).stream().filter(b -> b.getMessage().getString().equals("Mods panel")).count();
-				check("one Mods panel button on the title screen (" + buttons + ")", buttons == 1);
+				// With Mod Menu (it's in the development game) the hub is linked from each mod's settings instead.
+				boolean modMenu = net.fabricmc.loader.api.FabricLoader.getInstance().isModLoaded("modmenu");
+				long buttons = Screens.getButtons(title).stream().filter(b -> b.getMessage().getString().equals(ModsPanel.NAME)).count();
+				long old = Screens.getButtons(title).stream().filter(b -> b.getMessage().getString().equals("Mods panel")).count();
+				check((modMenu ? "no" : "one") + " PlayWit Hub button on the title screen with" + (modMenu ? "" : "out") + " Mod Menu (" + buttons + ")",
+						buttons == (modMenu ? 0 : 1) && old == 0);
 				shot(client, "title");
 			}
 			case 1 -> {
@@ -146,6 +150,27 @@ public final class SelfTestPanel {
 			case 30 -> {
 				panel.close();
 				check("Esc goes back to the title screen", client.currentScreen == title);
+			}
+			// Each mod's settings as Mod Menu opens them link to the hub, and the hub comes back to them.
+			case 31 -> {
+				client.setScreen(new ModMenuIntegration().getModConfigScreenFactory().create(title));
+				check("Naughty or Nice settings open from Mod Menu", client.currentScreen instanceof ShopScreen);
+			}
+			case 32 -> {
+				shot(client, "nn_modmenu");
+				Screen settings = client.currentScreen;
+				check("Naughty or Nice settings link to the hub", settings instanceof ShopScreen s && s.testClick("hub") && ModsPanel.isHub(client.currentScreen));
+				hubBack(client, settings, "nn");
+			}
+			case 33 -> fromModMenu(client, "baseinsurance");
+			case 34 -> shot(client, "bi_modmenu");
+			case 35 -> hubFromSettings(client, "baseinsurance");
+			case 36 -> fromModMenu(client, "hoardeye");
+			case 37 -> shot(client, "cp_modmenu");
+			case 38 -> hubFromSettings(client, "hoardeye");
+			case 39 -> {
+				client.currentScreen.close();
+				check("and Done goes back to the title screen", client.currentScreen == title);
 			}
 			default -> finish(client);
 		}
@@ -319,9 +344,35 @@ public final class SelfTestPanel {
 		check(id + " settings open", client.currentScreen != panel && client.currentScreen != null);
 	}
 
+	private static void fromModMenu(MinecraftClient client, String id) {
+		client.setScreen(ModsPanel.testSettings(id, title));
+		check(id + " settings open from Mod Menu", client.currentScreen != null && client.currentScreen != title);
+	}
+
+	private static void hubFromSettings(MinecraftClient client, String id) {
+		Screen settings = client.currentScreen;
+		var link = Screens.getButtons(settings).stream().filter(b -> b.getMessage().getString().equals(ModsPanel.NAME)).findFirst().orElse(null);
+		check(id + " settings link to the hub", link != null);
+		if (link == null) return;
+		((net.minecraft.client.gui.widget.PressableWidget) link).onPress(null);
+		check(id + "'s link opens the hub", ModsPanel.isHub(client.currentScreen));
+		hubBack(client, settings, id);
+	}
+
+	private static void hubBack(MinecraftClient client, Screen settings, String id) {
+		if (!ModsPanel.isHub(client.currentScreen)) return;
+		// The hub drawn by whichever mod's copy is newest, not necessarily this one's.
+		Screen hub = client.currentScreen;
+		check(id + ": it's the same hub the other buttons open (" + hub.getClass().getName() + ")", hub.getClass() == ModsPanel.testOwnerClass());
+		hub.close();
+		check(id + ": closing the hub goes back to the settings", client.currentScreen == settings);
+	}
+
 	private static void back(MinecraftClient client, String name) {
 		shot(client, name);
 		Screen s = client.currentScreen;
+		check(name + " opened from the hub has no link back to it", Screens.getButtons(s).stream().noneMatch(b -> b.getMessage().getString().equals(ModsPanel.NAME))
+				&& !(s instanceof ShopScreen shop && shop.testClick("hub")));
 		s.close();
 		check(name + " closes back to the panel", client.currentScreen == panel);
 	}

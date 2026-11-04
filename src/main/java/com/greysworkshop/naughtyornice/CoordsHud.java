@@ -135,7 +135,7 @@ public final class CoordsHud {
 
 	/** Why the coordinates aren't on screen right now, or null when they are. */
 	public static String hiddenReason(MinecraftClient client) {
-		if (!NNConfig.on()) return "Naughty or Nice is switched off (Mods panel, Right Shift on the pause menu).";
+		if (!NNConfig.on()) return "Naughty or Nice is switched off (PlayWit Hub: Right Shift on the pause menu).";
 		if (!NNConfig.INSTANCE.showCoords) return "the My coordinates setting is off.";
 		if (ModsPanel.streamSafe()) return "stream-safe mode is on. Press F7 to turn it off.";
 		if (client.options.hudHidden) return "the HUD is hidden (F1).";

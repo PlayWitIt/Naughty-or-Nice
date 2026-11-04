@@ -381,7 +381,7 @@ public class ShopScreen extends Screen {
 	/** Where Esc goes back to (the game when there's none). */
 	private net.minecraft.client.gui.screen.Screen parent;
 
-	/** Goes back to {@code parent} when closed, e.g. the mods panel on the title screen. */
+	/** Goes back to {@code parent} when closed, e.g. PlayWit Hub on the title screen. */
 	public ShopScreen withParent(net.minecraft.client.gui.screen.Screen parent) {
 		this.parent = parent;
 		return this;
@@ -4219,7 +4219,7 @@ public class ShopScreen extends Screen {
 			client.execute(this::clearAndInit);
 		}));
 		options.add(new Option("Naughty or Nice on", "Off: the mod watches, records and shows nothing (your lists, notes and recordings are kept). "
-				+ "Also in the Mods panel: Right Shift on the title screen.", () -> c.enabled, v -> c.enabled = v));
+				+ "Also in PlayWit Hub: Right Shift on the title screen, or the button at the top of Settings.", () -> c.enabled, v -> c.enabled = v));
 		options.add(new Option("Remember everyone you see", "Players you see nearby or on the tab list stay in your lists (Offline tab) after they log off.",
 				() -> c.rememberEveryone, v -> c.rememberEveryone = v));
 		options.add(new Option("Marks on nametags", "Green ✔, gold ? or red ✖ before listed players' names above their heads.", () -> c.nametagMarks, v -> c.nametagMarks = v));
@@ -4420,11 +4420,18 @@ public class ShopScreen extends Screen {
 		int y = y0;
 		context.enableScissor(0, BODY, width, height);
 		big(context, "Settings", x, y, TEXT, 1.4f);
+		// PlayWit Hub (switches, profiles and backups for all the PlayWit mods), unless this was opened from it.
+		int jEnd = x + w;
+		if (!ModsPanel.isHub(parent)) {
+			int hw = textRenderer.getWidth(ModsPanel.NAME) + 14;
+			jEnd -= hw + 6;
+			pill(context, mouseX, mouseY, x + w - hw, y, hw, 13, ModsPanel.NAME, SOFT, BORDER, TEXT, "hub", () -> ModsPanel.openHub(this));
+		}
 		// Jump to a part of the page (where each starts was noted last frame).
 		int jx = x + (int) (textRenderer.getWidth("Settings") * 1.4f) + 14;
 		for (var anchor : List.copyOf(settingsAnchors.entrySet())) {
 			int jw = textRenderer.getWidth(anchor.getKey()) + 12;
-			if (jx + jw > x + w) break;
+			if (jx + jw > jEnd) break;
 			int target = anchor.getValue();
 			pill(context, mouseX, mouseY, jx, y, jw, 13, anchor.getKey(), SOFT, BORDER, TEXT, "jump:" + anchor.getKey(),
 					() -> scroll = Math.max(0, Math.min(target - 4, Math.max(0, contentHeight - (height - BODY)))));
