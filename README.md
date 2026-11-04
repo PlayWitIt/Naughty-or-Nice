@@ -19,6 +19,9 @@ features. To share lists with a friend who has the mod, use **⇄ Share** in the
 **PlayWit Hub** at the top of each PlayWit mod's settings (from Mod Menu or in game). Without Mod Menu there's also a
 **PlayWit Hub** button at the top left of the title screen. It isn't a list of every mod (that's Mod Menu); it shows the main switches of every PlayWit mod you have (Naughty or Nice,
 Base Insurance, Hoard Eye), so you can turn something off before you join a world, and opens each one's full settings.
+Each mod there also has an **Open** button: **Open Naughty or Nice** brings up its full window (lists, chat, Intel,
+Settings) **without being on a server**, so you can read and manage everything, and read the chat that came in from
+Discord while you were away, offline. A picker at the top left switches which server's data you're looking at.
 It also has:
 - **Profiles:** save how your switches are set under a name ("Anarchy", "SMP") and pick the servers it's for. Joining one
   of them sets the switches for you.
@@ -189,17 +192,30 @@ not understood and shown in Settings, never guessed.
 
 Set it up in Settings → Discord:
 - **The channel**: in Discord, right-click the chat relay channel → Copy Link, and paste it. It's for the server you're
-  on when you paste it.
+  on when you paste it. Or click **Find the relay channel**: once a token's in, it looks through your Discord servers
+  (the one named like the server you're on, or Constantiam when you're not on one) and puts the channel that reads most
+  like game chat in the box — **Next channel** if it guessed wrong.
 - **A bot (the allowed way)**: at discord.com/developers, New Application → Bot → Reset Token, and turn on **Message
   Content Intent**. Paste the token. **Copy the request for staff** puts a short message on your clipboard with the
   bot's invite link (View Channel and Read Message History only, it never posts): send it to the server's staff. It
   works once they add it.
 - **Your own account (against Discord's rules)**: off unless you choose it. It reads with your account's token instead,
-  so it needs no staff. Discord can ban accounts that do this: use a spare one.
+  so it needs no staff. Discord can ban accounts that do this: use a spare one. **Get my token** opens Discord and spells
+  out the steps; **Paste token** reads it from your clipboard, saves it and checks it in one click.
 
 **Check it** tests the token and channel; **Catch up now** fetches straight away. The token is kept in its own file
 (`config/naughtyornice-discord.token`), outside the folder backups copy and never in shares; it's only ever sent to
 Discord. Hidden in stream-safe mode.
+
+## Export all your data
+**Settings → Your data → Export to a file** writes everything Naughty or Nice knows about the server — every player with
+their verdict, groups, notes, first and last seen, time near you, sightings, and all-time stats (online time, sessions,
+logins, kills and deaths, ping, skins, chat counts and words, who they mention, the coordinates and links they've
+posted, topics, death causes), plus the whole chat feed, who's been seen together, and how busy the server is when — as
+one JSON file in `config/naughtyornice/exports/`. It's the data exactly as it's stored, so nothing is rounded or left
+out, which makes it easy to hand to someone (or an AI) to go through. **Copy all data** puts the same JSON on your
+clipboard for smaller servers. Times are Unix milliseconds; `firstSeen` is when you first saw a player (a player's
+account join date is only included if the server offers a command for it).
 
 ## Chat log
 Everyone on your Nice, Look Into or Naughty list has their chat logged. When they say something, a conversation opens on their page:
