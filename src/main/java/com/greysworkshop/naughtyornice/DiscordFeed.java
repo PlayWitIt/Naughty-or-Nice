@@ -541,7 +541,7 @@ public final class DiscordFeed {
 
 	/** What one catch-up filed, for the chat line and the settings. */
 	static final class Counts {
-		int chat, joins, deaths, skipped, unknown, alerts, nameAlerts;
+		int chat, joins, deaths, skipped, unknown, shown, alerts, nameAlerts;
 		final List<String> unread = new ArrayList<>();
 	}
 
@@ -559,6 +559,14 @@ public final class DiscordFeed {
 				case UNKNOWN -> {
 					n.unknown++;
 					if (n.unread.size() < 5 && !m.raw().isEmpty()) n.unread.add(m.raw().length() > 80 ? m.raw().substring(0, 80) + "…" : m.raw());
+					// Keep the line: show it as the relay wrote it, with whoever posted it, so chat is never lost to a
+					// format we don't recognise yet. (It's filed as chat so it reads, searches and copies like the rest.)
+					if (!m.text().isEmpty()) {
+						n.shown++;
+						String who = m.name().isEmpty() ? "relay" : m.name();
+						mod.chatLogger.history(ledger.byName(m.name()), who, m.text(), false, null, m.time());
+						ledger.markDirty();
+					}
 				}
 				case CHAT -> {
 					n.chat++;
@@ -585,13 +593,10 @@ public final class DiscordFeed {
 			state().lastRun = System.currentTimeMillis();
 		}
 		lastCounts = n;
-		int filed = n.chat + n.joins + n.deaths;
-		status = filed == 0 && n.unknown > 0
-				? String.format(Locale.ROOT, "Reached Discord but couldn't read %,d message%s as chat — this relay's format isn't recognised yet. "
-						+ "Saved a sample to the exports folder (discord-debug.txt); send it over and it'll be read.", n.unknown, n.unknown == 1 ? "" : "s")
-				: filed == 0 ? "Up to date: nothing new while you were away."
-				: String.format(Locale.ROOT, "Caught up: %,d chat lines, %,d joins/leaves, %,d deaths while you were away%s.", n.chat, n.joins, n.deaths,
-						n.unknown > 0 ? String.format(Locale.ROOT, " (%,d lines not understood)", n.unknown) : "");
+		int filed = n.chat + n.joins + n.deaths + n.shown;
+		status = filed == 0 ? "Up to date: nothing new while you were away."
+				: String.format(Locale.ROOT, "Caught up: %,d chat lines, %,d joins/leaves, %,d deaths while you were away%s.", n.chat + n.shown, n.joins, n.deaths,
+						n.shown > 0 ? String.format(Locale.ROOT, " (%,d shown as the relay wrote them — its exact format is new, a sample is in discord-debug.txt)", n.shown) : "");
 		state().lastResult = status;
 		saveState();
 		ledger.markDirty();
@@ -732,7 +737,27 @@ public final class DiscordFeed {
 				if (fromDescription != null) return fromDescription;
 			}
 		}
-		return new Message(id, time, Kind.UNKNOWN, "", content, content);
+		// Nothing matched a known shape. Don't throw it away: keep its text and whoever posted it, so it can still be
+		// shown in chat as the relay wrote it (an unfamiliar format costs you readability, never the line itself).
+		String fallbackText = content;
+		String fallbackName = webhook ? asPlayer : authorName;
+		if (fallbackText.isEmpty() && m.has("embeds") && m.get("embeds").isJsonArray()) {
+			for (JsonElement e : m.getAsJsonArray("embeds")) {
+				if (!e.isJsonObject()) continue;
+				JsonObject embed = e.getAsJsonObject();
+				String description = embed.has("description") ? clean(embed.get("description").getAsString()) : "";
+				String title = embed.has("title") ? clean(embed.get("title").getAsString()) : "";
+				String eAuthor = embed.has("author") && embed.get("author").isJsonObject() && embed.getAsJsonObject("author").has("name")
+						? clean(embed.getAsJsonObject("author").get("name").getAsString()) : "";
+				String text = !description.isEmpty() ? description : title;
+				if (!text.isEmpty()) {
+					fallbackText = text;
+					if (fallbackName.isEmpty()) fallbackName = eAuthor.replaceFirst("^\\[[^\\]]{1,24}\\]\\s*", "");
+					break;
+				}
+			}
+		}
+		return new Message(id, time, Kind.UNKNOWN, fallbackName, fallbackText, fallbackText);
 	}
 
 	/** One line of relay text, read; null if it isn't any of the shapes relays use. */
