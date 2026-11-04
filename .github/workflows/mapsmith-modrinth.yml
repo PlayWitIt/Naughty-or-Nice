@@ -28,8 +28,8 @@ jobs:
         run: |
           id=$(curl -s -A "$UA" -H "Authorization: $TOKEN" "$API/project/mapsmith" | jq -r '.id // empty')
           if [ -z "$id" ]; then
-            curl -sfL -o icon.png https://raw.githubusercontent.com/PlayWitIt/mapsmith/main/src/main/resources/assets/mapsmith/icon.png
-            curl -sfL https://raw.githubusercontent.com/PlayWitIt/mapsmith/main/README.md | sed '/^## Building/,$d' > body.md
+            curl -sfL -o icon.png https://raw.githubusercontent.com/PlayWitIt/mapsmith/master/src/main/resources/assets/mapsmith/icon.png
+            curl -sfL https://raw.githubusercontent.com/PlayWitIt/mapsmith/master/README.md | sed '/^## Building/,$d' > body.md
             jq -n --rawfile body body.md '{
               slug: "mapsmith", title: "Mapsmith", project_type: "mod",
               description: "Turns any picture into map art: exact map colours (flat or three-shade staircase, with dithering), map-grid alignment, a full material list, Litematica and WorldEdit schematics, and a builder that places it for you in survival or creative. Client-side.",
