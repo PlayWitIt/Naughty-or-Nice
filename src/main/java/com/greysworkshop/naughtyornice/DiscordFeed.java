@@ -66,6 +66,23 @@ public final class DiscordFeed {
 	private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
 	private static final HttpClient HTTP = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(10)).build();
 
+	/**
+	 * The headers Discord expects, which differ by token kind. A bot token wants {@code Bot <token>} and the library
+	 * User-Agent Discord documents for bots. A personal-account token is the raw token with a browser-like User-Agent:
+	 * Discord turns away an account token that arrives looking like a bot (the DiscordBot User-Agent), so reading with
+	 * your own account only works with a normal browser User-Agent. (Reading with your own account is against Discord's
+	 * rules either way; this just makes the token you chose actually work.)
+	 */
+	private static final String BOT_AGENT = "DiscordBot (https://github.com/PlayWitIt/Naughty-or-Nice, " + UpdateCheck.current() + ")";
+	private static final String BROWSER_AGENT =
+			"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36";
+
+	private static HttpRequest.Builder authed(String url, String token, boolean bot, Duration timeout) {
+		return HttpRequest.newBuilder(URI.create(url)).timeout(timeout)
+				.header("Authorization", bot ? "Bot " + token : token)
+				.header("User-Agent", bot ? BOT_AGENT : BROWSER_AGENT);
+	}
+
 	/** What a relay message was. */
 	public enum Kind { CHAT, JOIN, LEAVE, DEATH, UNKNOWN }
 
@@ -243,6 +260,7 @@ public final class DiscordFeed {
 				status = "Couldn't catch up: " + error.getMessage();
 				return;
 			}
+			writeDebug(result, bot, until);
 			if (result.problem != null) {
 				status = result.problem;
 				if (manual) Alerts.chat(Text.literal("Discord: " + result.problem).formatted(Formatting.YELLOW));
@@ -259,6 +277,10 @@ public final class DiscordFeed {
 		String problem;
 		int emptyContent;
 		int requests;
+		int httpOk, httpBad;
+		/** What came back, to show when the relay's format isn't understood (so the parser can be put right). */
+		final List<String> samples = new ArrayList<>();
+		int seen;
 	}
 
 	/** Pages through the channel after {@code after}, up to {@code until} (ms) or {@link #MAX_MESSAGES}. Blocks. */
@@ -282,6 +304,8 @@ public final class DiscordFeed {
 				Message m = parse(row);
 				cursor = m.id();
 				out.newestId = m.id();
+				out.seen++;
+				if (out.samples.size() < 25) out.samples.add(sample(row, m));
 				if (m.time() >= until - SLACK) {
 					pastUntil = true;
 					continue;
@@ -302,10 +326,7 @@ public final class DiscordFeed {
 	/** A GET to Discord, waiting out rate limits. Null on a problem it notes in {@code out}. */
 	private static JsonArray get(String url, String token, boolean bot, Fetched out) throws IOException {
 		for (int attempt = 0; attempt < 6; attempt++) {
-			HttpRequest request = HttpRequest.newBuilder(URI.create(url)).timeout(Duration.ofSeconds(20))
-					.header("Authorization", bot ? "Bot " + token : token)
-					.header("User-Agent", "DiscordBot (https://github.com/PlayWitIt/Naughty-or-Nice, " + UpdateCheck.current() + ")")
-					.GET().build();
+			HttpRequest request = authed(url, token, bot, Duration.ofSeconds(20)).GET().build();
 			HttpResponse<String> response;
 			try {
 				out.requests++;
@@ -357,9 +378,7 @@ public final class DiscordFeed {
 
 	/** Checks the token and channel without filing anything: the channel's name, or why not. Blocks. */
 	static String check(String channel, String token, boolean bot) {
-		HttpRequest request = HttpRequest.newBuilder(URI.create(apiBase + "/channels/" + channel)).timeout(Duration.ofSeconds(15))
-				.header("Authorization", bot ? "Bot " + token : token)
-				.header("User-Agent", "DiscordBot (https://github.com/PlayWitIt/Naughty-or-Nice, " + UpdateCheck.current() + ")").GET().build();
+		HttpRequest request = authed(apiBase + "/channels/" + channel, token, bot, Duration.ofSeconds(15)).GET().build();
 		try {
 			HttpResponse<String> r = HTTP.send(request, HttpResponse.BodyHandlers.ofString());
 			if (r.statusCode() == 200) return "Connected: #" + JsonParser.parseString(r.body()).getAsJsonObject().get("name").getAsString();
@@ -567,7 +586,10 @@ public final class DiscordFeed {
 		}
 		lastCounts = n;
 		int filed = n.chat + n.joins + n.deaths;
-		status = filed == 0 ? "Up to date: nothing new while you were away."
+		status = filed == 0 && n.unknown > 0
+				? String.format(Locale.ROOT, "Reached Discord but couldn't read %,d message%s as chat — this relay's format isn't recognised yet. "
+						+ "Saved a sample to the exports folder (discord-debug.txt); send it over and it'll be read.", n.unknown, n.unknown == 1 ? "" : "s")
+				: filed == 0 ? "Up to date: nothing new while you were away."
 				: String.format(Locale.ROOT, "Caught up: %,d chat lines, %,d joins/leaves, %,d deaths while you were away%s.", n.chat, n.joins, n.deaths,
 						n.unknown > 0 ? String.format(Locale.ROOT, " (%,d lines not understood)", n.unknown) : "");
 		state().lastResult = status;
@@ -611,6 +633,63 @@ public final class DiscordFeed {
 				.replaceAll("\\\\([*_~`|>\\\\<])", "$1");
 		return t.replaceAll("\\s+", " ").strip();
 	}
+
+	/** One line for the debug file: what Discord sent for a message, and how the parser read it. */
+	static String sample(JsonObject row, Message m) {
+		JsonObject author = row.has("author") && row.get("author").isJsonObject() ? row.getAsJsonObject("author") : new JsonObject();
+		String who = author.has("username") ? author.get("username").getAsString() : "?";
+		boolean webhook = row.has("webhook_id") && !row.get("webhook_id").isJsonNull();
+		String content = row.has("content") && !row.get("content").isJsonNull() ? row.get("content").getAsString() : "";
+		StringBuilder embeds = new StringBuilder();
+		if (row.has("embeds") && row.get("embeds").isJsonArray()) {
+			for (JsonElement e : row.getAsJsonArray("embeds")) {
+				if (!e.isJsonObject()) continue;
+				JsonObject em = e.getAsJsonObject();
+				String a = em.has("author") && em.get("author").isJsonObject() && em.getAsJsonObject("author").has("name") ? em.getAsJsonObject("author").get("name").getAsString() : "";
+				String t = em.has("title") ? em.get("title").getAsString() : "";
+				String d = em.has("description") ? em.get("description").getAsString() : "";
+				embeds.append(" embed{author=\"").append(a).append("\" title=\"").append(t).append("\" desc=\"").append(d.length() > 80 ? d.substring(0, 80) + "…" : d).append("\"}");
+			}
+		}
+		return String.format(Locale.ROOT, "[%s] %sauthor=\"%s\" content=\"%s\"%s", m.kind(), webhook ? "(webhook) " : "", who,
+				content.length() > 120 ? content.substring(0, 120) + "…" : content, embeds);
+	}
+
+	/** Writes what the last catch-up saw next to the exports, so its format can be looked at (no token in it). */
+	static void writeDebug(Fetched f, boolean bot, long until) {
+		try {
+			Path dir = NNConfig.dir().resolve("exports");
+			Files.createDirectories(dir);
+			StringBuilder b = new StringBuilder();
+			b.append("Naughty or Nice — Discord away-chat debug (").append(UpdateCheck.current()).append(")\n");
+			b.append("When: ").append(OffsetDateTime.now()).append('\n');
+			b.append("Reading as: ").append(bot ? "a bot token" : "your own account").append('\n');
+			b.append("Channel: ").append(channelId(NNConfig.INSTANCE.discordChannel)).append("  Server: ").append(NNConfig.INSTANCE.discordServer).append('\n');
+			b.append("Requests to Discord: ").append(f.requests).append('\n');
+			if (f.problem != null) b.append("Problem: ").append(f.problem).append('\n');
+			b.append("Messages Discord returned: ").append(f.seen).append('\n');
+			b.append("Of those, taken as away-chat (before you joined): ").append(f.messages.size()).append('\n');
+			int chat = 0, join = 0, death = 0, unknown = 0;
+			for (Message m : f.messages) switch (m.kind()) {
+				case CHAT -> chat++;
+				case JOIN, LEAVE -> join++;
+				case DEATH -> death++;
+				default -> unknown++;
+			}
+			b.append(String.format(Locale.ROOT, "Read as: %d chat, %d joins/leaves, %d deaths, %d not understood\n", chat, join, death, unknown));
+			b.append("\n--- what the relay's messages look like (newest-ish first, up to 25) ---\n");
+			if (f.samples.isEmpty()) b.append("(nothing came back — see the problem above, or the channel had nothing in the last ").append(FIRST_DAYS).append(" days)\n");
+			for (String s : f.samples) b.append(s).append('\n');
+			Path file = dir.resolve("discord-debug.txt");
+			Files.writeString(file, b.toString(), StandardCharsets.UTF_8);
+			debugFile = file;
+		} catch (IOException e) {
+			NaughtyOrNiceClient.LOGGER.warn("Couldn't write the Discord debug file: {}", e.toString());
+		}
+	}
+
+	/** Where the last debug file went (for the button that opens it). */
+	public static volatile Path debugFile;
 
 	/** A relay line, read: chat (who said what), a join or leave, a death, or unknown. */
 	static Message parse(JsonObject m) {
