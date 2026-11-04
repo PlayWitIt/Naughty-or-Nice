@@ -222,6 +222,10 @@ public class ShopScreen extends Screen {
 	}
 
 	private final NaughtyOrNiceClient mod = NaughtyOrNiceClient.INSTANCE;
+	/** Opened from PlayWit Hub without being on a server: you read and manage one server's lists and chat offline. */
+	private boolean offline;
+	private List<String> offlineServers = new ArrayList<>();
+	private int offlineServerIndex;
 	private final List<Hit> hits = new ArrayList<>();
 	private Tab tab;
 	private Profile selected;
@@ -394,6 +398,60 @@ public class ShopScreen extends Screen {
 	@Override
 	public void close() {
 		client.setScreen(parent);
+	}
+
+	/**
+	 * The full window without being on a server (PlayWit Hub → Open Naughty or Nice): it loads one server's saved
+	 * lists and chat so you can read and manage them offline, and, for the server whose Discord relay is set up, pulls
+	 * in what was said while you were away. {@code parent} is where Esc goes back to (the Hub).
+	 */
+	public static ShopScreen openOffline(net.minecraft.client.gui.screen.Screen parent) {
+		ShopScreen screen = new ShopScreen();
+		screen.offline = true;
+		screen.parent = parent;
+		screen.offlineServers = Ledger.savedServers();
+		// Start on the server whose Discord relay is set up, else the one you were on most recently.
+		String want = NNConfig.INSTANCE.discordServer;
+		int idx = want != null && !want.isEmpty() ? screen.offlineServers.indexOf(want) : -1;
+		screen.offlineServerIndex = Math.max(0, idx);
+		if (!screen.offlineServers.isEmpty()) screen.viewServer(screen.offlineServers.get(screen.offlineServerIndex));
+		return screen;
+	}
+
+	/** Offline: loads {@code key}'s lists and chat, and pulls the Discord away-chat when that server's relay is set up. */
+	private void viewServer(String key) {
+		if (key == null) return;
+		mod.ledger.switchTo(key);
+		selected = null;
+		query = "";
+		scroll = 0;
+		cachedResults = null;
+		if (search != null) search.setText("");
+		// Only the server whose relay channel is set catches up; browsing another's saved lists never touches its binding.
+		if (key.equals(NNConfig.INSTANCE.discordServer) && DiscordFeed.ready()) {
+			discordStatus = null;
+			DiscordFeed.catchUp(client, mod.ledger, false);
+		}
+	}
+
+	/** Offline: moves to the next saved server (the picker in the header). */
+	private void nextOfflineServer() {
+		if (offlineServers.size() < 2) return;
+		offlineServerIndex = (offlineServerIndex + 1) % offlineServers.size();
+		viewServer(offlineServers.get(offlineServerIndex));
+	}
+
+	/** For the self-test. */
+	public boolean testOffline() {
+		return offline;
+	}
+
+	public String testViewingServer() {
+		return offline && !offlineServers.isEmpty() ? offlineServers.get(offlineServerIndex) : null;
+	}
+
+	public void testNextServer() {
+		nextOfflineServer();
 	}
 
 	/** Opens with the Add players panel showing, set to add to {@code target}. */
@@ -1321,6 +1379,16 @@ public class ShopScreen extends Screen {
 		// Tabs: the sections, then, on a players page, which players (the lists are the counters above and the sidebar).
 		context.fill(0, HEADER, width, BODY, SUBNAV);
 		int tx = 6;
+		// Offline: which server you're reading, and a tap to the next one. Shows you're not live.
+		if (offline && !offlineServers.isEmpty()) {
+			String server = Sharing.placeName(offlineServers.get(offlineServerIndex)).replaceFirst("^singleplayer: ", "");
+			if (textRenderer.getWidth(server) > 110) server = server.substring(0, 14) + "\u2026";
+			String label = (offlineServers.size() > 1 ? "\u21c4 " : "") + server;
+			boolean more = offlineServers.size() > 1;
+			tx += pill(context, mouseX, mouseY, tx, label, true, "offline-server", more ? this::nextOfflineServer : () -> {}) + 2;
+			context.fill(tx + 1, HEADER + 3, tx + 2, BODY - 3, 0x44FFFFFF);
+			tx += 6;
+		}
 		Tab[] sections = {Tab.ALL, Tab.GROUPS, Tab.CHAT, Tab.INTEL, Tab.ACTIVITY, Tab.SERVER, Tab.BARITONE, Tab.SETTINGS};
 		// Tighter when the window is narrow, so every section stays on screen.
 		int roomy = 0;
@@ -5935,7 +6003,8 @@ public class ShopScreen extends Screen {
 				+ "Intel), at the time it was said. Nothing runs while you're offline. "
 				+ (ownAccount ? "Reading with your own account is against Discord's rules: Discord can ban the account. Use a spare one."
 						: "It reads with a bot: make one at discord.com/developers (New Application, Bot, Reset Token, turn on Message Content "
-						+ "Intent), paste its token below, then send the server's staff the request so they add it (it can only read).");
+						+ "Intent), paste its token below, then send the server's staff the request so they add it (it can only read).")
+				+ (ownAccount ? " Click Get my token: it opens Discord and tells you the three steps, then Paste token fills it in for you." : "");
 		List<net.minecraft.text.OrderedText> lines = textRenderer.wrapLines(Text.literal(help), w - 20);
 		String status = discordStatus != null ? discordStatus : DiscordFeed.status != null ? DiscordFeed.status
 				: DiscordFeed.state().lastResult.isEmpty() ? null : DiscordFeed.state().lastResult;
@@ -6035,6 +6104,23 @@ public class ShopScreen extends Screen {
 			DiscordFeed.checkAsync(r -> discordStatus = r);
 		});
 		bx += cw + 6;
+		// Paste the token straight from the clipboard, save it, and check it: no need to click the box.
+		String paste = "Paste token";
+		int pw = textRenderer.getWidth(paste) + 14;
+		pill(context, mouseX, mouseY, bx, ty, pw, 14, paste, token.isEmpty() ? YELLOW : SOFT, token.isEmpty() ? YELLOW_EDGE : BORDER,
+				token.isEmpty() ? BUTTON_TEXT : TEXT, "discord-paste", this::pasteDiscordToken);
+		bx += pw + 6;
+		if (ownAccount) {
+			// Opens Discord and spells out the three steps to copy your account's token.
+			String get = "Get my token";
+			int gw = textRenderer.getWidth(get) + 14;
+			pill(context, mouseX, mouseY, bx, ty, gw, 14, get, SOFT, BORDER, TEXT, "discord-get", () -> {
+				DiscordFeed.openBrowser("https://discord.com/login");
+				discordStatus = "In Discord in your browser: press F12, open the Network tab, click any channel, click a line "
+						+ "with 'messages' in it, find 'authorization', copy that long code. Then come back and click Paste token.";
+			});
+			bx += gw + 6;
+		}
 		String now = "Catch up now";
 		int nw = textRenderer.getWidth(now) + 14;
 		pill(context, mouseX, mouseY, bx, ty, nw, 14, now, YELLOW, YELLOW_EDGE, BUTTON_TEXT, "discord-now", () -> {
@@ -6081,6 +6167,28 @@ public class ShopScreen extends Screen {
 				status.startsWith("Connected") || status.startsWith("Caught") || status.startsWith("Up to date") || status.startsWith("Copied") || status.startsWith("Token saved")
 						|| status.startsWith("Got") ? NICE : LOOK);
 		return y + h;
+	}
+
+	/** Reads the token from the clipboard, saves it, and checks it straight away. */
+	private void pasteDiscordToken() {
+		String clip = client.keyboard.getClipboard();
+		if (clip == null || clip.isBlank()) {
+			discordStatus = "Nothing copied yet. Copy the token first (Get my token spells out how), then Paste token.";
+			return;
+		}
+		String t = DiscordFeed.cleanToken(clip);
+		if (t.length() < 20 || t.contains(" ") || t.contains("\n")) {
+			discordStatus = "That doesn't look like a token. Copy just the long code next to 'authorization', then Paste token.";
+			return;
+		}
+		DiscordFeed.setToken(t);
+		discordTokenField.setText("");
+		if (!NNConfig.INSTANCE.discordOn) {
+			NNConfig.INSTANCE.discordOn = true;
+			NNConfig.save();
+		}
+		discordStatus = "Token saved. Checking it…";
+		DiscordFeed.checkAsync(r -> discordStatus = r);
 	}
 
 	/** First click: looks for the relay channel and puts the best one in the box. Then: the next one it found. */

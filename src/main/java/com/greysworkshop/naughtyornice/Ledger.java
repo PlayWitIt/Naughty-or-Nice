@@ -82,6 +82,41 @@ public final class Ledger {
 		return key.replaceAll("[^A-Za-z0-9._-]", "_");
 	}
 
+	/** Every server (and world) that has saved lists, newest first, as keys like "server:constantiam.net". */
+	public static List<String> savedServers() {
+		Path dir = NNConfig.dir().resolve("lists");
+		List<String> keys = new ArrayList<>();
+		if (!Files.isDirectory(dir)) return keys;
+		List<Path> files = new ArrayList<>();
+		try (var list = Files.list(dir)) {
+			list.forEach(files::add);
+		} catch (IOException e) {
+			NaughtyOrNiceClient.LOGGER.warn("Could not list saved servers", e);
+			return keys;
+		}
+		// Newest first, by when the lists file last changed.
+		files.sort((a, b) -> Long.compare(lastModified(b), lastModified(a)));
+		for (Path f : files) {
+			String name = f.getFileName().toString();
+			if (!name.endsWith(".json")) continue;
+			String stem = name.substring(0, name.length() - 5);
+			// Leave out the side files (groups, links, alerts, activity, trails) and merged copies.
+			if (stem.endsWith(".groups") || stem.endsWith(".links") || stem.endsWith(".alerts") || stem.endsWith(".activity") || stem.endsWith(".trails")
+					|| stem.contains(".merged")) continue;
+			String key = stem.startsWith("server_") ? "server:" + stem.substring(7) : stem.startsWith("local_") ? "local:" + stem.substring(6) : stem;
+			if (!keys.contains(key)) keys.add(key);
+		}
+		return keys;
+	}
+
+	private static long lastModified(Path f) {
+		try {
+			return Files.getLastModifiedTime(f).toMillis();
+		} catch (IOException e) {
+			return 0;
+		}
+	}
+
 	private static final String[] SIDE_FILES = {".groups.json", ".links.json", ".alerts.json", ".activity.json", ".trails.json", ".chunks.bin"};
 
 	/**

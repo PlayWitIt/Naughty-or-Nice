@@ -172,6 +172,24 @@ public final class SelfTestPanel {
 				client.currentScreen.close();
 				check("and Done goes back to the title screen", client.currentScreen == title);
 			}
+			// Open Naughty or Nice: its full window, usable from the hub without being on a server.
+			case 40 -> {
+				panel = ModsPanel.open(title);
+				client.setScreen(panel);
+				panel.testPick(NaughtyOrNiceClient.MOD_ID);
+				Screen window = ModsPanel.testOpenWindow(NaughtyOrNiceClient.MOD_ID, panel);
+				check("the hub opens Naughty or Nice's full window", window instanceof ShopScreen s && s.testOffline());
+				if (window != null) client.setScreen(window);
+			}
+			case 41 -> {
+				shot(client, "nn_offline");
+				check("it's the offline window", client.currentScreen instanceof ShopScreen s && s.testOffline());
+				check("only Naughty or Nice has an Open button (not Base Insurance or Hoard Eye)",
+						ModsPanel.testOpenWindow("baseinsurance", title) == null && ModsPanel.testOpenWindow("hoardeye", title) == null);
+				client.currentScreen.close();
+				check("closing it comes back to the hub", client.currentScreen == panel);
+				panel.close();
+			}
 			default -> finish(client);
 		}
 	}

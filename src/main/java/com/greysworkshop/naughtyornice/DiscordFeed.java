@@ -47,6 +47,15 @@ public final class DiscordFeed {
 
 	/** Discord's API (the self-test points this at a stand-in). */
 	static String apiBase = "https://discord.com/api/v10";
+	/** Opens a web page in the browser (the self-test swaps in one that does nothing). */
+	public static java.util.function.Consumer<String> browser = url -> net.minecraft.util.Util.getOperatingSystem().open(url);
+	public static void openBrowser(String url) {
+		try {
+			browser.accept(url);
+		} catch (RuntimeException e) {
+			NaughtyOrNiceClient.LOGGER.warn("Couldn't open the browser: {}", e.toString());
+		}
+	}
 	private static final long DISCORD_EPOCH = 1420070400000L;
 	/** The first catch-up goes back this far. */
 	static final int FIRST_DAYS = 3;

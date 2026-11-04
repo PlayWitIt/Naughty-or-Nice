@@ -1471,6 +1471,35 @@ public final class SelfTest {
 				NNConfig.INSTANCE.discordChannel = "https://discord.com/channels/1000000000000000000/1100000000000000001";
 				client.setScreen(new ShopScreen(ShopScreen.Tab.SETTINGS, null));
 			}
+			// Offline: PlayWit Hub -> Open Naughty or Nice reads and manages a server's lists without being on it.
+			case 1121 -> {
+				offlineReturnKey = ledger.key();
+				ledger.switchTo("server:offline-a.example");
+				ledger.setVerdict(ledger.getOrCreate(id("AliceOffline"), "AliceOffline"), Profile.Verdict.NICE, false, null);
+				ledger.save(true);
+				ledger.switchTo("server:offline-b.example");
+				ledger.setVerdict(ledger.getOrCreate(id("BobOffline"), "BobOffline"), Profile.Verdict.NAUGHTY, false, null);
+				ledger.save(true);
+				// Opens on the server whose relay is set up.
+				NNConfig.INSTANCE.discordServer = "server:offline-a.example";
+				ShopScreen off = ShopScreen.openOffline(null);
+				client.setScreen(off);
+				check("the offline window opens on the set-up server", off.testOffline() && "server:offline-a.example".equals(off.testViewingServer()));
+				check("...and loads that server's lists (AliceOffline is Nice)", ledger.byName("AliceOffline") != null
+						&& ledger.byName("AliceOffline").verdict == Profile.Verdict.NICE && ledger.byName("BobOffline") == null);
+			}
+			case 1122 -> {
+				screenshot(client, "69_offline");
+				ShopScreen off = (ShopScreen) client.currentScreen;
+				off.testNextServer();
+				check("the server picker moves to another saved server", off.testViewingServer() != null && !"server:offline-a.example".equals(off.testViewingServer()));
+				check("...and that server's lists load in its place", ledger.byName("AliceOffline") == null);
+				off.close();
+				// Back to where the test was.
+				NNConfig.INSTANCE.discordServer = "";
+				ledger.switchTo(offlineReturnKey);
+				check("after offline viewing, the live server's lists are back", ledger.byName(GRIEFER) != null);
+			}
 			case 1117 -> check("Settings has a Discord section to jump to", screen(client).testClick("jump:Discord"));
 			case 1120 -> {
 				screenshot(client, "67_discord_settings");
@@ -2062,6 +2091,7 @@ public final class SelfTest {
 	private static long waitStarted, discordNow;
 	/** Server ticks the fake griefer has left to walk (a quarter block each, east). */
 	private static int walkTicks;
+	private static String offlineReturnKey;
 	private static long disconnectedAt;
 	private static long loggedOutAt;
 

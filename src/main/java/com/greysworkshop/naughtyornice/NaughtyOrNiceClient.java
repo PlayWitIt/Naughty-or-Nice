@@ -512,6 +512,7 @@ public class NaughtyOrNiceClient implements ClientModInitializer {
 		return java.util.Map.of("id", MOD_ID, "name", "Naughty or Nice", "version", version, "icon", Identifier.of(MOD_ID, "icon.png"),
 				"settings", (java.util.function.Function<net.minecraft.client.gui.screen.Screen, net.minecraft.client.gui.screen.Screen>)
 						parent -> new ShopScreen(ShopScreen.Tab.SETTINGS, null).withParent(parent),
+				"open", (java.util.function.Function<net.minecraft.client.gui.screen.Screen, net.minecraft.client.gui.screen.Screen>) ShopScreen::openOffline,
 				"save", (Runnable) NNConfig::save, "data", java.util.List.of("naughtyornice"), "switches", switches);
 	}
 
