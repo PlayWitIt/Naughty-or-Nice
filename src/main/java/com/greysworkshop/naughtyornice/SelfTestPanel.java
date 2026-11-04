@@ -46,12 +46,10 @@ public final class SelfTestPanel {
 	private static void step(MinecraftClient client, int n) {
 		switch (n) {
 			case 0 -> {
-				// With Mod Menu (it's in the development game) the hub is linked from each mod's settings instead.
-				boolean modMenu = net.fabricmc.loader.api.FabricLoader.getInstance().isModLoaded("modmenu");
+				// The PlayWit Hub button is always on the title screen (Mod Menu is in the development game), once.
 				long buttons = Screens.getButtons(title).stream().filter(b -> b.getMessage().getString().equals(ModsPanel.NAME)).count();
 				long old = Screens.getButtons(title).stream().filter(b -> b.getMessage().getString().equals("Mods panel")).count();
-				check((modMenu ? "no" : "one") + " PlayWit Hub button on the title screen with" + (modMenu ? "" : "out") + " Mod Menu (" + buttons + ")",
-						buttons == (modMenu ? 0 : 1) && old == 0);
+				check("one PlayWit Hub button on the title screen, even with Mod Menu (" + buttons + ")", buttons == 1 && old == 0);
 				shot(client, "title");
 			}
 			case 1 -> {
