@@ -3966,6 +3966,28 @@ public class ShopScreen extends Screen {
 		int top = barY + 17;
 		int inputTop = height - 22;
 
+		// Away-chat: when this server's Discord relay is set up, its status and a Catch-up button live right here, so the
+		// Chat tab is where you both read what you missed and pull it in (works offline too).
+		if (DiscordFeed.ready()) {
+			int bh = 17;
+			context.fill(0, top, width, top + bh, 0x40101418);
+			boolean busy = DiscordFeed.running();
+			String now = busy ? "Catching up…" : "Catch up now";
+			int nw = textRenderer.getWidth(now) + 14;
+			String st = DiscordFeed.status != null ? DiscordFeed.status
+					: "Away-chat: reading " + Sharing.placeName(NNConfig.INSTANCE.discordServer) + "'s Discord relay"
+					+ (DiscordFeed.state().lastRun == 0 ? " — press Catch up now to pull what you missed."
+							: " · last caught up " + ago(DiscordFeed.state().lastRun) + ".");
+			boolean good = st.startsWith("Caught") || st.startsWith("Up to date") || st.startsWith("Connected");
+			boolean bad = st.startsWith("Couldn't") || st.startsWith("Discord") || st.startsWith("No such") || st.startsWith("Paste")
+					|| st.contains("refused") || st.contains("can't");
+			textTrim(context, st, 8, top + 5, width - 16 - nw - 6, good ? NICE : bad ? LOOK : MUTED);
+			pill(context, mouseX, mouseY, width - 8 - nw, top + 2, nw, 14, now, busy ? SOFT : YELLOW, busy ? BORDER : YELLOW_EDGE,
+					busy ? MUTED : BUTTON_TEXT, "chat-discord-now", busy ? () -> {} : this::discordCatchUpNow);
+			context.fill(0, top + bh, width, top + bh + 1, BORDER);
+			top += bh + 1;
+		}
+
 		int timeW = textRenderer.getWidth("00:00") + 5;
 		int badgeW = 12;
 		int textX = left + 4 + timeW + badgeW;
@@ -4012,9 +4034,12 @@ public class ShopScreen extends Screen {
 		if (chatScroll == 0) chatUnread = 0;
 		context.enableScissor(left, viewTop, right, viewBottom);
 		if (rows.isEmpty()) {
-			String empty = total == 0
-					? "Nothing said yet. Chat shows up here as it happens, each name marked with its list and groups so you can tell who's who."
-					: "Nothing matches. Pick All on the left to see everything.";
+			String empty = total != 0 ? "Nothing matches. Pick All on the left to see everything."
+					: DiscordFeed.ready() && DiscordFeed.state().lastRun == 0
+							? "Nothing here yet. This server's Discord relay is set up — press Catch up now (above) to pull in everything said while you were away. It'll show up here, filed at the time it was said."
+							: DiscordFeed.ready()
+									? "Nothing new since the last catch-up. Press Catch up now (above) to check Discord again, or chat shows up here as it happens."
+									: "Nothing said yet. Chat shows up here as it happens, each name marked with its list and groups so you can tell who's who.";
 			int ty = viewTop + 8;
 			for (var line : textRenderer.wrapLines(Text.literal(empty), right - left - 20)) {
 				context.drawText(textRenderer, line, left + 10, ty, MUTED, false);
@@ -6320,6 +6345,18 @@ public class ShopScreen extends Screen {
 		}
 		discordStatus = "Token saved. Checking it…";
 		DiscordFeed.checkAsync(r -> discordStatus = r);
+	}
+
+	/** Catch up on the away-chat right from the Chat tab — on the server or offline, for the relay that's set up. */
+	private void discordCatchUpNow() {
+		if (client == null || !DiscordFeed.ready() || DiscordFeed.running()) return;
+		NNConfig c = NNConfig.INSTANCE;
+		if (c.discordServer.isEmpty() && client.world != null && client.getNetworkHandler() != null) {
+			c.discordServer = Ledger.worldKey(client);
+			NNConfig.save();
+		}
+		DiscordFeed.status = "Catching up from Discord…";
+		DiscordFeed.catchUp(client, mod.ledger, true);
 	}
 
 	/** First click: looks for the relay channel and puts the best one in the box. Then: the next one it found. */
