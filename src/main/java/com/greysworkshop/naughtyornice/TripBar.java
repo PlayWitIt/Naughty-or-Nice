@@ -32,8 +32,9 @@ public final class TripBar {
 
 	private static final Pattern XZ = Pattern.compile("x=(-?\\d+)(?:,\\s*y=-?\\d+)?,\\s*z=(-?\\d+)");
 
-	/** What the bar is about now, or null when nothing's going anywhere. */
+	/** What the bar is about now, or null when nothing's going anywhere (or you're not in a world). */
 	static Where where(MinecraftClient client) {
+		if (client.player == null) return null;
 		double px = client.player.getX(), pz = client.player.getZ();
 		String trip = SmartTravel.tripName();
 		if (trip != null) {

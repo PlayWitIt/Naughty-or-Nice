@@ -1491,6 +1491,7 @@ public final class SelfTest {
 			case 1122 -> {
 				screenshot(client, "69_offline");
 				ShopScreen off = (ShopScreen) client.currentScreen;
+				check("the offline window hides the Baritone tab (no player to walk)", !off.testClick("tab:BARITONE"));
 				off.testNextServer();
 				check("the server picker moves to another saved server", off.testViewingServer() != null && !"server:offline-a.example".equals(off.testViewingServer()));
 				check("...and that server's lists load in its place", ledger.byName("AliceOffline") == null);

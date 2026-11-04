@@ -980,7 +980,11 @@ public class ShopScreen extends Screen {
 
 	private void showTab(Tab t) {
 		if (t == Tab.BARITONE) {
-			// Its own screen; Esc comes back here.
+			// Its own screen (Esc comes back here). It needs to be in a world; offline there's nothing for it to do.
+			if (client.player == null) {
+				tab = Tab.ALL;
+				return;
+			}
 			client.setScreen(new BaritoneScreen().withParent(this));
 			return;
 		}
@@ -1407,7 +1411,9 @@ public class ShopScreen extends Screen {
 			context.fill(tx + 1, HEADER + 3, tx + 2, BODY - 3, 0x44FFFFFF);
 			tx += 6;
 		}
-		Tab[] sections = {Tab.ALL, Tab.GROUPS, Tab.CHAT, Tab.INTEL, Tab.ACTIVITY, Tab.SERVER, Tab.BARITONE, Tab.SETTINGS};
+		Tab[] sections = offline || client.player == null
+				? new Tab[] {Tab.ALL, Tab.GROUPS, Tab.CHAT, Tab.INTEL, Tab.ACTIVITY, Tab.SERVER, Tab.SETTINGS}
+				: new Tab[] {Tab.ALL, Tab.GROUPS, Tab.CHAT, Tab.INTEL, Tab.ACTIVITY, Tab.SERVER, Tab.BARITONE, Tab.SETTINGS};
 		// Tighter when the window is narrow, so every section stays on screen.
 		int roomy = 0;
 		for (Tab t : sections) roomy += textRenderer.getWidth(t == Tab.ALL ? "Players" : t.label + (t == Tab.CHAT ? " •" : "")) + 12;
