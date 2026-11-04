@@ -240,6 +240,10 @@ public class ShopScreen extends Screen {
 	private TextFieldWidget discordChannelField, discordTokenField;
 	private int discordChannelTop = -1000, discordTokenTop = -1000;
 	private String discordStatus;
+	/** The channels "Find the relay channel" found, and which of them is in the box. */
+	private DiscordFeed.Found discordFound;
+	private int discordPick;
+	private boolean discordFinding;
 	private int phoneFieldTop = -1000;
 	private String phoneStatus;
 	/** The Chat check panel is open. */
@@ -5935,7 +5939,7 @@ public class ShopScreen extends Screen {
 		List<net.minecraft.text.OrderedText> lines = textRenderer.wrapLines(Text.literal(help), w - 20);
 		String status = discordStatus != null ? discordStatus : DiscordFeed.status != null ? DiscordFeed.status
 				: DiscordFeed.state().lastResult.isEmpty() ? null : DiscordFeed.state().lastResult;
-		int h = 22 + lines.size() * 10 + 4 + 18 + 16 + 20 + 20 + 18 + (status == null ? 0 : 12) + 6;
+		int h = 22 + lines.size() * 10 + 4 + 18 + 16 + 20 + 18 + 20 + 20 + 18 + (status == null ? 0 : 12) + 6;
 		roundedBorder(context, x, y, w, h, CARD, c.discordOn && DiscordFeed.ready() ? NICE : BORDER);
 		context.drawText(textRenderer, Text.literal("Discord: chat while you're away").styled(st -> st.withBold(true)), x + 10, y + 7, TEXT, false);
 		String state = !c.discordOn ? "Off" : DiscordFeed.ready() ? "On" + (c.discordServer.isEmpty() ? "" : " for " + Sharing.placeName(c.discordServer))
@@ -5977,6 +5981,28 @@ public class ShopScreen extends Screen {
 			hit(x + 10, fy, w - 20, 16, "discord-channel", () -> setFocused(discordChannelField));
 		}
 		ty += 20;
+		// Find it for me: the servers and channels the token can read, the likeliest relay first.
+		{
+			boolean empty = DiscordFeed.channelId(c.discordChannel).isEmpty();
+			String find = discordFinding ? "Looking…" : discordFound != null && discordFound.picks.size() > 1 ? "Next channel ›" : "Find the relay channel";
+			int fw = textRenderer.getWidth(find) + 14;
+			boolean yellow = empty && !token.isEmpty() && discordFound == null;
+			pill(context, mouseX, mouseY, x + 10, ty, fw, 14, find, yellow ? YELLOW : SOFT, yellow ? YELLOW_EDGE : BORDER, yellow ? BUTTON_TEXT : TEXT, "discord-find",
+					this::discordFindOrNext);
+			String said;
+			int color = MUTED;
+			if (discordFound != null && !discordFound.picks.isEmpty()) {
+				DiscordFeed.Pick p = discordFound.picks.get(discordPick);
+				said = "#" + p.channelName() + " in " + p.guildName() + (p.sampled() == 0 ? "" : ": " + p.relayLines() + " of the last " + p.sampled()
+						+ " messages read as game chat") + " (" + (discordPick + 1) + " of " + discordFound.picks.size() + ")";
+				color = p.relayLines() * 2 > p.sampled() ? NICE : LOOK;
+			} else {
+				said = token.isEmpty() ? "Paste a token below first, then this finds the chat channel for you."
+						: "Or let it find the channel: it looks in the server's Discord (Constantiam if you're not on one).";
+			}
+			textTrim(context, said, x + 16 + fw, ty + 3, w - 26 - fw, color);
+		}
+		ty += 18;
 		// The token: never shown again once saved.
 		roundedBorder(context, x + 10, ty, w - 20, 16, FIELD, discordTokenField.isFocused() ? 0xFFE77600 : INPUT_BORDER);
 		if (ModsPanel.streamSafe() || !token.isEmpty() && !discordTokenField.isFocused()) {
@@ -6055,6 +6081,47 @@ public class ShopScreen extends Screen {
 				status.startsWith("Connected") || status.startsWith("Caught") || status.startsWith("Up to date") || status.startsWith("Copied") || status.startsWith("Token saved")
 						|| status.startsWith("Got") ? NICE : LOOK);
 		return y + h;
+	}
+
+	/** First click: looks for the relay channel and puts the best one in the box. Then: the next one it found. */
+	private void discordFindOrNext() {
+		if (discordFinding) return;
+		if (discordFound != null && discordFound.picks.size() > 1) {
+			discordPick = (discordPick + 1) % discordFound.picks.size();
+			usePick(discordFound.picks.get(discordPick));
+			return;
+		}
+		discordFinding = true;
+		discordStatus = "Looking through your Discord servers…";
+		DiscordFeed.findAsync(client, found -> {
+			discordFinding = false;
+			if (found.picks.isEmpty()) {
+				discordFound = null;
+				discordStatus = found.problem != null ? found.problem : "Found no channels to read.";
+				return;
+			}
+			discordFound = found;
+			discordPick = 0;
+			usePick(found.picks.get(0));
+		});
+	}
+
+	private void usePick(DiscordFeed.Pick p) {
+		NNConfig c = NNConfig.INSTANCE;
+		discordChannelField.setText(p.link());
+		discordChannelField.setCursorToStart(false);
+		// Off a server (or in singleplayer): Constantiam's Discord is for Constantiam.
+		if ((c.discordServer.isEmpty() || c.discordServer.startsWith("local:")) && p.guildName().toLowerCase(Locale.ROOT).contains("constantiam")) c.discordServer = "server:constantiam.net";
+		if (!c.discordOn) c.discordOn = true;
+		NNConfig.save();
+		discordStatus = p.sampled() == 0 ? "Picked #" + p.channelName() + ". Check it, or Next channel for another."
+				: p.relayLines() * 2 > p.sampled() ? "Connected: #" + p.channelName() + " looks like the game chat. It catches up each time you join."
+				: "Picked #" + p.channelName() + ", but its messages don't look like game chat. Next channel for another.";
+	}
+
+	/** For the self-test: the channels found, once found. */
+	public DiscordFeed.Found testDiscordFound() {
+		return discordFinding ? null : discordFound;
 	}
 
 	/** A checkbox and its label on one line; returns the y below it. */

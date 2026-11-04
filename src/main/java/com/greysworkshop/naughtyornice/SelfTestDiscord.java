@@ -21,6 +21,9 @@ import java.util.concurrent.ConcurrentHashMap;
  */
 final class SelfTestDiscord {
 	static final String CHANNEL = "1100000000000000001", NO_WORDS = "1100000000000000002";
+	/** Constantiam's Discord: general (people talking), the relay, announcements (can't be read); and another Discord. */
+	static final String GUILD = "1000000000000000000", OTHER_GUILD = "1000000000000000005", GENERAL = "1100000000000000003",
+			ANNOUNCEMENTS = "1100000000000000004", OTHER_CHAT = "1100000000000000006";
 	static final String BOT = "test-bot-token", USER = "test-user-token";
 	private HttpServer server;
 	final List<JsonObject> messages = new ArrayList<>();
@@ -32,6 +35,8 @@ final class SelfTestDiscord {
 	String start() throws IOException {
 		server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
 		server.createContext("/api/v10/channels/", this::handle);
+		server.createContext("/api/v10/users/", this::handle);
+		server.createContext("/api/v10/guilds/", this::handle);
 		server.start();
 		return "http://127.0.0.1:" + server.getAddress().getPort() + "/api/v10";
 	}
@@ -85,8 +90,33 @@ final class SelfTestDiscord {
 			send(x, 429, "{\"message\": \"You are being rate limited.\", \"retry_after\": 0.3, \"global\": false}");
 			return;
 		}
+		if (path.equals("/api/v10/users/@me/guilds")) {
+			send(x, 200, "[{\"id\": \"" + GUILD + "\", \"name\": \"Constantiam\"}, {\"id\": \"" + OTHER_GUILD + "\", \"name\": \"Some Other Server\"}]");
+			return;
+		}
+		if (path.equals("/api/v10/guilds/" + GUILD + "/channels")) {
+			send(x, 200, "[" + ch("900", "Text Channels", 4, 0) + "," + ch(GENERAL, "general", 0, 1) + "," + ch(ANNOUNCEMENTS, "announcements", 5, 2) + ","
+					+ ch("901", "Voice", 2, 3) + "," + ch(CHANNEL, "in-game-chat", 0, 4) + "]");
+			return;
+		}
+		if (path.equals("/api/v10/guilds/" + OTHER_GUILD + "/channels")) {
+			send(x, 200, "[" + ch(OTHER_CHAT, "server-chat", 0, 0) + "]");
+			return;
+		}
 		String[] parts = path.split("/");
 		String channel = parts.length > 4 ? parts[4] : "";
+		if (channel.equals(ANNOUNCEMENTS)) {
+			send(x, 403, "{\"message\": \"Missing Access\", \"code\": 50001}");
+			return;
+		}
+		if (channel.equals(GENERAL) && path.endsWith("/messages")) {
+			JsonArray people = new JsonArray();
+			long now = System.currentTimeMillis();
+			String[] said = {"anyone on tonight?", "lol", "the queue is so long", "gg", "check pins for the rules"};
+			for (int i = 0; i < said.length; i++) people.add(message(now - 600_000L + i * 1000L, i, "person" + i, false, said[i]));
+			send(x, 200, people.toString());
+			return;
+		}
 		boolean list = path.endsWith("/messages");
 		if (!channel.equals(CHANNEL) && !channel.equals(NO_WORDS)) {
 			send(x, 404, "{\"message\": \"Unknown Channel\", \"code\": 10003}");
@@ -121,6 +151,10 @@ final class SelfTestDiscord {
 		JsonArray out = new JsonArray();
 		page.forEach(out::add);
 		send(x, 200, out.toString());
+	}
+
+	private static String ch(String id, String name, int type, int position) {
+		return "{\"id\": \"" + id + "\", \"name\": \"" + name + "\", \"type\": " + type + ", \"position\": " + position + "}";
 	}
 
 	private static void send(HttpExchange x, int code, String body) throws IOException {

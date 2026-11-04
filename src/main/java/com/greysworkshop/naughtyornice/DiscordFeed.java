@@ -381,6 +381,134 @@ public final class DiscordFeed {
 		CompletableFuture.supplyAsync(() -> check(channel, token, bot)).thenAccept(r -> MinecraftClient.getInstance().execute(() -> done.accept(r)));
 	}
 
+	// ---- Finding the relay channel ----
+
+	/** A channel the token can read, and how many of its last messages read as relayed game chat. */
+	public record Pick(String guildId, String guildName, String channelId, String channelName, int relayLines, int sampled) {
+		public String link() {
+			return "https://discord.com/channels/" + guildId + "/" + channelId;
+		}
+	}
+
+	/** What {@link #findChannels} found: the likeliest relay first, or why nothing. */
+	public static final class Found {
+		public final List<Pick> picks = new ArrayList<>();
+		public String problem;
+		/** The Discord servers looked in. */
+		public final List<String> guilds = new ArrayList<>();
+	}
+
+	/** How many channels' recent messages are read to tell which is the relay. */
+	static final int SAMPLE_CHANNELS = 8, SAMPLE_MESSAGES = 25;
+	/** Words in relay channels' names. */
+	private static final Pattern RELAY_NAME = Pattern.compile("relay|in-?game|game-?chat|server-?chat|mc-?chat|bridge|minecraft|live-?chat|chat-?log");
+
+	/** The word to look for in Discord servers' names: from the server address ("play.constantiam.net": constantiam). */
+	static String serverWord(String key) {
+		String a = key == null ? "" : key.replaceFirst("^server:", "").replaceFirst(":\\d+$", "").toLowerCase(Locale.ROOT);
+		if (key == null || key.startsWith("local:") || a.isEmpty()) return "constantiam";
+		String best = "";
+		for (String part : a.split("\\.")) {
+			if (part.matches("play|mc|www|join|server|net|com|org|gg|io|co|uk|eu|us|me|xyz") || part.matches("\\d+")) continue;
+			if (part.length() > best.length()) best = part;
+		}
+		return best.isEmpty() ? "constantiam" : best;
+	}
+
+	private static int nameScore(String name) {
+		String n = name.toLowerCase(Locale.ROOT);
+		return RELAY_NAME.matcher(n).find() ? 5 : n.contains("chat") ? 2 : n.contains("log") ? 1 : 0;
+	}
+
+	/**
+	 * The text channels the token can read in the Discord server named like {@code word} (every one it's in if none is),
+	 * the likeliest chat relay first: the channels with relay-like names have their last messages read, and the one
+	 * where most read as game chat comes first. Reads only. Blocks.
+	 */
+	static Found findChannels(String token, boolean bot, String word) {
+		Found found = new Found();
+		Fetched out = new Fetched();
+		try {
+			JsonArray guilds = get(apiBase + "/users/@me/guilds", token, bot, out);
+			if (guilds == null) {
+				found.problem = out.problem;
+				return found;
+			}
+			List<JsonObject> chosen = new ArrayList<>(), all = new ArrayList<>();
+			String w = word.toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9]", "");
+			for (JsonElement e : guilds) {
+				if (!e.isJsonObject()) continue;
+				JsonObject g = e.getAsJsonObject();
+				all.add(g);
+				if (!w.isEmpty() && g.get("name").getAsString().toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9]", "").contains(w)) chosen.add(g);
+			}
+			if (all.isEmpty()) {
+				found.problem = bot ? "The bot isn't in any Discord server yet: send the server's staff the request." : "Your account isn't in any Discord server.";
+				return found;
+			}
+			if (chosen.isEmpty()) chosen = all.subList(0, Math.min(5, all.size()));
+			// Every text channel, the relay-like names first.
+			record Candidate(JsonObject guild, JsonObject channel, int score, int position) {}
+			List<Candidate> candidates = new ArrayList<>();
+			for (JsonObject g : chosen) {
+				found.guilds.add(g.get("name").getAsString());
+				out.problem = null;
+				JsonArray channels = get(apiBase + "/guilds/" + g.get("id").getAsString() + "/channels", token, bot, out);
+				if (channels == null) continue;
+				for (JsonElement e : channels) {
+					if (!e.isJsonObject()) continue;
+					JsonObject ch = e.getAsJsonObject();
+					int type = ch.has("type") ? ch.get("type").getAsInt() : -1;
+					if (type != 0 && type != 5) continue;
+					String name = ch.has("name") ? ch.get("name").getAsString() : "";
+					candidates.add(new Candidate(g, ch, nameScore(name), ch.has("position") ? ch.get("position").getAsInt() : 0));
+				}
+			}
+			candidates.sort(Comparator.comparingInt(Candidate::score).reversed().thenComparingInt(Candidate::position));
+			for (int i = 0; i < candidates.size(); i++) {
+				Candidate c = candidates.get(i);
+				int relay = 0, sampled = 0;
+				if (i < SAMPLE_CHANNELS) {
+					out.problem = null;
+					JsonArray page = get(apiBase + "/channels/" + c.channel().get("id").getAsString() + "/messages?limit=" + SAMPLE_MESSAGES, token, bot, out);
+					if (page == null) continue; // Can't read it.
+					for (JsonElement e : page) {
+						if (!e.isJsonObject()) continue;
+						sampled++;
+						Kind k = parse(e.getAsJsonObject()).kind();
+						if (k != Kind.UNKNOWN) relay++;
+					}
+				}
+				found.picks.add(new Pick(c.guild().get("id").getAsString(), c.guild().get("name").getAsString(), c.channel().get("id").getAsString(),
+						c.channel().has("name") ? c.channel().get("name").getAsString() : "?", relay, sampled));
+			}
+			// Most relay lines first; ties keep the name order.
+			List<Pick> sorted = new ArrayList<>(found.picks);
+			sorted.sort(Comparator.comparingInt((Pick p) -> p.sampled() == 0 ? 0 : p.relayLines() * 100 / p.sampled()).reversed());
+			found.picks.clear();
+			found.picks.addAll(sorted);
+			if (found.picks.isEmpty()) found.problem = (bot ? "The bot" : "Your account") + " can't read any text channel in " + String.join(", ", found.guilds) + ".";
+		} catch (IOException e) {
+			found.problem = e.getMessage();
+		}
+		return found;
+	}
+
+	/** {@link #findChannels} for the server you're on (Constantiam if none), off the game thread. */
+	public static void findAsync(MinecraftClient client, java.util.function.Consumer<Found> done) {
+		NNConfig c = NNConfig.INSTANCE;
+		String token = token();
+		if (token.isEmpty()) {
+			Found f = new Found();
+			f.problem = "Paste a token first.";
+			done.accept(f);
+			return;
+		}
+		String key = !c.discordServer.isEmpty() ? c.discordServer : client.world != null && client.getNetworkHandler() != null ? Ledger.worldKey(client) : null;
+		boolean bot = !c.discordOwnAccount;
+		CompletableFuture.supplyAsync(() -> findChannels(token, bot, serverWord(key))).thenAccept(f -> client.execute(() -> done.accept(f)));
+	}
+
 	// ---- Filing what came in ----
 
 	/** What one catch-up filed, for the chat line and the settings. */

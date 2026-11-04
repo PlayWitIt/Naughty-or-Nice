@@ -1418,6 +1418,48 @@ public final class SelfTest {
 					return;
 				}
 				check("a bot without Message Content is told how to fix it (" + DiscordFeed.status + ")", DiscordFeed.status.contains("Message Content"));
+				// Find the relay channel: your own account, off a server, nothing set yet.
+				NNConfig.INSTANCE.discordOwnAccount = true;
+				DiscordFeed.setToken(SelfTestDiscord.USER);
+				NNConfig.INSTANCE.discordChannel = "";
+				NNConfig.INSTANCE.discordServer = "";
+				NNConfig.INSTANCE.discordOn = false;
+				DiscordFeed.reset();
+				client.setScreen(new ShopScreen(ShopScreen.Tab.SETTINGS, null));
+			}
+			case 1110 -> {
+				check("Settings has Find the relay channel", screen(client).testClick("discord-find"));
+				waitStarted = System.currentTimeMillis();
+			}
+			case 1112 -> {
+				DiscordFeed.Found found = screen(client).testDiscordFound();
+				if (found == null && System.currentTimeMillis() - waitStarted < 30_000) {
+					tick--;
+					return;
+				}
+				NNConfig c = NNConfig.INSTANCE;
+				DiscordFeed.Pick first = found == null || found.picks.isEmpty() ? null : found.picks.get(0);
+				log("Discord find: " + (found == null ? "nothing" : found.picks + " in " + found.guilds));
+				check("it finds the relay channel in Constantiam's Discord first (" + first + ")", first != null && first.channelId().equals(SelfTestDiscord.CHANNEL)
+						&& first.guildName().equals("Constantiam") && first.relayLines() * 2 > first.sampled());
+				check("...looking only in the Discord named like the server", found != null && found.guilds.equals(List.of("Constantiam")));
+				check("...leaving out channels it can't read, voice and categories", found != null && found.picks.size() == 2
+						&& found.picks.stream().noneMatch(pk -> pk.channelId().equals(SelfTestDiscord.ANNOUNCEMENTS) || pk.channelId().equals("901") || pk.channelId().equals("900")));
+				check("...and puts it in the box, for Constantiam, switched on", DiscordFeed.channelId(c.discordChannel).equals(SelfTestDiscord.CHANNEL)
+						&& c.discordServer.equals("server:constantiam.net") && c.discordOn && DiscordFeed.ready());
+				check("the Discord to look in comes from the server's address", DiscordFeed.serverWord("server:play.constantiam.net").equals("constantiam")
+						&& DiscordFeed.serverWord(null).equals("constantiam") && DiscordFeed.serverWord("server:mc.hypixel.net").equals("hypixel")
+						&& DiscordFeed.serverWord("local:New World").equals("constantiam"));
+				check("with your own account, finding is sent as that too", discord.auths.stream().skip(Math.max(0, discord.auths.size() - 5)).allMatch(SelfTestDiscord.USER::equals));
+				screen(client).testClick("jump:Discord");
+			}
+			case 1113 -> {
+				screenshot(client, "68_discord_found");
+				check("Next channel picks the other one", screen(client).testClick("discord-find")
+						&& DiscordFeed.channelId(NNConfig.INSTANCE.discordChannel).equals(SelfTestDiscord.GENERAL));
+			}
+			case 1115 -> {
+				NNConfig.INSTANCE.discordOwnAccount = false;
 				DiscordFeed.setToken("");
 				NNConfig.INSTANCE.discordOn = false;
 				NNConfig.INSTANCE.discordChannel = "";
@@ -1429,8 +1471,8 @@ public final class SelfTest {
 				NNConfig.INSTANCE.discordChannel = "https://discord.com/channels/1000000000000000000/1100000000000000001";
 				client.setScreen(new ShopScreen(ShopScreen.Tab.SETTINGS, null));
 			}
-			case 1111 -> check("Settings has a Discord section to jump to", screen(client).testClick("jump:Discord"));
-			case 1114 -> {
+			case 1117 -> check("Settings has a Discord section to jump to", screen(client).testClick("jump:Discord"));
+			case 1120 -> {
 				screenshot(client, "67_discord_settings");
 				NNConfig.INSTANCE.discordChannel = "";
 				client.setScreen(null);
