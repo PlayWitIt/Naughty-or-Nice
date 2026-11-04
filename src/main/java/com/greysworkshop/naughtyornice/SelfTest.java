@@ -1500,6 +1500,37 @@ public final class SelfTest {
 				ledger.switchTo(offlineReturnKey);
 				check("after offline viewing, the live server's lists are back", ledger.byName(GRIEFER) != null);
 			}
+			// Export all this server's data as JSON for analysis: complete and exactly as stored.
+			case 1119 -> {
+				String json = DataExport.json(ledger, mod.chatLogger);
+				com.google.gson.JsonObject root = com.google.gson.JsonParser.parseString(json).getAsJsonObject();
+				int players = ledger.all().size();
+				check("the export is one JSON object with the server named", root.has("export")
+						&& root.getAsJsonObject("export").get("server").getAsString().length() > 0);
+				check("every player is in it (" + players + ")", root.getAsJsonArray("players").size() == players
+						&& root.getAsJsonObject("summary").get("players").getAsInt() == players);
+				// A known Naughty player is there with the right verdict and their real stats.
+				com.google.gson.JsonObject gary = null;
+				for (com.google.gson.JsonElement e : root.getAsJsonArray("players")) {
+					if (GRIEFER.equals(e.getAsJsonObject().get("name").getAsString())) gary = e.getAsJsonObject();
+				}
+				Profile real = ledger.byName(GRIEFER);
+				check("a player's verdict and stats are exact", gary != null && real != null
+						&& gary.get("verdict").getAsString().equals(real.verdict.name())
+						&& gary.getAsJsonObject("stats").get("deaths").getAsInt() == real.stats.deaths
+						&& gary.get("firstSeen").getAsLong() == real.firstSeen);
+				check("the chat feed and server activity are included", root.has("chat") && root.has("serverActivity") && root.has("seenTogether"));
+				// It really writes to a file too.
+				try {
+					java.nio.file.Path file = DataExport.write(ledger, mod.chatLogger);
+					com.google.gson.JsonObject fromFile = com.google.gson.JsonParser.parseString(java.nio.file.Files.readString(file)).getAsJsonObject();
+					check("it writes a .json file with the same players", java.nio.file.Files.exists(file)
+							&& fromFile.getAsJsonArray("players").size() == players);
+					java.nio.file.Files.deleteIfExists(file);
+				} catch (java.io.IOException e) {
+					check("writing the export file (" + e.getMessage() + ")", false);
+				}
+			}
 			case 1117 -> check("Settings has a Discord section to jump to", screen(client).testClick("jump:Discord"));
 			case 1120 -> {
 				screenshot(client, "67_discord_settings");

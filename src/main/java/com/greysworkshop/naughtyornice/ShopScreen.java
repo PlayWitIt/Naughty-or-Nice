@@ -244,6 +244,9 @@ public class ShopScreen extends Screen {
 	private TextFieldWidget discordChannelField, discordTokenField;
 	private int discordChannelTop = -1000, discordTokenTop = -1000;
 	private String discordStatus;
+	/** The result of the last data export (where the file went), shown on the card. */
+	private String dataStatus;
+	private int dataStatusColor = 0;
 	/** The channels "Find the relay channel" found, and which of them is in the box. */
 	private DiscordFeed.Found discordFound;
 	private int discordPick;
@@ -4558,6 +4561,8 @@ public class ShopScreen extends Screen {
 		y = notificationsCard(context, mouseX, mouseY, x, y, w) + 10;
 		settingsAnchors.put("Discord", y - y0);
 		y = discordCard(context, mouseX, mouseY, x, y, w) + 10;
+		settingsAnchors.put("Your data", y - y0);
+		y = dataCard(context, mouseX, mouseY, x, y, w) + 10;
 		int circlesAt = y;
 		settingsAnchors.put("Friend circles", y - y0);
 		y = circlesCard(context, mouseX, mouseY, x, y, w) + 10;
@@ -5992,6 +5997,79 @@ public class ShopScreen extends Screen {
 		} catch (RuntimeException e) {
 			return null;
 		}
+	}
+
+	/** "Your data": the whole of this server's Naughty or Nice data as one file, to keep or send for analysis. */
+	private int dataCard(DrawContext context, int mouseX, int mouseY, int x, int y, int w) {
+		String about = "Everything Naughty or Nice knows about this server — every player with their verdict, times, chat "
+				+ "statistics, places and all the rest — in one file, exactly as it's stored. Keep it, or send it to someone "
+				+ "(or an AI) to go through.";
+		List<net.minecraft.text.OrderedText> lines = textRenderer.wrapLines(Text.literal(about), w - 20);
+		int people = mod.ledger.all().size();
+		String where = dataStatus != null ? dataStatus : "Files go to config/naughtyornice/exports. " + people + (people == 1 ? " player" : " players") + " on this server.";
+		int h = 22 + lines.size() * 10 + 6 + 18 + 12 + 6;
+		roundedBorder(context, x, y, w, h, CARD, BORDER);
+		context.drawText(textRenderer, Text.literal("Your data").styled(st -> st.withBold(true)), x + 10, y + 7, TEXT, false);
+		int ty = y + 20;
+		for (var line : lines) {
+			context.drawText(textRenderer, line, x + 10, ty, MUTED, false);
+			ty += 10;
+		}
+		ty += 6;
+		int bx = x + 10;
+		String file = "Export to a file";
+		int fw = textRenderer.getWidth(file) + 14;
+		pill(context, mouseX, mouseY, bx, ty, fw, 14, file, YELLOW, YELLOW_EDGE, BUTTON_TEXT, "data-export", this::exportDataToFile);
+		bx += fw + 6;
+		String copy = "Copy all data";
+		int cw = textRenderer.getWidth(copy) + 14;
+		pill(context, mouseX, mouseY, bx, ty, cw, 14, copy, SOFT, BORDER, TEXT, "data-copy", this::copyAllData);
+		bx += cw + 6;
+		if (dataStatus != null && dataFolder != null) {
+			String open = "Open the folder";
+			int ow = textRenderer.getWidth(open) + 14;
+			pill(context, mouseX, mouseY, bx, ty, ow, 14, open, SOFT, BORDER, TEXT, "data-folder", () -> DiscordFeed.openBrowser(dataFolder.toUri().toString()));
+		}
+		ty += 18;
+		textTrim(context, where, x + 10, ty, w - 20, dataStatus != null ? (dataStatusColor != 0 ? dataStatusColor : NICE) : MUTED);
+		return y + h;
+	}
+
+	private java.nio.file.Path dataFolder;
+
+	private void exportDataToFile() {
+		try {
+			java.nio.file.Path file = DataExport.write(mod.ledger, mod.chatLogger);
+			dataFolder = file.getParent();
+			client.keyboard.setClipboard(file.toAbsolutePath().toString());
+			dataStatus = "Saved " + file.getFileName() + " (" + DataExport.sizeWord((int) java.nio.file.Files.size(file)) + "). The path is copied; Open the folder to find it.";
+			dataStatusColor = NICE;
+		} catch (java.io.IOException | RuntimeException e) {
+			dataStatus = "Couldn't write the file: " + e.getMessage();
+			dataStatusColor = LOOK;
+		}
+	}
+
+	private void copyAllData() {
+		try {
+			String json = DataExport.json(mod.ledger, mod.chatLogger);
+			if (json.length() > 2_000_000) {
+				dataStatus = "That's a lot of data (" + DataExport.sizeWord(json.length()) + ") — too much to copy reliably. Use Export to a file instead.";
+				dataStatusColor = LOOK;
+				return;
+			}
+			client.keyboard.setClipboard(json);
+			dataStatus = "Copied all the data (" + DataExport.sizeWord(json.length()) + "). Paste it wherever you want it.";
+			dataStatusColor = NICE;
+		} catch (RuntimeException e) {
+			dataStatus = "Couldn't copy: " + e.getMessage();
+			dataStatusColor = LOOK;
+		}
+	}
+
+	/** For the self-test. */
+	public String testExport() {
+		return DataExport.json(mod.ledger, mod.chatLogger);
 	}
 
 	private int discordCard(DrawContext context, int mouseX, int mouseY, int x, int y, int w) {
