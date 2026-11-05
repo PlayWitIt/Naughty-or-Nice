@@ -3981,21 +3981,31 @@ public class ShopScreen extends Screen {
 			boolean good = st.startsWith("Caught") || st.startsWith("Up to date") || st.startsWith("Connected");
 			boolean bad = st.startsWith("Couldn't") || st.startsWith("Discord") || st.startsWith("No such") || st.startsWith("Paste")
 					|| st.contains("refused") || st.contains("can't");
-			// When a catch-up has saved a debug file (e.g. the relay's format wasn't understood), a way to open it to send over.
+			// Re-read everything: forgets how far it got and pulls the last few days again (for when an earlier version
+			// skipped past lines, or you just want the whole window back). Catch up now only gets what's new since last time.
+			int reW = !busy ? textRenderer.getWidth("Re-read all") + 12 : 0;
+			// When a catch-up has saved a debug file (e.g. the relay's format wasn't understood), a way to open it.
 			int dbgW = DiscordFeed.debugFile != null ? textRenderer.getWidth("Debug file") + 12 : 0;
-			textTrim(context, st, 8, top + 5, width - 16 - nw - dbgW - 12, good ? NICE : bad ? LOOK : MUTED);
+			int rightEdge = width - 8;
+			pill(context, mouseX, mouseY, rightEdge - nw, top + 2, nw, 14, now, busy ? SOFT : YELLOW, busy ? BORDER : YELLOW_EDGE,
+					busy ? MUTED : BUTTON_TEXT, "chat-discord-now", busy ? () -> {} : this::discordCatchUpNow);
+			int bx = rightEdge - nw;
+			if (reW > 0) {
+				bx -= reW + 6;
+				pill(context, mouseX, mouseY, bx, top + 2, reW, 14, "Re-read all", SOFT, BORDER, TEXT, "chat-discord-reread", this::discordReReadAll);
+			}
 			if (dbgW > 0) {
-				pill(context, mouseX, mouseY, width - 8 - nw - 6 - dbgW, top + 2, dbgW, 14, "Debug file", SOFT, BORDER, TEXT, "chat-discord-debug", () -> {
+				bx -= dbgW + 6;
+				pill(context, mouseX, mouseY, bx, top + 2, dbgW, 14, "Debug file", SOFT, BORDER, TEXT, "chat-discord-debug", () -> {
 					try {
 						Util.getOperatingSystem().open(DiscordFeed.debugFile.getParent().toFile());
-						flash("Opened the exports folder — send discord-debug.txt over for the relay format", NICE, null);
+						flash("Opened the exports folder (discord-debug.txt)", NICE, null);
 					} catch (RuntimeException e) {
 						flash("Couldn't open the folder", LOOK, null);
 					}
 				});
 			}
-			pill(context, mouseX, mouseY, width - 8 - nw, top + 2, nw, 14, now, busy ? SOFT : YELLOW, busy ? BORDER : YELLOW_EDGE,
-					busy ? MUTED : BUTTON_TEXT, "chat-discord-now", busy ? () -> {} : this::discordCatchUpNow);
+			textTrim(context, st, 8, top + 5, bx - 14, good ? NICE : bad ? LOOK : MUTED);
 			context.fill(0, top + bh, width, top + bh + 1, BORDER);
 			top += bh + 1;
 		}
@@ -6369,6 +6379,13 @@ public class ShopScreen extends Screen {
 		}
 		DiscordFeed.status = "Catching up from Discord…";
 		DiscordFeed.catchUp(client, mod.ledger, true);
+	}
+
+	/** Forgets how far the away-chat got and reads the last few days again — the whole window, not just what's new. */
+	private void discordReReadAll() {
+		if (client == null || !DiscordFeed.ready() || DiscordFeed.running()) return;
+		DiscordFeed.reset();
+		discordCatchUpNow();
 	}
 
 	/** First click: looks for the relay channel and puts the best one in the box. Then: the next one it found. */
