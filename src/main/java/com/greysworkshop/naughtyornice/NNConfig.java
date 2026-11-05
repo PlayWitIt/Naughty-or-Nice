@@ -212,16 +212,6 @@ public final class NNConfig {
 	/** A version you said not to be told about again. */
 	public String skippedVersion = "";
 
-	// ---- Chat while you're away, from the server's Discord ----
-	/** Catch up on the server's Discord relay channel each time you join (see DiscordFeed). */
-	public boolean discordOn = false;
-	/** The relay channel: its link (or number). */
-	public String discordChannel = "";
-	/** Which server (lists key) the channel's chat is for. */
-	public String discordServer = "";
-	/** The token is your own account's, not a bot's (against Discord's rules). */
-	public boolean discordOwnAccount = false;
-
 	// ---- Disconnects ----
 	/** Note why you were disconnected and who was around, and say so when you're back. */
 	public boolean recordDisconnects = true;
@@ -270,8 +260,6 @@ public final class NNConfig {
 				if (loaded.circles == null || loaded.circles.isEmpty()) loaded.circles = Friends.defaultCircles();
 				if (loaded.skippedVersion == null) loaded.skippedVersion = "";
 				if (loaded.lastVersion == null) loaded.lastVersion = "";
-				if (loaded.discordChannel == null) loaded.discordChannel = "";
-				if (loaded.discordServer == null) loaded.discordServer = "";
 				if (loaded.whisperCommand == null || loaded.whisperCommand.isBlank()) loaded.whisperCommand = "msg";
 				boolean backLeft = !loaded.coordsBackLeft;
 				if (backLeft) {
