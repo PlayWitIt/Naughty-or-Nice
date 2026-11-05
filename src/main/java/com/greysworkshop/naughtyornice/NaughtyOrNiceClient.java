@@ -351,7 +351,6 @@ public class NaughtyOrNiceClient implements ClientModInitializer {
 	private void tick(MinecraftClient client) {
 		Alerts.tick();
 		UpdateCheck.tick(client);
-		Safe.run("catching up from Discord", () -> DiscordFeed.tick(client, ledger));
 		Safe.run("looking up join dates", () -> JoinDates.tick(client, ledger));
 		PhoneAlerts.flush(false);
 		if (NNConfig.on()) ServerDetails.tick(client, ledger);

@@ -671,61 +671,6 @@ public final class Watcher {
 		if (url.find()) PlayerStats.note(st.linksPosted, url.group(), 15);
 	}
 
-	/**
-	 * A line from the server's Discord relay, said while you were away (see {@link DiscordFeed}): filed like chat you
-	 * saw, at the time it was said, with no pings or sounds. Returns why it would have alerted you (it's marked so in the
-	 * Chat tab), or null.
-	 */
-	String fromDiscord(MinecraftClient client, DiscordFeed.Message m) {
-		Profile profile = ledger.byName(m.name());
-		String name = profile != null ? profile.name : m.name();
-		if (profile != null) profile.lastSeen = Math.max(profile.lastSeen, m.time());
-		switch (m.kind()) {
-			case JOIN, LEAVE -> {
-				chatLogger.history(null, name, m.text(), true, null, m.time());
-				return null;
-			}
-			case DEATH -> {
-				chatLogger.history(null, name, m.text(), true, null, m.time());
-				return null;
-			}
-			case CHAT -> {
-				String text = m.text();
-				if (profile != null) {
-					PlayerStats st = profile.stats;
-					st.messages++;
-					st.words += text.isBlank() ? 0 : text.strip().split("\\s+").length;
-					if (st.firstMessage == 0 || m.time() < st.firstMessage) st.firstMessage = m.time();
-					st.lastMessage = Math.max(st.lastMessage, m.time());
-					chatAnalytics(profile, text, m.time(), Set.of(), client.player == null ? "" : client.player.getGameProfile().name());
-					profile.recentChat.add(text.length() > 120 ? text.substring(0, 120) + "..." : text);
-					while (profile.recentChat.size() > 10) profile.recentChat.remove(0);
-					if (NNConfig.INSTANCE.watchChat) {
-						String quote = text.length() > 40 ? text.substring(0, 40) + "..." : text;
-						Profile.Kind kind = switch (ChatIntel.tone(text, Set.of())) {
-							case RUDE -> Profile.Kind.RUDE;
-							case ABUSE -> Profile.Kind.ABUSE_TALK;
-							case KIND -> Profile.Kind.KIND_WORDS;
-							case NONE -> null;
-						};
-						if (kind != null) {
-							Profile.Action a = profile.record(kind, kind == Profile.Kind.ABUSE_TALK ? (text.length() > 120 ? text.substring(0, 120) + "..." : text) : quote,
-									NNConfig.INSTANCE.maxActions);
-							a.time = m.time();
-						}
-					}
-				}
-				String alert = client.player == null ? null : alertFor(client, text, false);
-				chatLogger.history(profile, name, text, false, alert, m.time());
-				ledger.markDirty();
-				return alert;
-			}
-			default -> {
-				return null;
-			}
-		}
-	}
-
 	private boolean fresh(String key, long now) {
 		recentAlerts.values().removeIf(t -> now - t > 30_000);
 		return recentAlerts.put(key, now) == null;

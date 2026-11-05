@@ -1288,189 +1288,6 @@ public final class SelfTest {
 				server.execute(() -> griefer.getEntityWorld().sendEntityStatus(griefer, net.minecraft.entity.EntityStatuses.USE_TOTEM_OF_UNDYING));
 				walkTicks = 100;
 			}
-			// ---- Chat while you were away, from the server's Discord (a stand-in for Discord's API) ----
-			case 1100 -> {
-				try {
-					discord = new SelfTestDiscord();
-					discordApi = DiscordFeed.apiBase;
-					DiscordFeed.apiBase = discord.start();
-				} catch (java.io.IOException e) {
-					check("the stand-in Discord starts (" + e + ")", false);
-					break;
-				}
-				long now = System.currentTimeMillis();
-				String me = client.player.getGameProfile().name();
-				var msgs = discord.messages;
-				msgs.add(SelfTestDiscord.message(now - 120 * 60_000L, 0, GRIEFER, true, "my base is at 1200 -3400 lol"));
-				msgs.add(SelfTestDiscord.message(now - 110 * 60_000L, 0, "Relay", false, "**Helpful\\_Hana**: meet at spawn"));
-				msgs.add(SelfTestDiscord.message(now - 100 * 60_000L, 0, "Relay", false, "<RandomRick> anyone selling elytra"));
-				msgs.add(SelfTestDiscord.embed(now - 90 * 60_000L, 0, "Steve_Builder joined the server", null));
-				msgs.add(SelfTestDiscord.message(now - 80 * 60_000L, 0, "Relay", false, ":outbox_tray: Steve_Builder left the server"));
-				msgs.add(SelfTestDiscord.message(now - 70 * 60_000L, 0, "Relay", false, GRIEFER + " was slain by xX_Toxic_Xx using Diamond Sword"));
-				msgs.add(SelfTestDiscord.message(now - 60 * 60_000L, 0, "Relay", false, "<RandomRick> hey " + me + " where are you"));
-				msgs.add(SelfTestDiscord.message(now - 50 * 60_000L, 0, "Relay", false, "<RandomRick> SAID WHILE YOU WERE ON"));
-				msgs.add(SelfTestDiscord.message(now - 40 * 60_000L, 0, "Relay", false, "Server restarting in 5 minutes"));
-				for (int i = 0; i < 150; i++) msgs.add(SelfTestDiscord.message(now - 30 * 60_000L + i * 1000L, i, "Relay", false, "<Helpful_Hana> filler " + i));
-				// Said after you joined this time: you saw it live.
-				msgs.add(SelfTestDiscord.message(now - 5_000L, 0, "Relay", false, "<RandomRick> SAID JUST NOW"));
-				NNConfig c = NNConfig.INSTANCE;
-				c.discordOn = true;
-				c.discordOwnAccount = false;
-				c.discordChannel = "https://discord.com/channels/1000000000000000000/" + SelfTestDiscord.CHANNEL;
-				c.discordServer = Ledger.worldKey(client);
-				DiscordFeed.setToken("Bot " + SelfTestDiscord.BOT);
-				DiscordFeed.reset();
-				DiscordFeed.state().sessions.clear();
-				// You were on from 55 to 45 minutes ago.
-				DiscordFeed.state().sessions.add(new long[] {now - 55 * 60_000L, now - 45 * 60_000L});
-				feedBefore = mod.chatLogger.feed().size();
-				waitStarted = now;
-				discordNow = now;
-				// You joined 10 seconds ago: what's said after that you saw live.
-				DiscordFeed.catchUpUntil(client, ledger, false, now - 10_000L);
-			}
-			case 1101 -> {
-				if (DiscordFeed.running() && System.currentTimeMillis() - waitStarted < 30_000) {
-					tick--;
-					return;
-				}
-				DiscordFeed.Counts n = DiscordFeed.lastCounts;
-				log("Discord catch-up: " + DiscordFeed.status);
-				check("Discord catch-up reads every kind of relay line (" + (n == null ? "none" : n.chat + " chat, " + n.joins + " joins/leaves, "
-						+ n.deaths + " deaths, " + n.unknown + " unknown, " + n.skipped + " seen live") + ")",
-						n != null && n.chat == 154 && n.joins == 2 && n.deaths == 1 && n.unknown == 1 && n.skipped == 1);
-				check("...waits out Discord's rate limit and reads both pages, as a bot (" + discord.requests + " requests, " + discord.waits + " waits)",
-						discord.waits == 1 && discord.requests >= 3 && discord.auths.stream().allMatch(a -> ("Bot " + SelfTestDiscord.BOT).equals(a)));
-				List<Profile.Line> feed = mod.chatLogger.feed();
-				long now = System.currentTimeMillis();
-				// This run's copy (the test world keeps its chat between runs, and each run starts the channel over).
-				Profile.Line gary = feed.stream().filter(l -> l.fromDiscord && l.text.equals("my base is at 1200 -3400 lol"))
-						.min(java.util.Comparator.comparingLong(l -> Math.abs(discordNow - 120 * 60_000L - l.time))).orElse(null);
-				check("...files each line at the time it was said (" + (gary == null ? "not found" : (now - gary.time) / 60_000 + " min ago") + ")",
-						gary != null && Math.abs(discordNow - 120 * 60_000L - gary.time) < 1_000 && gary.sender.equals(GRIEFER));
-				boolean ordered = true;
-				for (int i = 1; i < feed.size(); i++) if (feed.get(i).time < feed.get(i - 1).time) ordered = false;
-				check("...in order among the rest of the chat", ordered);
-				check("...but not what was said while you were on", feed.stream().noneMatch(l -> l.text.contains("SAID WHILE YOU WERE ON") || l.text.contains("SAID JUST NOW")));
-				Profile garyProfile = ledger.get(id(GRIEFER));
-				check("...and their coordinates go on their page (" + garyProfile.stats.places.size() + " places)",
-						garyProfile.stats.places.stream().anyMatch(p -> p.x == 1200 && p.z == -3400));
-				Profile.Line named = feed.stream().filter(l -> l.fromDiscord && l.text.startsWith("hey "))
-						.min(java.util.Comparator.comparingLong(l -> Math.abs(discordNow - 60 * 60_000L - l.time))).orElse(null);
-				check("...a line that said your name is marked, without a ping (" + (named == null ? "not found" : named.alert) + ")",
-						named != null && "said your name".equals(named.alert) && n.nameAlerts == 1);
-				check("the token is kept outside what backups copy", !DiscordFeed.tokenFile().startsWith(NNConfig.dir()));
-				check("relay shapes are read: <Name>, Name:, [Rank] Name », joins, deaths",
-						DiscordFeed.fromText("1", 0, "<Steve> hi").name().equals("Steve")
-								&& DiscordFeed.fromText("1", 0, "[VIP] Steve » hello there").text().equals("hello there")
-								&& DiscordFeed.fromText("1", 0, "Steve joined the game").kind() == DiscordFeed.Kind.JOIN
-								&& DiscordFeed.fromText("1", 0, "📤 Steve left the server").kind() == DiscordFeed.Kind.LEAVE
-								&& DiscordFeed.fromText("1", 0, DiscordFeed.clean(":outbox_tray: Steve left the server")).kind() == DiscordFeed.Kind.LEAVE
-								&& DiscordFeed.fromText("1", 0, DiscordFeed.clean("<:join:123456789012345678> Steve joined the game")).kind() == DiscordFeed.Kind.JOIN
-								&& DiscordFeed.clean("<Steve> meet at 10:30:45 at 100 64 -200 :skull:").equals("<Steve> meet at 10:30:45 at 100 64 -200")
-								&& DiscordFeed.fromText("1", 0, "Steve fell from a high place").kind() == DiscordFeed.Kind.DEATH
-								&& DiscordFeed.fromText("1", 0, "Server restarting soon") == null
-								&& DiscordFeed.channelId("https://discord.com/channels/1000000000000000000/1100000000000000001").equals("1100000000000000001"));
-				// Again: nothing new.
-				feedBefore = mod.chatLogger.feed().size();
-				waitStarted = now;
-				DiscordFeed.catchUpUntil(client, ledger, false, now - 10_000L);
-			}
-			case 1103 -> {
-				if (DiscordFeed.running() && System.currentTimeMillis() - waitStarted < 30_000) {
-					tick--;
-					return;
-				}
-				check("catching up again finds nothing new, so nothing is filed twice (" + DiscordFeed.status + ")",
-						mod.chatLogger.feed().size() == feedBefore && DiscordFeed.status.startsWith("Up to date"));
-				DiscordFeed.setToken("wrong-token");
-				waitStarted = System.currentTimeMillis();
-				DiscordFeed.catchUpUntil(client, ledger, false, waitStarted);
-			}
-			case 1105 -> {
-				if (DiscordFeed.running() && System.currentTimeMillis() - waitStarted < 30_000) {
-					tick--;
-					return;
-				}
-				check("a wrong token is said plainly (" + DiscordFeed.status + ")", DiscordFeed.status.contains("refused the token"));
-				NNConfig.INSTANCE.discordOwnAccount = true;
-				DiscordFeed.setToken(SelfTestDiscord.USER);
-				discord.auths.clear();
-				waitStarted = System.currentTimeMillis();
-				DiscordFeed.catchUpUntil(client, ledger, false, waitStarted);
-			}
-			case 1107 -> {
-				if (DiscordFeed.running() && System.currentTimeMillis() - waitStarted < 30_000) {
-					tick--;
-					return;
-				}
-				check("with your own account it's sent as that, not as a bot", !discord.auths.isEmpty() && discord.auths.stream().allMatch(SelfTestDiscord.USER::equals));
-				NNConfig.INSTANCE.discordOwnAccount = false;
-				DiscordFeed.setToken(SelfTestDiscord.BOT);
-				NNConfig.INSTANCE.discordChannel = SelfTestDiscord.NO_WORDS;
-				DiscordFeed.reset();
-				waitStarted = System.currentTimeMillis();
-				DiscordFeed.catchUpUntil(client, ledger, false, waitStarted);
-			}
-			case 1109 -> {
-				if (DiscordFeed.running() && System.currentTimeMillis() - waitStarted < 30_000) {
-					tick--;
-					return;
-				}
-				check("a bot without Message Content is told how to fix it (" + DiscordFeed.status + ")", DiscordFeed.status.contains("Message Content"));
-				// Find the relay channel: your own account, off a server, nothing set yet.
-				NNConfig.INSTANCE.discordOwnAccount = true;
-				DiscordFeed.setToken(SelfTestDiscord.USER);
-				NNConfig.INSTANCE.discordChannel = "";
-				NNConfig.INSTANCE.discordServer = "";
-				NNConfig.INSTANCE.discordOn = false;
-				DiscordFeed.reset();
-				client.setScreen(new ShopScreen(ShopScreen.Tab.SETTINGS, null));
-			}
-			case 1110 -> {
-				check("Settings has Find the relay channel", screen(client).testClick("discord-find"));
-				waitStarted = System.currentTimeMillis();
-			}
-			case 1112 -> {
-				DiscordFeed.Found found = screen(client).testDiscordFound();
-				if (found == null && System.currentTimeMillis() - waitStarted < 30_000) {
-					tick--;
-					return;
-				}
-				NNConfig c = NNConfig.INSTANCE;
-				DiscordFeed.Pick first = found == null || found.picks.isEmpty() ? null : found.picks.get(0);
-				log("Discord find: " + (found == null ? "nothing" : found.picks + " in " + found.guilds));
-				check("it finds the relay channel in Constantiam's Discord first (" + first + ")", first != null && first.channelId().equals(SelfTestDiscord.CHANNEL)
-						&& first.guildName().equals("Constantiam") && first.relayLines() * 2 > first.sampled());
-				check("...looking only in the Discord named like the server", found != null && found.guilds.equals(List.of("Constantiam")));
-				check("...leaving out channels it can't read, voice and categories", found != null && found.picks.size() == 2
-						&& found.picks.stream().noneMatch(pk -> pk.channelId().equals(SelfTestDiscord.ANNOUNCEMENTS) || pk.channelId().equals("901") || pk.channelId().equals("900")));
-				check("...and puts it in the box, for Constantiam, switched on", DiscordFeed.channelId(c.discordChannel).equals(SelfTestDiscord.CHANNEL)
-						&& c.discordServer.equals("server:constantiam.net") && c.discordOn && DiscordFeed.ready());
-				check("the Discord to look in comes from the server's address", DiscordFeed.serverWord("server:play.constantiam.net").equals("constantiam")
-						&& DiscordFeed.serverWord(null).equals("constantiam") && DiscordFeed.serverWord("server:mc.hypixel.net").equals("hypixel")
-						&& DiscordFeed.serverWord("local:New World").equals("constantiam"));
-				check("with your own account, finding is sent as that too", discord.auths.stream().skip(Math.max(0, discord.auths.size() - 5)).allMatch(SelfTestDiscord.USER::equals));
-				screen(client).testClick("jump:Discord");
-			}
-			case 1113 -> {
-				screenshot(client, "68_discord_found");
-				check("Next channel picks the other one", screen(client).testClick("discord-find")
-						&& DiscordFeed.channelId(NNConfig.INSTANCE.discordChannel).equals(SelfTestDiscord.GENERAL));
-			}
-			case 1115 -> {
-				NNConfig.INSTANCE.discordOwnAccount = false;
-				DiscordFeed.setToken("");
-				NNConfig.INSTANCE.discordOn = false;
-				NNConfig.INSTANCE.discordChannel = "";
-				NNConfig.INSTANCE.discordServer = "";
-				DiscordFeed.reset();
-				DiscordFeed.apiBase = discordApi;
-				discord.stop();
-				// How the settings look for it.
-				NNConfig.INSTANCE.discordChannel = "https://discord.com/channels/1000000000000000000/1100000000000000001";
-				client.setScreen(new ShopScreen(ShopScreen.Tab.SETTINGS, null));
-			}
 			// Offline: PlayWit Hub -> Open Naughty or Nice reads and manages a server's lists without being on it.
 			case 1121 -> {
 				offlineReturnKey = ledger.key();
@@ -1480,24 +1297,20 @@ public final class SelfTest {
 				ledger.switchTo("server:offline-b.example");
 				ledger.setVerdict(ledger.getOrCreate(id("BobOffline"), "BobOffline"), Profile.Verdict.NAUGHTY, false, null);
 				ledger.save(true);
-				// Opens on the server whose relay is set up.
-				NNConfig.INSTANCE.discordServer = "server:offline-a.example";
 				ShopScreen off = ShopScreen.openOffline(null);
 				client.setScreen(off);
-				check("the offline window opens on the set-up server", off.testOffline() && "server:offline-a.example".equals(off.testViewingServer()));
-				check("...and loads that server's lists (AliceOffline is Nice)", ledger.byName("AliceOffline") != null
-						&& ledger.byName("AliceOffline").verdict == Profile.Verdict.NICE && ledger.byName("BobOffline") == null);
+				check("the offline window opens offline on a saved server", off.testOffline() && off.testViewingServer() != null);
+				check("...and loads that server's lists", off.testViewingServer().equals(ledger.key()));
 			}
 			case 1122 -> {
 				screenshot(client, "69_offline");
 				ShopScreen off = (ShopScreen) client.currentScreen;
 				check("the offline window hides the Baritone tab (no player to walk)", !off.testClick("tab:BARITONE"));
+				String firstKey = off.testViewingServer();
 				off.testNextServer();
-				check("the server picker moves to another saved server", off.testViewingServer() != null && !"server:offline-a.example".equals(off.testViewingServer()));
-				check("...and that server's lists load in its place", ledger.byName("AliceOffline") == null);
+				check("the server picker moves to another saved server", off.testViewingServer() != null && !off.testViewingServer().equals(firstKey));
+				check("...and that server's lists load in its place", off.testViewingServer().equals(ledger.key()));
 				off.close();
-				// Back to where the test was.
-				NNConfig.INSTANCE.discordServer = "";
 				ledger.switchTo(offlineReturnKey);
 				check("after offline viewing, the live server's lists are back", ledger.byName(GRIEFER) != null);
 			}
@@ -1563,12 +1376,6 @@ public final class SelfTest {
 				} catch (java.io.IOException e) {
 					check("writing the export file (" + e.getMessage() + ")", false);
 				}
-			}
-			case 1117 -> check("Settings has a Discord section to jump to", screen(client).testClick("jump:Discord"));
-			case 1120 -> {
-				screenshot(client, "67_discord_settings");
-				NNConfig.INSTANCE.discordChannel = "";
-				client.setScreen(null);
 			}
 			case 1064 -> {
 				Profile gary = ledger.get(id(GRIEFER));
@@ -2149,10 +1956,6 @@ public final class SelfTest {
 	}
 
 	private static String shareLink;
-	private static SelfTestDiscord discord;
-	private static String discordApi;
-	private static int feedBefore;
-	private static long waitStarted, discordNow;
 	/** Server ticks the fake griefer has left to walk (a quarter block each, east). */
 	private static int walkTicks;
 	private static String offlineReturnKey;
