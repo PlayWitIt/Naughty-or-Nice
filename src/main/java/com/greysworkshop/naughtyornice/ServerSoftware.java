@@ -180,7 +180,7 @@ public final class ServerSoftware {
 			case "plasmo" -> "Plasmo Voice";
 			case "floodgate" -> "Geyser / Floodgate (Bedrock players)";
 			case "luckperms" -> "LuckPerms";
-			case "xaerominimap", "xaeroworldmap" -> "Xaero's map support";
+			case "xaerominimap", "xaeroworldmap" -> "Minimap support";
 			case "journeymap" -> "JourneyMap support";
 			case "voxelmap", "worldinfo" -> "Minimap world id";
 			case "lunar", "apollo" -> "Lunar Client support";

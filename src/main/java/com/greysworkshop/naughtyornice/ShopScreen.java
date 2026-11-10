@@ -4358,14 +4358,10 @@ public class ShopScreen extends Screen {
 						() -> c.nearRadius, v -> c.nearRadius = v, v -> v + " blocks"));
 	}
 
-	/** How the squares of chunks in the world are drawn, for the Chunk trails card. */
+	/** The radar's settings, for the Chunk trails card. */
 	private List<Stepper> chunkSteppers() {
 		NNConfig c = NNConfig.INSTANCE;
 		return List.of(
-				new Stepper("Squares are drawn at", new int[] {ChunkOverlay.FOLLOW, -64, 0, 32, 62, 64, 100, 120, 128, 200, 256, 320},
-						() -> c.chunkOverlayY, v -> c.chunkOverlayY = v, v -> v == ChunkOverlay.FOLLOW ? "your feet" : "height " + v),
-				new Stepper("Squares are filled", new int[] {0, 10, 25, 40, 60},
-						() -> c.chunkOverlayFill, v -> c.chunkOverlayFill = v, v -> v == 0 ? "outline only" : v + "%"),
 				new Stepper("Radar size", new int[] {0, 1, 2}, () -> c.radarSize, v -> c.radarSize = v, v -> switch (v) {
 					case 0 -> "Small";
 					case 2 -> "Large";
@@ -4374,15 +4370,15 @@ public class ShopScreen extends Screen {
 	}
 
 	/**
-	 * Chunk trails in one place: on or off, the squares in the world and the radar, and how the squares are drawn.
+	 * Chunk trails in one place: on or off, and the radar.
 	 * Returns where it ends.
 	 */
 	private int chunkTrailsCard(DrawContext context, int mouseX, int mouseY, int x, int y, int w) {
 		NNConfig c = NNConfig.INSTANCE;
-		int h = 116;
+		int h = 80;
 		roundedBorder(context, x, y, w, h, CARD, c.chunkTrails ? NICE : BORDER);
 		context.drawText(textRenderer, Text.literal("Chunk trails").styled(s -> s.withBold(true)), x + 10, y + 7, TEXT, false);
-		textTrim(context, c.chunkTrails ? "On: in the world (K), new land is red, yours from before blue, old land green (someone was there), trails yellow. The radar and Intel map match."
+		textTrim(context, c.chunkTrails ? "On: on the radar (" + NaughtyOrNiceClient.radarKeyName() + ") and the Intel map, new land is red, yours from before blue, old land green (someone was there), trails yellow."
 				: "Off: no chunks are read and nothing is drawn.", x + 10, y + 19, w - 20, c.chunkTrails ? NICE : MUTED);
 		int bx = x + 10, by = y + 33;
 		String main = c.chunkTrails ? "Turn chunk trails off" : "Turn chunk trails on";
@@ -4392,14 +4388,6 @@ public class ShopScreen extends Screen {
 			NNConfig.save();
 		});
 		bx += mw + 6;
-		String squares = "Squares in the world: " + (c.chunkOverlay ? "on" : "off") + " (K)";
-		int sw = textRenderer.getWidth(squares) + 14;
-		pill(context, mouseX, mouseY, bx, by, sw, 14, squares, SOFT, BORDER, c.chunkTrails ? TEXT : MUTED, "chunks-squares", () -> {
-			c.chunkOverlay = !c.chunkOverlay;
-			if (c.chunkOverlay) c.chunkTrails = true;
-			NNConfig.save();
-		});
-		bx += sw + 6;
 		String radar = "Radar: " + (c.trailRadar ? "on" : "off") + " (" + NaughtyOrNiceClient.radarKeyName() + ")";
 		int rw = textRenderer.getWidth(radar) + 14;
 		pill(context, mouseX, mouseY, bx, by, rw, 14, radar, SOFT, BORDER, c.chunkTrails ? TEXT : MUTED, "chunks-radar", () -> {
@@ -4971,7 +4959,7 @@ public class ShopScreen extends Screen {
 		mapBuiltZ = mapZ;
 	}
 
-	// Land in the same colours as the squares in the world (K) and the radar: red new, green old, yellow trails (darker
+	// Land in the same colours as the radar: red new, green old, yellow trails (darker
 	// here, so places and events stand out on top). Bases are cyan, so green only ever means old land.
 	static final int MAP_BACK = 0xFF0E1216, MAP_FRESH = 0xFF5A1F22, MAP_YOURS = 0xFF1F3A66, MAP_OLD = 0xFF2F6B3C, MAP_TRAIL = 0xFF000000 | ChunkOverlay.TRAIL,
 			MAP_PLACE = 0xFFFF7A1A, MAP_EVENT = 0xFFB070FF, MAP_BASE = 0xFF4CC8FF;
