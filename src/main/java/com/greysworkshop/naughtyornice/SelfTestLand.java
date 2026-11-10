@@ -23,7 +23,7 @@ import java.util.List;
 
 /**
  * Development only: proves land is shown right as you'd see it, through the real game: chunks the server sends, read
- * by the mod as they arrive, drawn as the squares in the world (K) and on the radar. Nothing is set by hand.
+ * by the mod as they arrive, shown on the radar. Nothing is set by hand.
  * <p>
  * First game: fly into land nobody has loaded (it must show red, new), fly far away so the server saves and unloads
  * it, come back (it must not be red: blue, yours), then quit. Second game, started fresh: come back to the same land
@@ -140,8 +140,7 @@ public final class SelfTestLand {
 	}
 
 	private static String drawn() {
-		int[] k = ChunkOverlay.colourCounts();
-		return "K squares drawn: red " + k[0] + ", blue " + k[1] + ", green " + k[2] + ", yellow " + k[3];
+		return "radar: " + TrailRadar.lastOld + " old, " + TrailRadar.lastNew + " new";
 	}
 
 	private static void tick(MinecraftClient client) {
@@ -153,7 +152,6 @@ public final class SelfTestLand {
 			NNConfig c = NNConfig.INSTANCE;
 			c.enabled = true;
 			c.chunkTrails = true;
-			c.chunkOverlay = true;
 			c.trailRadar = true;
 			client.options.getViewDistance().setValue(8);
 			command(client, "gamemode creative @a");
@@ -234,8 +232,6 @@ public final class SelfTestLand {
 				check("3. coming back after restarting the game: none of it red, it shows blue (yours)",
 						n[0] == 0 && n[2] == 0 && n[1] >= madeHere.size() * 9 / 10);
 				greenAround(client);
-				int[] k = ChunkOverlay.colourCounts();
-				check("3b. ...and no square anywhere around your own land is red or green (" + k[0] + " red, " + k[2] + " green)", k[0] == 0 && k[2] == 0);
 				screenshot(client, "land_3_back_after_restart_blue");
 				log("To land the server made and saved while you were far away (someone else's): " + bx + ", " + bz);
 				tp(client, bx, bz);

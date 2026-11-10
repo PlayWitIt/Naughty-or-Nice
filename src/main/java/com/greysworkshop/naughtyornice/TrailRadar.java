@@ -19,7 +19,7 @@ import java.util.List;
 public final class TrailRadar {
 	/** Its diameter on screen for Small, Medium and Large. */
 	private static final int[] SIZES = {96, 128, 168};
-	// The same colours as the squares in the world (K): red new land, green old land (someone was here), yellow trails.
+	// The same colours as the Intel map: red new land, green old land (someone was here), yellow trails.
 	// The screen itself is grey, so green only ever means old land.
 	static final int SCREEN = 0xD00C1014, RIM = 0xFF5A6470, RING = 0x50A0A8B0, CROSS = 0x28A0A8B0,
 			OLD = 0xC0000000 | ChunkOverlay.OLD, OLD_FAR = 0x70000000 | ChunkOverlay.OLD, FRESH = 0x90000000 | ChunkOverlay.FRESH,

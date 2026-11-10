@@ -1624,7 +1624,6 @@ public final class SelfTest {
 						px != null && px[1] <= px[0] * 0.6 + 4 && px[2] > 30 && px[3] < px[2] / 4);
 				check("...a size smaller than the rest of the HUD, on whole pixels", NNConfig.INSTANCE.smallCoords
 						&& CoordsHud.scale(client) < 1 && (client.getWindow().getScaleFactor() == 2 || Math.abs(CoordsHud.scale(client) * client.getWindow().getScaleFactor() - Math.round(CoordsHud.scale(client) * client.getWindow().getScaleFactor())) < 0.01));
-				check("the chunks are drawn in the world (" + ChunkOverlay.shown() + " squares)", ChunkOverlay.shown() > 100);
 				check("the radar shows the land it has read (" + TrailRadar.lastOld + " old, " + TrailRadar.lastNew + " new chunks)", TrailRadar.lastOld + TrailRadar.lastNew > 20);
 				screenshot(client, "59b_chunks_in_world");
 				client.player.setPitch(0);
@@ -2835,11 +2834,11 @@ public final class SelfTest {
 	}
 
 	/**
-	 * Land is the same colours everywhere: the squares in the world (K), the radar and the Intel map all show new land
+	 * Land is the same colours everywhere: the radar and the Intel map all show new land
 	 * red and old land (someone was here) green, and nothing else on them is green.
 	 */
 	private static void colourChecks() {
-		check("the radar shows new and old land in the same colours as the squares in the world (K)",
+		check("the radar shows new and old land in the same land colours as everywhere else",
 				(TrailRadar.FRESH & 0xFFFFFF) == ChunkOverlay.FRESH && (TrailRadar.OLD & 0xFFFFFF) == ChunkOverlay.OLD
 						&& (TrailRadar.OLD_FAR & 0xFFFFFF) == ChunkOverlay.OLD && (TrailRadar.FRESH >>> 24) >= 0x80
 						&& reddish(ChunkOverlay.FRESH) && greenish(ChunkOverlay.OLD));
