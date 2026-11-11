@@ -58,9 +58,9 @@ It also has:
   Settings → **Screen size**: Small fits the most (about 900 wide), Medium is in between (about 680), Large is the
   biggest (about 540, never so big the panels don't fit). Whole-pixel scales are used where they're close, so text
   stays sharp.
-- **Your coordinates** show in green right down in the bottom-left corner, under the chat (x y z, facing, and the
-  matching nether or overworld spot), a size smaller than the rest of the HUD and still sharp, on a dark backing.
-  They never move up into the chat. Settings move them to the bottom-right corner or make them full size. Not showing? `/nn coords` says why and turns
+- **Your coordinates** show in green right down in the bottom-right corner (x y z, facing, and the matching nether or
+  overworld spot), half the size of the rest of the HUD, on a light backing. Settings move them to the bottom-left
+  corner, under the chat (they never move up into it), or make them full size. Not showing? `/nn coords` says why and turns
   them back on.
 - Everything you set (here, in the Baritone screen, highway roam, Baritone's own settings, how the lists are sorted)
   is saved and stays until you change it.
@@ -493,7 +493,9 @@ sorted by **Most time online** and **Most kills**.
 ## Alerts
 - **Totems popped:** "Steve [3 pops]" on nametags and the tab list: the totems they've popped in front of you since they
   last died (the server's own totem signal, so every count is real).
-- **Logout spots:** where a player logged out while you could see them, marked on screen until they come back.
+- **Logout spots:** where a player logged out while you could see them, until they come back: a faint outline of them
+  at the spot and a small name tag above it. Close by, or when you aim at it, the tag also says how long ago and how
+  far. Far away it's only a small dot, and tags never pile up on each other.
 - **Phone alerts:** paste a Discord webhook link in Settings (channel settings, Integrations, Webhooks) and warnings and
   pings (a naughty player joins or comes near, a threat, someone kills you, Base Insurance damage, theft or a player at
   your base) are posted there too, so Discord on your phone tells you. By default only while you're away from the

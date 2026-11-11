@@ -107,12 +107,14 @@ public final class NNConfig {
 	public int radarSize = 0;
 	/** Set once 1.14.0 has put the radar away (it's off until you turn it on). */
 	public boolean radarPutAway = false;
-	/** Your coordinates in the bottom left (hidden in stream-safe mode). */
+	/** Your coordinates in the bottom right (hidden in stream-safe mode). */
 	public boolean showCoords = true;
 	/** Draw them one GUI scale step smaller than the rest of the HUD. */
 	public boolean smallCoords = true;
-	/** In the bottom-right corner; off (the default): the bottom-left corner, under the chat. */
-	public boolean coordsRight = false;
+	/** In the bottom-right corner (the default); off: the bottom-left corner, under the chat. */
+	public boolean coordsRight = true;
+	/** Set once 1.21.1 has moved them to the bottom right, half size. */
+	public boolean coordsMovedRight = false;
 	/** Set once 1.15.1 has put them back in the bottom left, where they were seen. */
 	public boolean coordsBackLeft = false;
 	/** Set once 1.13.11 has turned the coordinates back on for everyone who'd lost them. */
@@ -250,6 +252,7 @@ public final class NNConfig {
 			INSTANCE.coordsRestored = true;
 			INSTANCE.radarPutAway = true;
 			INSTANCE.coordsBackLeft = true;
+			INSTANCE.coordsMovedRight = true;
 			return;
 		}
 		try (Reader reader = Files.newBufferedReader(file())) {
@@ -270,6 +273,12 @@ public final class NNConfig {
 					loaded.coordsRight = false;
 					loaded.coordsBackLeft = true;
 				}
+				boolean movedRight = !loaded.coordsMovedRight;
+				if (movedRight) {
+					loaded.coordsRight = true;
+					loaded.smallCoords = true;
+					loaded.coordsMovedRight = true;
+				}
 				boolean putAway = !loaded.radarPutAway;
 				if (putAway) {
 					loaded.trailRadar = false;
@@ -286,7 +295,7 @@ public final class NNConfig {
 					if (changed) ModsPanel.saveProfiles(profiles);
 				}
 				INSTANCE = loaded;
-				if (restore || putAway || backLeft) save();
+				if (restore || putAway || backLeft || movedRight) save();
 			}
 		} catch (IOException | RuntimeException e) {
 			NaughtyOrNiceClient.LOGGER.error("Could not read {}", file(), e);

@@ -70,6 +70,8 @@ public class NaughtyOrNiceClient implements ClientModInitializer {
 		stopKey = KeyBindingHelper.registerKeyBinding(new KeyBinding("key.naughtyornice.stop", InputUtil.Type.KEYSYM, GLFW.GLFW_KEY_Z, category));
 		// Chunks in the world, back in 1.21.1 on X (K is the radar now).
 		chunksKey = KeyBindingHelper.registerKeyBinding(new KeyBinding("key.naughtyornice.chunks", InputUtil.Type.KEYSYM, GLFW.GLFW_KEY_X, category));
+		// Logout outlines first: both draw lines, and the chunk squares' fill must come last or it's flushed too early.
+		WorldRenderEvents.BEFORE_DEBUG_RENDER.register(context -> Safe.run("drawing logout spots in the world", () -> LogoutSpots.renderWorld(context)));
 		WorldRenderEvents.BEFORE_DEBUG_RENDER.register(context -> Safe.run("drawing chunks in the world", () -> ChunkOverlay.render(context)));
 		HudElementRegistry.addLast(Identifier.of(MOD_ID, "trip"), (context, tickCounter) -> Safe.run("drawing the trip bar", () -> TripBar.render(context, tickCounter)));
 		HudElementRegistry.addLast(Identifier.of(MOD_ID, "logout_spots"), (context, tickCounter) -> Safe.run("drawing logout spots", () -> LogoutSpots.render(context, tickCounter)));
@@ -514,7 +516,7 @@ public class NaughtyOrNiceClient implements ClientModInitializer {
 						+ "Hidden in stream-safe mode.", () -> c.showCoords, v -> c.showCoords = v),
 				ModsPanel.toggle("Trip bar", "While Baritone takes you somewhere: where to, how far, how long, how fast, at the top.", () -> c.tripBar, v -> c.tripBar = v),
 				ModsPanel.toggle("Coordinates on the right", "In the bottom-right corner. Off: the bottom-left corner, under the chat.", () -> c.coordsRight, v -> c.coordsRight = v),
-				ModsPanel.toggle("Small coordinates", "Draw your coordinates a size smaller than the rest of the screen (still sharp).", () -> c.smallCoords, v -> c.smallCoords = v),
+				ModsPanel.toggle("Small coordinates", "Draw your coordinates half the size of the rest of the screen. Off: the same size as chat.", () -> c.smallCoords, v -> c.smallCoords = v),
 				ModsPanel.toggle("Marks on nametags", "Green ✔, gold ? or red ✖ before listed players' names above their heads.", () -> c.nametagMarks, v -> c.nametagMarks = v),
 				ModsPanel.toggle("Marks in the tab list", "The same marks in the player list (Tab).", () -> c.tabListMarks, v -> c.tabListMarks = v),
 				ModsPanel.toggle("Who's on when you join", "A summary of who's online from your lists when you join a server.", () -> c.joinSummary, v -> c.joinSummary = v),

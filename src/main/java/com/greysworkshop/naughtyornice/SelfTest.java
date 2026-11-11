@@ -1521,10 +1521,32 @@ public final class SelfTest {
 						last != null && last.how.equals("logout") && Math.abs(last.x - (int) Math.floor(griefer.getX())) <= 2);
 				check("a logout spot is shown where they went", LogoutSpots.spots().stream().anyMatch(sp -> sp.name().equals(GRIEFER)
 						&& Math.abs(sp.x() - griefer.getX()) <= 2));
-				screenshot(client, "57b_logout_spot");
+				// Look at the spot, with nothing open, so its tag is on screen.
+				client.setScreen(null);
+				LogoutSpots.lastDrawn = new int[] {0, 0, 0};
+				aimBefore = new float[] {client.player.getYaw(), client.player.getPitch()};
+				LogoutSpots.spots().stream().filter(sp -> sp.name().equals(GRIEFER)).findFirst().ifPresent(sp -> {
+					double dx = sp.x() - client.player.getX(), dy = sp.y() + 2.1 - client.player.getEyeY(), dz = sp.z() - client.player.getZ();
+					client.player.setYaw((float) Math.toDegrees(Math.atan2(-dx, dz)));
+					client.player.setPitch((float) -Math.toDegrees(Math.atan2(dy, Math.sqrt(dx * dx + dz * dz))));
+				});
+			}
+			case 1216 -> {
+				int[] drawn = LogoutSpots.lastDrawn;
+				// This computer draws fewer frames than it ticks: give it up to 5 s to draw one.
+				if (drawn[0] + drawn[1] + drawn[2] == 0 && ++tagWaits < 100) {
+					tick--;
+					return;
+				}
+				check("the logout spot you aim at shows as one small tag with when and how far (" + drawn[0] + " detailed, " + drawn[1] + " plain, " + drawn[2] + " dots)",
+						drawn[0] == 1 && drawn[1] == 0 && drawn[2] == 0);
+				screenshot(client, "57c_logout_tag");
+				// Face the way you were, as later steps walk on from here.
+				client.player.setYaw(aimBefore[0]);
+				client.player.setPitch(aimBefore[1]);
 				client.setScreen(new ShopScreen(ShopScreen.Tab.SETTINGS, null));
 			}
-			case 1216 -> screen(client).testScroll(1_000_000);
+			case 1217 -> screen(client).testScroll(1_000_000);
 			case 1218 -> {
 				screenshot(client, "58_settings_bottom");
 				client.setScreen(null);
@@ -1580,6 +1602,9 @@ public final class SelfTest {
 				client.setScreen(null);
 			}
 			case 1320 -> {
+				// Daylight, so the ground check below reads colours, not a dark night (the test world's clock carries over).
+				IntegratedServer dayServer = client.getServer();
+				dayServer.execute(() -> dayServer.getCommandManager().parseAndExecute(dayServer.getCommandSource(), "time set noon"));
 				String[] say = ledger.chunkTrails.guidance(client.world.getRegistryKey().getValue().toString(), client.player.getX(), client.player.getZ(), client.player.getYaw());
 				log("Radar says: " + (say == null ? "nothing" : say[0] + " / " + say[1]));
 				check("the radar finds the trail beside you and says how to follow it", say != null && say[0].startsWith("Trail:"));
@@ -1589,7 +1614,7 @@ public final class SelfTest {
 				check("the radar's key isn't J, which Trade Seeker uses (" + radarKey + ")", !radarKey.equals("J") && !radarKey.equals("no key"));
 				// What's really on screen in the bottom left, not just what the line would say.
 				int scale = (int) client.getWindow().getScaleFactor();
-				float ts = CoordsHud.scale(client);
+				float ts = CoordsHud.textScale(client);
 				int sw = client.getWindow().getScaledWidth(), sh = client.getWindow().getScaledHeight();
 				var shown = CoordsHud.lines(client.textRenderer, CoordsHud.line(client), sw, ts);
 				ts = CoordsHud.fit(client.textRenderer, shown, sw, ts);
@@ -1619,11 +1644,12 @@ public final class SelfTest {
 			}
 			case 1322 -> {
 				int[] px = coordsPixels;
-				check("your coordinates are really drawn in the bottom-left corner, green on a dark backing ("
+				check("your coordinates are really drawn in the bottom-right corner, green on a dark backing ("
 						+ (px == null ? "no screenshot" : "outside " + px[0] + ", backing " + px[1] + ", " + px[2] + " green pixels, " + px[3] + " white") + ")",
 						px != null && px[1] <= px[0] * 0.6 + 4 && px[2] > 30 && px[3] < px[2] / 4);
-				check("...a size smaller than the rest of the HUD, on whole pixels", NNConfig.INSTANCE.smallCoords
-						&& CoordsHud.scale(client) < 1 && (client.getWindow().getScaleFactor() == 2 || Math.abs(CoordsHud.scale(client) * client.getWindow().getScaleFactor() - Math.round(CoordsHud.scale(client) * client.getWindow().getScaleFactor())) < 0.01));
+				double gui = client.getWindow().getScaleFactor();
+				check("...half the size of the rest of the HUD (text scale " + CoordsHud.textScale(client) + " at GUI scale " + gui + ")", NNConfig.INSTANCE.smallCoords
+						&& CoordsHud.textScale(client) == (gui <= 1 ? 1f : (float) Math.max(0.5, 1 / gui)));
 				check("the chunks are drawn in the world (" + ChunkOverlay.shown() + " squares)", ChunkOverlay.shown() > 100);
 				check("the radar shows the land it has read (" + TrailRadar.lastOld + " old, " + TrailRadar.lastNew + " new chunks)", TrailRadar.lastOld + TrailRadar.lastNew > 20);
 				screenshot(client, "59b_chunks_in_world");
@@ -2760,7 +2786,7 @@ public final class SelfTest {
 				client.debugHudEntryList.setF3Enabled(false);
 				client.debugHudEntryList.setEntryVisibility(hitboxes, was);
 				check("on-screen things show with an F3 entry always on, and hide only with F3 open", shownWithHitboxes && hiddenWithF3);
-				check("your coordinates show in the bottom-left corner by default (" + coords + ")", NNConfig.INSTANCE.showCoords && !NNConfig.INSTANCE.coordsRight
+				check("your coordinates show in the bottom-right corner by default (" + coords + ")", NNConfig.INSTANCE.showCoords && NNConfig.INSTANCE.coordsRight
 						&& coords.startsWith("XYZ " + p.getBlockX() + " " + p.getBlockY() + " " + p.getBlockZ())
 						&& coords.contains("Nether " + Math.floorDiv(p.getBlockX(), 8) + " " + Math.floorDiv(p.getBlockZ(), 8)));
 				String far = "XYZ -1234567 64 2345678  NE  ·  Nether -154321 293210";
@@ -2770,10 +2796,12 @@ public final class SelfTest {
 				check("nothing hides them now (" + CoordsHud.hiddenReason(client) + ")", CoordsHud.hiddenReason(client) == null);
 				// In the bottom left they stay below the chat (its last line sits 40 up), however far out and narrow.
 				int sh = client.getWindow().getScaledHeight();
-				float fs = CoordsHud.fit(client.textRenderer, split, 400, CoordsHud.scale(client));
+				NNConfig.INSTANCE.coordsRight = false;
+				float fs = CoordsHud.fit(client.textRenderer, split, 400, CoordsHud.textScale(client));
 				int topOfThem = CoordsHud.bottomY(client.textRenderer, split, 400, sh, fs) - (split.size() - 1) * CoordsHud.lineHeight(fs);
 				check("in the bottom left they never go up into the chat (top at " + topOfThem + " of " + sh + ", " + CoordsHud.where(client) + ")",
 						topOfThem >= sh - 30 && client.textRenderer.getWidth(split.get(1)) * fs <= CoordsHud.room(400));
+				NNConfig.INSTANCE.coordsRight = true;
 				ModsPanel.setStreamSafe(true);
 				String why = CoordsHud.hiddenReason(client);
 				ModsPanel.setStreamSafe(false);
@@ -2826,6 +2854,8 @@ public final class SelfTest {
 	private static volatile int[] coordsPixels;
 	/** Average red and green of the ground in the chunks-in-the-world screenshot. */
 	private static volatile int[] groundPixels;
+	private static int tagWaits;
+	private static float[] aimBefore = {0, 0};
 
 	private static int luma(int argb) {
 		return (((argb >> 16) & 0xFF) * 3 + ((argb >> 8) & 0xFF) * 6 + (argb & 0xFF)) / 10;

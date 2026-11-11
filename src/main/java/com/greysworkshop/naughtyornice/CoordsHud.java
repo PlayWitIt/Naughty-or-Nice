@@ -11,15 +11,15 @@ import java.util.List;
 import java.util.Locale;
 
 /**
- * Your coordinates in the bottom-left corner under the chat (or the bottom right), so F3 isn't needed: x y z, which way you face, and the matching spot in the
- * nether (or the overworld, from the nether), in green, a size smaller than the rest of the HUD. On a dark backing so they read on snow and sand too, and split onto two
+ * Your coordinates in the bottom-right corner (or the bottom left, under the chat), so F3 isn't needed: x y z, which way you face, and the matching spot in the
+ * nether (or the overworld, from the nether), in green, half the size of the rest of the HUD. On a light backing so they read on snow and sand too, and split onto two
  * lines (then lifted above the hotbar) when they'd run into it. Hidden while F3 is open; in stream-safe mode a note
  * says they're hidden and how to bring them back, so they never just vanish. /nn coords says why they aren't showing.
  */
 public final class CoordsHud {
 	private CoordsHud() {}
 
-	private static final int BACKING = 0x90000000;
+	private static final int BACKING = 0x70000000;
 	/** Your x y z in green, the matching spot in the other dimension a paler green. */
 	private static final int GREEN = 0xFF55FF55;
 	private static final int PALE_GREEN = 0xFF9EE6A8;
@@ -32,7 +32,7 @@ public final class CoordsHud {
 		if (client.player == null || client.world == null || client.options.hudHidden || f3Open(client)) return;
 		if (!NNConfig.on() || !NNConfig.INSTANCE.showCoords) return;
 		int w = context.getScaledWindowWidth(), h = context.getScaledWindowHeight();
-		float s = scale(client);
+		float s = textScale(client);
 		if (ModsPanel.streamSafe()) {
 			draw(context, client.textRenderer, List.of("Coordinates hidden: stream-safe (F7)"), w, h, s, true);
 			return;
@@ -63,6 +63,16 @@ public final class CoordsHud {
 		return gui == 2 ? 0.75f : (gui - 1) / (float) gui;
 	}
 
+	/**
+	 * How big the coordinates themselves are drawn: half the rest of the HUD when Small coordinates is on (the default),
+	 * never below one screen pixel per letter pixel. Off: the same size as chat.
+	 */
+	public static float textScale(MinecraftClient client) {
+		int gui = (int) Math.round(client.getWindow().getScaleFactor());
+		if (!NNConfig.INSTANCE.smallCoords || gui <= 1) return 1f;
+		return Math.max(0.5f, 1f / gui);
+	}
+
 	/** Height of one line on screen at that scale. */
 	static int lineHeight(float s) {
 		return (int) Math.ceil(9 * s) + 2;
@@ -88,7 +98,7 @@ public final class CoordsHud {
 		}
 	}
 
-	/** Where a line of that width starts: in the bottom-left corner under the chat (by default), or the bottom right. */
+	/** Where a line of that width starts: in the bottom-right corner (by default), or the bottom left under the chat. */
 	static int left(int textWidth, int screenWidth) {
 		return NNConfig.INSTANCE.coordsRight ? screenWidth - 4 - textWidth : 4;
 	}
@@ -124,7 +134,7 @@ public final class CoordsHud {
 	/** Where they're drawn right now, in words, for /nn coords. */
 	public static String where(MinecraftClient client) {
 		int w = client.getWindow().getScaledWidth(), h = client.getWindow().getScaledHeight();
-		float s = scale(client);
+		float s = textScale(client);
 		List<String> lines = lines(client.textRenderer, line(client), w, s);
 		s = fit(client.textRenderer, lines, w, s);
 		int tw = (int) Math.ceil(client.textRenderer.getWidth(lines.getLast()) * s);
