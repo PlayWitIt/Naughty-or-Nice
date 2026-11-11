@@ -8,6 +8,7 @@ import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper;
 import net.fabricmc.fabric.api.client.message.v1.ClientReceiveMessageEvents;
 import net.fabricmc.fabric.api.client.message.v1.ClientSendMessageEvents;
 import net.fabricmc.fabric.api.client.rendering.v1.hud.HudElementRegistry;
+import net.fabricmc.fabric.api.client.rendering.v1.world.WorldRenderEvents;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.screen.Screen;
@@ -45,6 +46,7 @@ public class NaughtyOrNiceClient implements ClientModInitializer {
 
 	private KeyBinding openKey;
 	private KeyBinding radarKey;
+	private KeyBinding chunksKey;
 	private KeyBinding baritoneKey;
 	private KeyBinding stopKey;
 	private int roamTimer;
@@ -66,6 +68,9 @@ public class NaughtyOrNiceClient implements ClientModInitializer {
 		radarKey = KeyBindingHelper.registerKeyBinding(new KeyBinding("key.naughtyornice.radar", InputUtil.Type.KEYSYM, GLFW.GLFW_KEY_K, category));
 		baritoneKey = KeyBindingHelper.registerKeyBinding(new KeyBinding("key.naughtyornice.baritone", InputUtil.Type.KEYSYM, GLFW.GLFW_KEY_B, category));
 		stopKey = KeyBindingHelper.registerKeyBinding(new KeyBinding("key.naughtyornice.stop", InputUtil.Type.KEYSYM, GLFW.GLFW_KEY_Z, category));
+		// Chunks in the world, back in 1.21.1 on X (K is the radar now).
+		chunksKey = KeyBindingHelper.registerKeyBinding(new KeyBinding("key.naughtyornice.chunks", InputUtil.Type.KEYSYM, GLFW.GLFW_KEY_X, category));
+		WorldRenderEvents.BEFORE_DEBUG_RENDER.register(context -> Safe.run("drawing chunks in the world", () -> ChunkOverlay.render(context)));
 		HudElementRegistry.addLast(Identifier.of(MOD_ID, "trip"), (context, tickCounter) -> Safe.run("drawing the trip bar", () -> TripBar.render(context, tickCounter)));
 		HudElementRegistry.addLast(Identifier.of(MOD_ID, "logout_spots"), (context, tickCounter) -> Safe.run("drawing logout spots", () -> LogoutSpots.render(context, tickCounter)));
 		HudElementRegistry.addLast(Identifier.of(MOD_ID, "coords"), (context, tickCounter) -> Safe.run("drawing your coordinates", () -> CoordsHud.render(context, tickCounter)));
@@ -288,8 +293,14 @@ public class NaughtyOrNiceClient implements ClientModInitializer {
 	/** The key that shows or hides the radar ("O"). */
 	public static String radarKeyName() {
 		// While the game is still starting there are no key settings yet: say the default.
-		if (MinecraftClient.getInstance() == null || MinecraftClient.getInstance().options == null) return "O";
+		if (MinecraftClient.getInstance() == null || MinecraftClient.getInstance().options == null) return "K";
 		return keyName("key.naughtyornice.radar");
+	}
+
+	/** The key for chunks in the world, as it's bound now (X unless changed). */
+	public static String chunksKeyName() {
+		if (MinecraftClient.getInstance() == null || MinecraftClient.getInstance().options == null) return "X";
+		return keyName("key.naughtyornice.chunks");
 	}
 
 	/** How to show the radar, in a few words: "O shows or hides it". */
@@ -388,7 +399,17 @@ public class NaughtyOrNiceClient implements ClientModInitializer {
 					radarKey.setBoundKey(radarKey.getDefaultKey());
 					KeyBinding.updateKeysByCode();
 					client.options.write();
-					Alerts.chat(Text.literal("The trail radar is on K now (it was O). Chunks are no longer drawn in the world.").formatted(Formatting.GRAY));
+					Alerts.chat(Text.literal("The trail radar is on K now (it was O). Chunks in the world are on X.").formatted(Formatting.GRAY));
+				}
+			}
+			if (!NNConfig.INSTANCE.chunksOnX) {
+				// 1.21.1: chunks in the world are back, on X; a K saved from before 1.21.0 would clash with the radar.
+				NNConfig.INSTANCE.chunksOnX = true;
+				NNConfig.save();
+				if (chunksKey.getBoundKeyTranslationKey().equals("key.keyboard.k")) {
+					chunksKey.setBoundKey(chunksKey.getDefaultKey());
+					KeyBinding.updateKeysByCode();
+					client.options.write();
 				}
 			}
 			warnKeyClashes(client);
@@ -424,6 +445,12 @@ public class NaughtyOrNiceClient implements ClientModInitializer {
 			if (NNConfig.INSTANCE.trailRadar) NNConfig.INSTANCE.chunkTrails = true;
 			NNConfig.save();
 			client.inGameHud.setOverlayMessage(Text.literal("Chunk trail radar " + (NNConfig.INSTANCE.trailRadar ? "on" : "off")), false);
+		}
+		while (chunksKey.wasPressed()) {
+			NNConfig.INSTANCE.chunkOverlay = !NNConfig.INSTANCE.chunkOverlay;
+			if (NNConfig.INSTANCE.chunkOverlay) NNConfig.INSTANCE.chunkTrails = true;
+			NNConfig.save();
+			client.inGameHud.setOverlayMessage(Text.literal("Chunks in the world " + (NNConfig.INSTANCE.chunkOverlay ? "on" : "off")), false);
 		}
 		// Every half second: land around you that's still unknown is remembered, so it's never read as old later.
 		if (NNConfig.INSTANCE.chunkTrails && client.world != null && client.player != null && ++walkTimer >= 10) {

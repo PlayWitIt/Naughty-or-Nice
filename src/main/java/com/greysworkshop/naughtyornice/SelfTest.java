@@ -1624,11 +1624,32 @@ public final class SelfTest {
 						px != null && px[1] <= px[0] * 0.6 + 4 && px[2] > 30 && px[3] < px[2] / 4);
 				check("...a size smaller than the rest of the HUD, on whole pixels", NNConfig.INSTANCE.smallCoords
 						&& CoordsHud.scale(client) < 1 && (client.getWindow().getScaleFactor() == 2 || Math.abs(CoordsHud.scale(client) * client.getWindow().getScaleFactor() - Math.round(CoordsHud.scale(client) * client.getWindow().getScaleFactor())) < 0.01));
+				check("the chunks are drawn in the world (" + ChunkOverlay.shown() + " squares)", ChunkOverlay.shown() > 100);
 				check("the radar shows the land it has read (" + TrailRadar.lastOld + " old, " + TrailRadar.lastNew + " new chunks)", TrailRadar.lastOld + TrailRadar.lastNew > 20);
 				screenshot(client, "59b_chunks_in_world");
+				// The ground under you (grass, green) must really show the red of new land through the squares' fill.
+				groundPixels = null;
+				net.minecraft.client.util.ScreenshotRecorder.takeScreenshot(client.getFramebuffer(), image -> {
+					try (image) {
+						long r = 0, g = 0, n = 0;
+						// Open ground below the gold block, left of your hand, above the hotbar.
+						for (int x = image.getWidth() * 32 / 100; x < image.getWidth() * 46 / 100; x += 2) {
+							for (int y = image.getHeight() * 75 / 100; y < image.getHeight() * 83 / 100; y += 2) {
+								int c = image.getColorArgb(x, y);
+								r += (c >> 16) & 0xFF;
+								g += (c >> 8) & 0xFF;
+								n++;
+							}
+						}
+						groundPixels = new int[] {(int) (r / Math.max(1, n)), (int) (g / Math.max(1, n))};
+					}
+				});
 				client.player.setPitch(0);
 			}
 			case 1323 -> {
+				int[] gp = groundPixels;
+				check("...and they really show at your feet: the grass under you is tinted red, new land ("
+						+ (gp == null ? "no screenshot" : "red " + gp[0] + ", green " + gp[1]) + ")", gp != null && gp[0] >= gp[1] * 0.9);
 				// ---- Following old chunks, for real: a line of old chunks east of you, facing east ----
 				String dimL = client.world.getRegistryKey().getValue().toString();
 				int pcx = client.player.getBlockX() >> 4, pcz = client.player.getBlockZ() >> 4;
@@ -2803,6 +2824,8 @@ public final class SelfTest {
 
 	/** Brightness outside and on the coordinates' backing, and how many white text pixels; set by a screenshot. */
 	private static volatile int[] coordsPixels;
+	/** Average red and green of the ground in the chunks-in-the-world screenshot. */
+	private static volatile int[] groundPixels;
 
 	private static int luma(int argb) {
 		return (((argb >> 16) & 0xFF) * 3 + ((argb >> 8) & 0xFF) * 6 + (argb & 0xFF)) / 10;
@@ -2834,7 +2857,7 @@ public final class SelfTest {
 	}
 
 	/**
-	 * Land is the same colours everywhere: the radar and the Intel map all show new land
+	 * Land is the same colours everywhere: the squares in the world (X), the radar and the Intel map all show new land
 	 * red and old land (someone was here) green, and nothing else on them is green.
 	 */
 	private static void colourChecks() {
