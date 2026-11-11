@@ -4294,7 +4294,7 @@ public class ShopScreen extends Screen {
 				+ "and how fast you're going.", () -> c.tripBar, v -> c.tripBar = v));
 		options.add(new Option("Coordinates on the right", "In the bottom-right corner. Off: the bottom-left corner, under the chat.",
 				() -> c.coordsRight, v -> c.coordsRight = v));
-		options.add(new Option("Small coordinates", "Draw your coordinates a size smaller than the rest of the screen (still sharp). Off: the same size "
+		options.add(new Option("Small coordinates", "Draw your coordinates half the size of the rest of the screen. Off: the same size "
 				+ "as chat.", () -> c.smallCoords, v -> c.smallCoords = v));
 		options.add(new Option("Note new chunk trails in chat", "Where a new trail is, which way it runs, and its far end.", () -> c.trailAlerts, v -> c.trailAlerts = v));
 		options.add(new Option("Tell me when the land changes ahead", "Once, as you travel: new chunks coming up while you're in old land, or old chunks "
