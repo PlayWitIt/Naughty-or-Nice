@@ -151,6 +151,12 @@ public final class NNConfig {
 
 	/** A note when new chunks (or, from new land, old ones) come up ahead as you travel. */
 	public boolean aheadAlerts = true;
+	/** Draw the chunks that have been read in the world, as coloured squares (X toggles it). */
+	public boolean chunkOverlay = true;
+	/** The height the squares are drawn at, or {@link ChunkOverlay#FOLLOW} for at your feet. */
+	public int chunkOverlayY = ChunkOverlay.FOLLOW;
+	/** How see-through the squares' fill is: 0 (outline only) to 100 (solid). */
+	public int chunkOverlayFill = 25;
 	/** On a Baritone trip: pause and ask when someone who isn't a friend (or on your Nice list) shows up. */
 	public boolean tripStopForStrangers = true;
 	/** Trips in the nether ride the highways when that's quicker than going straight (see HighwayRoute). */
@@ -225,6 +231,8 @@ public final class NNConfig {
 	public boolean radarKeyOwn = false;
 	/** Set once the radar has been moved from O to K (1.21.0, when the chunks-in-the-world view on K was removed). */
 	public boolean radarOnK = false;
+	/** Set once chunks in the world have been moved from K to X (1.21.1, when they came back with the radar on K). */
+	public boolean chunksOnX = false;
 
 	/** Whether the first-time "press N" tip has been shown. */
 	public boolean seenTip = false;
