@@ -1557,17 +1557,27 @@ public class ShopScreen extends Screen {
 	}
 
 	/**
-	 * The sidebar on the player lists: a panel of its own, so it reads as the menu. Your lists first (where you go),
-	 * each a full row in its own colour with its count, the one you're on filled in; then your groups; then the
-	 * filters as on/off chips; a tip last. Every row lights up under the mouse, so it's plain what can be clicked.
+	 * The sidebar on the player lists: a raised panel of its own, so it reads as the menu. Your lists first (where you
+	 * go), each a row with its icon on a coloured tile and its count in a badge of its colour; the open one glows in its
+	 * colour with a bar down its edge. Friend types hang off Friends on tree lines. Then groups, then the filters as
+	 * sliding switches, and a tip card. Rows ease in under the mouse, so it's plain what can be clicked.
 	 */
 	private void renderSidebar(DrawContext context, int mouseX, int mouseY, int y) {
+		long now = System.nanoTime();
+		animStep = lastAnimNanos == 0 ? 1 : Math.min(1f, (now - lastAnimNanos) / 1_000_000_000f * 14f);
+		lastAnimNanos = now;
 		int x = 8;
 		int top = y;
-		roundedBorder(context, x - 4, top - 4, SIDEBAR + 8, sidebarHeight, CARD, BORDER);
+		int px = x - 4, py = top - 4, pw = SIDEBAR + 8, ph = sidebarHeight;
+		// Drop shadow, panel, a soft glow along the top and a highlight on its top edge.
+		rounded(context, px + 2, py + 3, pw, ph, 0x50000000);
+		roundedBorder(context, px, py, pw, ph, CARD, BORDER);
+		context.fillGradient(px + 1, py + 1, px + pw - 1, py + 34, alpha(LINK, 0x1C), alpha(LINK, 0));
+		context.fill(px + 3, py + 1, px + pw - 3, py + 2, 0x18FFFFFF);
 
-		y = sideHeading(context, x, y, "YOUR LISTS");
-		for (Tab t : new Tab[] {Tab.FRIENDS, Tab.NICE, Tab.LOOK, Tab.NAUGHTY}) {
+		y = sideHeading(context, x, y, "YOUR LISTS", LINK);
+		Tab[] lists = {Tab.FRIENDS, Tab.NICE, Tab.LOOK, Tab.NAUGHTY};
+		for (Tab t : lists) {
 			int n = t == Tab.LOOK ? mod.ledger.onList(Profile.Verdict.LOOK).size() : count(t);
 			int accent = switch (t) {
 				case FRIENDS -> FRIEND;
@@ -1587,102 +1597,180 @@ public class ShopScreen extends Screen {
 				friendCircle = null;
 			});
 			if (t == Tab.FRIENDS) {
-				// Friend types, indented under Friends, in their own colours.
-				for (Friends.Circle c : Friends.circles()) {
+				// Friend types, on tree lines under Friends, in their own colours.
+				List<Friends.Circle> circles = Friends.circles();
+				int lineTop = y - 3;
+				for (int i = 0; i < circles.size(); i++) {
+					Friends.Circle c = circles.get(i);
 					int color = GROUP_COLORS[c.color % GROUP_COLORS.length];
 					boolean cActive = tab == Tab.FRIENDS && c.id.equals(friendCircle);
-					y = navRow(context, mouseX, mouseY, x, y, 10, color, "★", c.name, Friends.members(mod.ledger, c).size(), cActive, false,
+					int rowY = y;
+					y = navRow(context, mouseX, mouseY, x, y, 12, color, "★", c.name, Friends.members(mod.ledger, c).size(), cActive, false,
 							"side-circle:" + c.name, () -> showCircle(c));
+					int mid = rowY + 6;
+					context.fill(x + 10, lineTop, x + 11, i == circles.size() - 1 ? mid + 1 : y, tint(FRIEND, CARD, 0.35f));
+					context.fill(x + 11, mid, x + 15, mid + 1, tint(FRIEND, CARD, 0.35f));
+					lineTop = y;
 				}
 			}
 		}
-		y += 3;
+		y += 4;
 		int half = (SIDEBAR - 4) / 2;
-		pill(context, mouseX, mouseY, x, y, half, 14, "+ Add", YELLOW, YELLOW_EDGE, BUTTON_TEXT, "side-add", () -> openAdd(Profile.Verdict.NICE));
-		pill(context, mouseX, mouseY, x + half + 4, y, SIDEBAR - half - 4, 14, "⇄ Share", SOFT, BORDER, TEXT, "side-share", () -> openShare(ShareView.SEND));
-		y += 14 + 10;
+		button(context, mouseX, mouseY, x, y, half, 15, "+ Add", 0xFFFFE07A, YELLOW_EDGE, darken(YELLOW_EDGE), BUTTON_TEXT, "side-add",
+				() -> openAdd(Profile.Verdict.NICE));
+		button(context, mouseX, mouseY, x + half + 4, y, SIDEBAR - half - 4, 15, "⇄ Share", SOFT_HOVER, SOFT, BORDER, TEXT, "side-share",
+				() -> openShare(ShareView.SEND));
+		y += 15 + 11;
 
 		y = sidebarGroups(context, mouseX, mouseY, x, y);
 		y += 10;
 
-		y = sideHeading(context, x, y, "FILTERS");
-		y = chip(context, mouseX, mouseY, x, y, 4, "& up", rating == Rating.GOOD, "rating:& Up", () -> rating = rating == Rating.GOOD ? Rating.ANY : Rating.GOOD);
-		y = chip(context, mouseX, mouseY, x, y, 2, "& under", rating == Rating.BAD, "rating:& Under", () -> rating = rating == Rating.BAD ? Rating.ANY : Rating.BAD);
-		y = chip(context, mouseX, mouseY, x, y, -1, "● Online only", onlineOnly, "online only", () -> onlineOnly = !onlineOnly);
+		y = sideHeading(context, x, y, "FILTERS", LOOK);
+		y = toggle(context, mouseX, mouseY, x, y, 4, "& up", rating == Rating.GOOD, "rating:& Up", () -> rating = rating == Rating.GOOD ? Rating.ANY : Rating.GOOD);
+		y = toggle(context, mouseX, mouseY, x, y, 2, "& under", rating == Rating.BAD, "rating:& Under", () -> rating = rating == Rating.BAD ? Rating.ANY : Rating.BAD);
+		y = toggle(context, mouseX, mouseY, x, y, -1, "Online only", onlineOnly, "online only", () -> onlineOnly = !onlineOnly);
 		y += 8;
 
-		context.fill(x, y, x + SIDEBAR, y + 1, BORDER);
-		y += 5;
-		for (var line : textRenderer.wrapLines(Text.literal("Tip: look at a player and press N to open their page."), SIDEBAR)) {
-			context.drawText(textRenderer, line, x, y, MUTED, false);
-			y += 10;
+		// The tip, on a card of its own.
+		List<net.minecraft.text.OrderedText> tip = textRenderer.wrapLines(Text.literal("Look at a player and press N to open their page."), SIDEBAR - 18);
+		int th = tip.size() * 10 + 8;
+		roundedBorder(context, x, y, SIDEBAR, th, tint(LOOK, CARD, 0.08f), tint(LOOK, CARD, 0.3f));
+		text(context, "✦", x + 5, y + 5, LOOK);
+		int ty = y + 5;
+		for (var line : tip) {
+			context.drawText(textRenderer, line, x + 15, ty, MUTED, false);
+			ty += 10;
 		}
+		y += th + 4;
 		sidebarHeight = y - top + 6;
 	}
 
 	private int sidebarHeight = 190;
+	/** Hover and selection, eased per row (0 to 1), so rows fade and slide instead of snapping. */
+	private final Map<String, Float> anim = new java.util.HashMap<>();
+	private long lastAnimNanos;
+	private float animStep = 1;
 
-	/** A section heading in the sidebar: small, muted capitals with a rule under it. */
-	private int sideHeading(DrawContext context, int x, int y, String label) {
-		context.drawText(textRenderer, label, x, y, MUTED, false);
-		context.fill(x, y + 10, x + SIDEBAR, y + 11, BORDER);
-		return y + 14;
+	private float ease(String key, boolean on) {
+		float v = anim.getOrDefault(key, on ? 1f : 0f);
+		v += ((on ? 1f : 0f) - v) * animStep;
+		if (Math.abs(v - (on ? 1f : 0f)) < 0.01f) v = on ? 1f : 0f;
+		anim.put(key, v);
+		return v;
+	}
+
+	private static int alpha(int color, int a) {
+		return Math.max(0, Math.min(255, a)) << 24 | (color & 0xFFFFFF);
+	}
+
+	/** A left-to-right fade from {@code from} to {@code to}, in 2-pixel strips. */
+	private static void hGradient(DrawContext context, int x, int y, int w, int h, int from, int to) {
+		for (int i = 0; i < w; i += 2) {
+			float t = (float) i / Math.max(1, w - 1);
+			int a = Math.round((from >>> 24) * (1 - t) + (to >>> 24) * t);
+			int r = Math.round((from >> 16 & 0xFF) * (1 - t) + (to >> 16 & 0xFF) * t);
+			int g = Math.round((from >> 8 & 0xFF) * (1 - t) + (to >> 8 & 0xFF) * t);
+			int b = Math.round((from & 0xFF) * (1 - t) + (to & 0xFF) * t);
+			context.fill(x + i, y, x + Math.min(w, i + 2), y + h, a << 24 | r << 16 | g << 8 | b);
+		}
+	}
+
+	/** A section heading: a short bar in its colour, small muted capitals, and a rule that fades out to the right. */
+	private int sideHeading(DrawContext context, int x, int y, String label, int accent) {
+		context.fill(x, y, x + 2, y + 8, accent);
+		context.drawText(textRenderer, label, x + 6, y, MUTED, false);
+		int lx = x + 6 + textRenderer.getWidth(label) + 5;
+		hGradient(context, lx, y + 4, x + SIDEBAR - lx, 1, BORDER, alpha(BORDER, 0));
+		return y + 13;
 	}
 
 	/**
-	 * One row of the sidebar's menu: the whole width is the button. A colour stripe and icon say which it is, the count
-	 * sits in a badge on the right, the row lights up under the mouse, and the one you're on is filled in its colour.
-	 * {@code indent} sets sub-rows (friend types) in; {@code strong} makes the label bold (the lists themselves).
+	 * One row of the sidebar's menu; the whole width is the button. Its icon sits on a tile of its colour and its count
+	 * in a badge of its colour. Under the mouse a wash of its colour fades in and the label slides a little; the open
+	 * one keeps a stronger wash and a glowing bar down its left edge. {@code indent} sets sub-rows in; {@code strong}
+	 * is for the lists themselves (taller, bold, on tiles).
 	 */
 	private int navRow(DrawContext context, int mouseX, int mouseY, int x, int y, int indent, int accent, String icon, String label, int count,
 			boolean active, boolean strong, String hitLabel, Runnable run) {
-		int h = strong ? 14 : 12;
+		int h = strong ? 15 : 12;
 		boolean hover = over(mouseX, mouseY, x, y, SIDEBAR, h) && mouseY >= BODY + 17;
-		if (active) {
-			context.fill(x, y, x + SIDEBAR, y + h, tint(accent, CARD, 0.22f));
-			context.fill(x, y, x + 2, y + h, accent);
-		} else if (hover) {
-			context.fill(x, y, x + SIDEBAR, y + h, SOFT_HOVER);
-			context.fill(x, y, x + 2, y + h, tint(accent, CARD, 0.6f));
+		float a = ease(hitLabel, hover), act = ease(hitLabel + "#on", active);
+		int rx = x + indent, rw = SIDEBAR - indent;
+		float wash = Math.max(act * 0.42f, a * 0.2f);
+		if (wash > 0) hGradient(context, rx, y, rw, h, alpha(accent, (int) (255 * wash)), alpha(accent, 0));
+		if (act > 0) {
+			int bar = Math.max(1, Math.round(h * act));
+			int by = y + (h - bar) / 2;
+			context.fill(rx, by, rx + 2, by + bar, accent);
+			context.fill(rx + 2, by, rx + 4, by + bar, alpha(accent, (int) (0x55 * act)));
 		}
 		int ty = y + (h - 8) / 2;
-		int ix = x + 5 + indent;
-		text(context, icon, ix, ty, accent);
+		int ix = rx + 5;
+		int lx;
+		if (strong) {
+			roundedBorder(context, ix, y + 2, 11, 11, tint(accent, CARD, 0.16f + 0.18f * Math.max(a, act)), tint(accent, CARD, 0.5f));
+			text(context, icon, ix + (11 - textRenderer.getWidth(icon)) / 2 + 1, y + 4, accent);
+			lx = ix + 15;
+		} else {
+			text(context, icon, ix, ty, accent);
+			lx = ix + textRenderer.getWidth(icon) + 4;
+		}
+		lx += Math.round(2 * a);
 		String n = String.valueOf(count);
-		int bw = textRenderer.getWidth(n) + 6;
-		int bx = x + SIDEBAR - bw - 2;
-		roundedBorder(context, bx, ty - 1, bw, 10, active ? accent : SOFT, active ? accent : SOFT);
-		text(context, n, bx + 3, ty, active ? CARD : MUTED);
-		int lx = ix + textRenderer.getWidth(icon) + 4;
+		int bw = Math.max(10, textRenderer.getWidth(n) + 6);
+		int bx = x + SIDEBAR - bw - 3;
+		int badge = count == 0 ? SOFT : active ? accent : tint(accent, CARD, 0.28f);
+		rounded(context, bx, ty - 1, bw, 10, badge);
+		text(context, n, bx + (bw - textRenderer.getWidth(n)) / 2 + 1, ty, count == 0 ? MUTED : active ? CARD : tint(accent, TEXT, 0.55f));
 		String shown = fit(label, bx - lx - 3);
-		context.drawText(textRenderer, Text.literal(shown).styled(s -> s.withBold(strong || active)), lx, ty, active || hover ? TEXT : strong ? TEXT : MUTED, false);
+		int color = active ? TEXT : tint(TEXT, MUTED, strong ? 0.8f + 0.2f * a : 0.4f + 0.6f * a);
+		context.drawText(textRenderer, Text.literal(shown).styled(s -> s.withBold(strong || active)), lx, ty, color, false);
 		hits.add(new Hit(x, Math.max(y, BODY + 17), x + SIDEBAR, y + h, hitLabel, run));
 		return y + h + 1;
 	}
 
+	/** A raised button: a vertical gradient, a darker lip under it, and it lifts a pixel under the mouse. */
+	private void button(DrawContext context, int mouseX, int mouseY, int x, int y, int w, int h, String label, int topColor, int bottomColor,
+			int lip, int textColor, String hitLabel, Runnable run) {
+		boolean hover = over(mouseX, mouseY, x, y, w, h) && mouseY >= BODY + 17;
+		float a = ease(hitLabel, hover);
+		int lift = Math.round(a);
+		rounded(context, x, y + 1, w, h, lip);
+		int by = y - lift;
+		rounded(context, x, by, w, h, bottomColor);
+		context.fillGradient(x + 1, by + 1, x + w - 1, by + h - 1, topColor, bottomColor);
+		context.fill(x + 2, by + 1, x + w - 2, by + 2, 0x30FFFFFF);
+		context.drawText(textRenderer, Text.literal(label).styled(s -> s.withBold(true)), x + (w - textRenderer.getWidth(Text.literal(label).styled(s -> s.withBold(true)))) / 2,
+				by + (h - 8) / 2, textColor, false);
+		hits.add(new Hit(x, Math.max(y - 1, BODY + 17), x + w, y + h + 1, hitLabel, run));
+	}
+
 	/**
-	 * A filter as an on/off chip, the full width of the sidebar: lit in the link colour when on. {@code stars} draws that
-	 * many stars before the label (-1 for none).
+	 * A filter as a row with a sliding switch on the right: the knob eases across and the track fills in the link colour
+	 * when it's on. {@code stars} draws that many stars before the label (-1 for none).
 	 */
-	private int chip(DrawContext context, int mouseX, int mouseY, int x, int y, int stars, String label, boolean on, String hitLabel, Runnable run) {
+	private int toggle(DrawContext context, int mouseX, int mouseY, int x, int y, int stars, String label, boolean on, String hitLabel, Runnable run) {
 		int h = 13;
 		boolean hover = over(mouseX, mouseY, x, y, SIDEBAR, h) && mouseY >= BODY + 17;
-		int fill = on ? tint(LINK, CARD, 0.25f) : hover ? SOFT_HOVER : SOFT;
-		roundedBorder(context, x, y, SIDEBAR, h, fill, on ? LINK : BORDER);
-		int cx = x + 5;
+		float a = ease(hitLabel, hover), k = ease(hitLabel + "#on", on);
+		if (a > 0) rounded(context, x, y, SIDEBAR, h, alpha(SOFT_HOVER, (int) (255 * a)));
+		int cx = x + 4;
 		if (stars >= 0) cx += stars(context, cx, y + 3, stars);
 		context.drawText(textRenderer, Text.literal((stars >= 0 ? " " : "") + label).styled(s -> s.withBold(on)), cx, y + 3, on ? TEXT : MUTED, false);
-		if (on) text(context, "✔", x + SIDEBAR - 10, y + 3, LINK);
+		int tw = 17, tx = x + SIDEBAR - tw - 3, ty = y + 3;
+		rounded(context, tx, ty, tw, 8, tint(LINK, SOFT, 0.15f + 0.75f * k));
+		int knob = tx + 1 + Math.round((tw - 8) * k);
+		rounded(context, knob, ty + 1, 6, 6, k > 0.5f ? CARD : MUTED);
 		hits.add(new Hit(x, Math.max(y, BODY + 17), x + SIDEBAR, y + h, hitLabel, () -> {
 			run.run();
 			cachedResults = null;
 		}));
-		return y + h + 3;
+		return y + h + 2;
 	}
 
-	/** "Groups" in the sidebar: each group a row in its colour with its size, then New group. */
+	/** "Groups" in the sidebar: each group a row with its colour and size, then New group. */
 	private int sidebarGroups(DrawContext context, int mouseX, int mouseY, int x, int y) {
-		y = sideHeading(context, x, y, "GROUPS");
+		y = sideHeading(context, x, y, "GROUPS", NICE);
 		Map<String, List<Profile>> groups = mod.ledger.groups();
 		int shown = 0;
 		for (Map.Entry<String, List<Profile>> group : groups.entrySet()) {
@@ -1693,7 +1781,7 @@ public class ShopScreen extends Screen {
 			}
 			String g = group.getKey();
 			boolean active = tab == Tab.GROUPS && g.equalsIgnoreCase(openGroup);
-			y = navRow(context, mouseX, mouseY, x, y, 0, groupColor(g), "■", g, group.getValue().size(), active, false, "side-group:" + g, () -> showGroup(g));
+			y = navRow(context, mouseX, mouseY, x, y, 0, groupColor(g), "●", g, group.getValue().size(), active, false, "side-group:" + g, () -> showGroup(g));
 		}
 		if (groups.isEmpty()) {
 			for (var line : textRenderer.wrapLines(Text.literal("Who plays together: crews, teams, alts."), SIDEBAR)) {
