@@ -1879,8 +1879,19 @@ public final class SelfTest {
 			case 1392 -> screenshot(client, "65_events");
 			case 1393 -> check("the replay map has the fight's players", client.currentScreen instanceof EventScreen es && es.testReplay() >= 2);
 			case 1396 -> screenshot(client, "66_replay");
-			case 1397 -> client.setScreen(null);
-			case 1398 -> {
+			case 1397 -> client.setScreen(new net.minecraft.client.gui.screen.GameMenuScreen(true));
+			case 1400 -> {
+				check("the pause screen shows who you're playing as", client.currentScreen instanceof net.minecraft.client.gui.screen.GameMenuScreen
+						&& net.fabricmc.fabric.api.client.screen.v1.Screens.getButtons(client.currentScreen).stream().anyMatch(b -> b instanceof AccountChip));
+				screenshot(client, "72_pause_account");
+				client.setScreen(new AccountsScreen(client.currentScreen));
+			}
+			case 1404 -> {
+				check("in a single player world, switching is offered as save and quit first", Accounts.where() == Accounts.Where.SINGLE_PLAYER);
+				screenshot(client, "73_accounts_in_world");
+			}
+			case 1405 -> client.setScreen(null);
+			case 1410 -> {
 				log("Disconnecting on purpose");
 				disconnectedAt = System.currentTimeMillis();
 				client.getNetworkHandler().getConnection().disconnect(Text.literal("[AutoLog] " + GRIEFER + " came near"));
