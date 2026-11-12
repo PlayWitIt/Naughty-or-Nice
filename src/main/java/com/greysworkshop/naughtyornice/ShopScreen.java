@@ -1632,13 +1632,13 @@ public class ShopScreen extends Screen {
 		y += 8;
 
 		// The tip, on a card of its own.
-		List<net.minecraft.text.OrderedText> tip = textRenderer.wrapLines(Text.literal("Look at a player and press N to open their page."), SIDEBAR - 18);
+		List<net.minecraft.text.OrderedText> tip = textRenderer.wrapLines(Text.literal("Look at a player and press N to open their page."), SIDEBAR - 22);
 		int th = tip.size() * 10 + 8;
 		roundedBorder(context, x, y, SIDEBAR, th, tint(LOOK, CARD, 0.08f), tint(LOOK, CARD, 0.3f));
 		text(context, "✦", x + 5, y + 5, LOOK);
 		int ty = y + 5;
 		for (var line : tip) {
-			context.drawText(textRenderer, line, x + 15, ty, MUTED, false);
+			context.drawText(textRenderer, line, x + 18, ty, MUTED, false);
 			ty += 10;
 		}
 		y += th + 4;
