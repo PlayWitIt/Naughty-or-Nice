@@ -495,7 +495,7 @@ public class ShopScreen extends Screen {
 	}
 
 	private int counterWidth() {
-		return Math.max(textRenderer.getWidth("Naughty list"), textRenderer.getWidth("999")) + 21;
+		return textRenderer.getWidth("Naughty list") + textRenderer.getWidth("999") + 27;
 	}
 
 	/** The screen is laid out at its own size and drawn scaled down by this, so it isn't huge at big GUI scales. */
@@ -1444,7 +1444,7 @@ public class ShopScreen extends Screen {
 				// A segmented switch: a track, and a highlight that slides behind the choice.
 				int trackW = need - 6 - (list ? textRenderer.getWidth(tab.label + " ✕") + 18 : 0) + 4;
 				int ty = HEADER + 2, h = TABS - 4;
-				rounded(context, vx - 2, ty, trackW, h, 0x40000000);
+				rounded(context, vx - 2, ty, trackW, h, tint(0xFF000000, SUBNAV, 0.6f));
 				int sx = vx;
 				int selX = -1, selW = 0;
 				for (Tab t : views) {
@@ -1542,8 +1542,10 @@ public class ShopScreen extends Screen {
 		rounded(context, x + 1, y + 4, 12, 12, tint(color, NAV, 0.3f));
 		text(context, icon, x + 1 + (12 - textRenderer.getWidth(icon)) / 2 + 1, y + 6, color);
 		int n = target == Tab.LOOK ? mod.ledger.onList(Profile.Verdict.LOOK).size() : count(target);
-		context.drawText(textRenderer, Text.literal(String.valueOf(n)).styled(s -> s.withBold(true)), x + 17, y + 2, WHITE, false);
-		context.drawText(textRenderer, fit(label, w - 21), x + 17, y + 11, tint(color, 0xFFB8C2CE, 0.35f), false);
+		Text count = Text.literal(String.valueOf(n)).styled(s -> s.withBold(true));
+		context.drawText(textRenderer, count, x + 17, y + 6, WHITE, false);
+		int lx = x + 17 + textRenderer.getWidth(count) + 4;
+		context.drawText(textRenderer, fit(label, x - 2 + w - 4 - lx), lx, y + 6, tint(color, 0xFFB8C2CE, 0.35f), false);
 		hits.add(new Hit(x - 2, 3, x - 2 + w, 23, "counter:" + target.name(), () -> showTab(target)));
 		hits.add(new Hit(x - 2, 3, x - 2 + w, 23, "tab:" + target.name(), () -> showTab(target)));
 	}
