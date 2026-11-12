@@ -6,6 +6,7 @@
 		"ClientCommonNetworkHandlerMixin",
 		"ClientConnectionMixin",
 		"ClientPlayNetworkHandlerMixin",
+		"MinecraftClientAccessor",
 		"PlayerEntityMixin",
 		"PlayerListHudAccessor",
 		"PlayerListHudMixin"
