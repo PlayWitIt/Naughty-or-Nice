@@ -495,7 +495,7 @@ public class ShopScreen extends Screen {
 	}
 
 	private int counterWidth() {
-		return Math.max(textRenderer.getWidth("Naughty list"), textRenderer.getWidth("999 people")) + 4;
+		return Math.max(textRenderer.getWidth("Naughty list"), textRenderer.getWidth("999")) + 21;
 	}
 
 	/** The screen is laid out at its own size and drawn scaled down by this, so it isn't huge at big GUI scales. */
@@ -573,7 +573,7 @@ public class ShopScreen extends Screen {
 		if (tab == null) tab = nearby().isEmpty() ? Tab.ONLINE : Tab.NEARBY;
 		int searchLeft = logoRight() + 8;
 		int searchRight = themeLeft() - 6;
-		search = new Box(textRenderer, searchLeft + 5, 9, Math.max(20, searchRight - searchLeft - 30), 10, Text.literal("Search"));
+		search = new Box(textRenderer, searchLeft + 19, 9, Math.max(20, searchRight - searchLeft - 26), 10, Text.literal("Search"));
 		search.setDrawsBackground(false);
 		search.setEditableColor(TEXT);
 		search.setTextShadow(false);
@@ -1275,6 +1275,9 @@ public class ShopScreen extends Screen {
 	@Override
 	public void render(DrawContext context, int realMouseX, int realMouseY, float delta) {
 		int mouseX = (int) Math.floor(scaled(realMouseX)), mouseY = (int) Math.floor(scaled(realMouseY));
+		long now = System.nanoTime();
+		animStep = lastAnimNanos == 0 ? 1 : Math.min(1f, (now - lastAnimNanos) / 1_000_000_000f * 14f);
+		lastAnimNanos = now;
 		var matrices = context.getMatrices();
 		matrices.pushMatrix();
 		matrices.scale(uiScale, uiScale);
@@ -1323,14 +1326,24 @@ public class ShopScreen extends Screen {
 		return adding || sharing || grouping || checking || circleMenu != null;
 	}
 
+	/**
+	 * The top bar. The header: the wordmark, a rounded search field (magnifier inside, a glow ring while typing), the
+	 * light/dark button, and the four lists as stat chips (icon tile, count, name; the one you're on outlined in its
+	 * colour). Under it the sections as text tabs with an orange underline that slides to the one you pick, and on a
+	 * players page All / Near / Online / Offline as a segmented switch whose highlight slides behind the choice.
+	 */
 	private void renderHeader(DrawContext context, int mouseX, int mouseY) {
-		context.fill(0, 0, width, HEADER, NAV);
-		// Logo with the smile underneath.
+		context.fillGradient(0, 0, width, HEADER, tint(0xFF2A3644, NAV, 0.55f), NAV);
+		hGlow(context, 0, HEADER - 1, width, ORANGE);
+
+		// Wordmark with the smile underneath.
 		int x = 8;
-		text(context, "naughty", x, 7, WHITE);
-		int or = x + textRenderer.getWidth("naughty") + 2;
+		Text naughty = Text.literal("naughty").styled(s -> s.withBold(true));
+		Text nice = Text.literal("nice").styled(s -> s.withBold(true));
+		context.drawText(textRenderer, naughty, x, 7, WHITE, false);
+		int or = x + textRenderer.getWidth(naughty) + 2;
 		text(context, "or", or, 7, ORANGE);
-		text(context, "nice", or + textRenderer.getWidth("or") + 2, 7, WHITE);
+		context.drawText(textRenderer, nice, or + textRenderer.getWidth("or") + 2, 7, WHITE, false);
 		int smileW = logoWidth() - 6;
 		for (int i = 0; i <= smileW; i++) {
 			int dy = (int) Math.round(2.5 * Math.sin(Math.PI * i / smileW));
@@ -1339,33 +1352,39 @@ public class ShopScreen extends Screen {
 		context.fill(x + 1 + smileW, 15, x + 3 + smileW, 16, ORANGE);
 		context.fill(x + 3 + smileW, 15, x + 4 + smileW, 18, ORANGE);
 
-		// Search box with the orange button.
+		// Search: a rounded field, the magnifier inside on the left, a soft orange ring while you type.
 		int left = logoRight() + 8;
 		int right = themeLeft() - 6;
-		rounded(context, left, 5, right - left, 16, search.isFocused() ? ORANGE : FIELD);
-		rounded(context, left + (search.isFocused() ? 1 : 0), 5 + (search.isFocused() ? 1 : 0), right - left - (search.isFocused() ? 2 : 0) - 22, 16 - (search.isFocused() ? 2 : 0), CARD);
-		context.fill(right - 22, 5 + (search.isFocused() ? 1 : 0), right - (search.isFocused() ? 1 : 0), 21 - (search.isFocused() ? 1 : 0), SEARCH_BUTTON);
-		magnifier(context, right - 15, 9);
+		boolean focused = search.isFocused();
+		float glow = ease("search-focus", focused);
+		boolean searchHover = over(mouseX, mouseY, left, 5, right - left, 16);
+		if (glow > 0) rounded(context, left - 1, 4, right - left + 2, 18, alpha(ORANGE, (int) (0x70 * glow)));
+		rounded(context, left, 5, right - left, 16, focused ? ORANGE : searchHover ? HOVER_BORDER : 0xFF3A4654);
+		rounded(context, left + 1, 6, right - left - 2, 14, FIELD);
+		context.fill(left + 2, 6, right - 2, 7, 0x30000000);
+		magnifierAt(context, left + 6, 9, focused ? ORANGE : MUTED);
+		hits.add(new Hit(left, 5, left + 18, 21, "search", () -> setFocused(search)));
 		hits.add(new Hit(right - 22, 5, right, 21, "search", () -> setFocused(search)));
 
-		// Light/dark switch.
+		// Light/dark: a round button.
 		int themeX = themeLeft();
-		boolean themeHover = over(mouseX, mouseY, themeX, 5, 16, 16);
-		if (themeHover) context.drawStrokedRectangle(themeX, 5, 16, 16, WHITE);
+		float th = ease("theme-hover", over(mouseX, mouseY, themeX, 5, 16, 16));
+		rounded(context, themeX, 5, 16, 16, tint(0xFF3A4654, NAV, 1 - 0.6f - 0.4f * th));
 		String glyph = NNConfig.INSTANCE.darkMode ? "☀" : "☾";
 		text(context, glyph, themeX + (16 - textRenderer.getWidth(glyph)) / 2 + 1, 9, NNConfig.INSTANCE.darkMode ? 0xFFFFD866 : 0xFFDDE3EA);
 		hits.add(new Hit(themeX, 5, themeX + 16, 21, "theme", this::toggleTheme));
 
-		// "Friends / 4 people", "Nice list / 3 people"..., like the account and cart links.
+		// The four lists, as stat chips.
 		int cw = counterWidth();
 		int cx = countersLeft();
-		counter(context, mouseX, mouseY, cx, "Friends", Tab.FRIENDS, 0xFF8AB4FF);
-		counter(context, mouseX, mouseY, cx + cw + 6, "Nice list", Tab.NICE, 0xFF7CE0A0);
-		counter(context, mouseX, mouseY, cx + 2 * (cw + 6), "Look Into", Tab.LOOK, 0xFFFFC14D);
-		counter(context, mouseX, mouseY, cx + 3 * (cw + 6), "Naughty list", Tab.NAUGHTY, 0xFFFF8A80);
+		counter(context, mouseX, mouseY, cx, "Friends", "★", Tab.FRIENDS, 0xFF8AB4FF);
+		counter(context, mouseX, mouseY, cx + cw + 6, "Nice list", "✔", Tab.NICE, 0xFF7CE0A0);
+		counter(context, mouseX, mouseY, cx + 2 * (cw + 6), "Look Into", "?", Tab.LOOK, 0xFFFFC14D);
+		counter(context, mouseX, mouseY, cx + 3 * (cw + 6), "Naughty list", "✖", Tab.NAUGHTY, 0xFFFF8A80);
 
-		// Tabs: the sections, then, on a players page, which players (the lists are the counters above and the sidebar).
+		// Tabs.
 		context.fill(0, HEADER, width, BODY, SUBNAV);
+		context.fill(0, BODY - 1, width, BODY, 0x40000000);
 		int tx = 6;
 		// Offline: which server you're reading, and a tap to the next one. Shows you're not live.
 		if (offline && !offlineServers.isEmpty()) {
@@ -1373,7 +1392,11 @@ public class ShopScreen extends Screen {
 			if (textRenderer.getWidth(server) > 110) server = server.substring(0, 14) + "\u2026";
 			String label = (offlineServers.size() > 1 ? "\u21c4 " : "") + server;
 			boolean more = offlineServers.size() > 1;
-			tx += pill(context, mouseX, mouseY, tx, label, true, "offline-server", more ? this::nextOfflineServer : () -> {}) + 2;
+			int w = textRenderer.getWidth(label) + 12;
+			rounded(context, tx, HEADER + 2, w, TABS - 4, tint(LOOK, SUBNAV, 0.3f));
+			text(context, label, tx + 6, HEADER + (TABS - 8) / 2 + 1, LOOK);
+			hits.add(new Hit(tx, HEADER, tx + w, BODY, "offline-server", more ? this::nextOfflineServer : () -> {}));
+			tx += w + 4;
 			context.fill(tx + 1, HEADER + 3, tx + 2, BODY - 3, 0x44FFFFFF);
 			tx += 6;
 		}
@@ -1382,30 +1405,101 @@ public class ShopScreen extends Screen {
 				: new Tab[] {Tab.ALL, Tab.GROUPS, Tab.CHAT, Tab.INTEL, Tab.ACTIVITY, Tab.SERVER, Tab.BARITONE, Tab.SETTINGS};
 		// Tighter when the window is narrow, so every section stays on screen.
 		int roomy = 0;
-		for (Tab t : sections) roomy += textRenderer.getWidth(t == Tab.ALL ? "Players" : t.label + (t == Tab.CHAT ? " •" : "")) + 12;
-		tabPad = roomy + 6 > width - 6 ? 4 : 10;
+		for (Tab t : sections) roomy += textRenderer.getWidth(t == Tab.ALL ? "Players" : t.label + (t == Tab.CHAT ? " •" : "")) + 14;
+		tabPad = roomy + 6 > width - 6 ? 6 : 12;
+		int activeX = -1, activeW = 0;
 		for (Tab t : sections) {
 			String label = t == Tab.ALL ? "Players" : t.label;
 			boolean active = t == Tab.ALL ? playersTab(tab) : t == tab;
-			if (t == Tab.CHAT && !active && mod.chatLogger.feedVersion() != chatSeen && !mod.chatLogger.feed().isEmpty()) label += " •";
-			tx += pill(context, mouseX, mouseY, tx, label, active, "tab:" + t.name(), () -> showTab(t)) + 2;
+			boolean unread = t == Tab.CHAT && !active && mod.chatLogger.feedVersion() != chatSeen && !mod.chatLogger.feed().isEmpty();
+			int w = textRenderer.getWidth(label) + tabPad + (unread ? 6 : 0);
+			if (active) {
+				activeX = tx;
+				activeW = w;
+			}
+			tab(context, mouseX, mouseY, tx, w, label, active, unread, "tab:" + t.name(), () -> showTab(t));
+			tx += w + 2;
 		}
+		// The underline glides to the open section.
+		if (activeX >= 0) {
+			if (underlineW == 0) {
+				underlineX = activeX;
+				underlineW = activeW;
+			}
+			underlineX += (activeX - underlineX) * Math.min(1f, animStep * 1.2f);
+			underlineW += (activeW - underlineW) * Math.min(1f, animStep * 1.2f);
+			int ux = Math.round(underlineX) + 4, uw = Math.max(4, Math.round(underlineW) - 8);
+			context.fill(ux, BODY - 3, ux + uw, BODY - 1, ORANGE);
+			context.fill(ux - 1, BODY - 4, ux + uw + 1, BODY - 3, alpha(ORANGE, 0x50));
+		}
+
 		if (playersTab(tab) && selected == null) {
 			Tab[] views = {Tab.ALL, Tab.NEARBY, Tab.ONLINE, Tab.OFFLINE};
-			int need = 0;
+			int need = 6;
 			for (Tab t : views) need += textRenderer.getWidth(viewLabel(t)) + 12;
 			boolean list = tab == Tab.FRIENDS || tab == Tab.NICE || tab == Tab.LOOK || tab == Tab.NAUGHTY;
-			if (list) need += textRenderer.getWidth(tab.label + " ✕") + 12;
+			if (list) need += textRenderer.getWidth(tab.label + " ✕") + 18;
 			int vx = width - 6 - need;
 			if (vx > tx + 12) {
-				context.fill(vx - 8, HEADER + 3, vx - 7, BODY - 3, 0x44FFFFFF);
+				// A segmented switch: a track, and a highlight that slides behind the choice.
+				int trackW = need - 6 - (list ? textRenderer.getWidth(tab.label + " ✕") + 18 : 0) + 4;
+				int ty = HEADER + 2, h = TABS - 4;
+				rounded(context, vx - 2, ty, trackW, h, 0x40000000);
+				int sx = vx;
+				int selX = -1, selW = 0;
 				for (Tab t : views) {
-					vx += pill(context, mouseX, mouseY, vx, viewLabel(t), t == tab, t == Tab.ALL ? "view:ALL" : "tab:" + t.name(), () -> showTab(t)) + 2;
+					int w = textRenderer.getWidth(viewLabel(t)) + 12;
+					if (t == tab) {
+						selX = sx;
+						selW = w;
+					}
+					sx += w;
 				}
-				// The list you're looking at, as a chip that goes back to everyone.
-				if (list) pill(context, mouseX, mouseY, vx, tab.label + " ✕", true, "view:clear", () -> showTab(Tab.ALL));
+				if (selX >= 0) {
+					if (segmentW == 0) {
+						segmentX = selX;
+						segmentW = selW;
+					}
+					segmentX += (selX - segmentX) * Math.min(1f, animStep * 1.2f);
+					segmentW += (selW - segmentW) * Math.min(1f, animStep * 1.2f);
+					rounded(context, Math.round(segmentX), ty + 1, Math.round(segmentW), h - 2, tint(LINK, SUBNAV, 0.35f));
+				} else {
+					segmentW = 0;
+				}
+				sx = vx;
+				for (Tab t : views) {
+					String label = viewLabel(t);
+					int w = textRenderer.getWidth(label) + 12;
+					boolean on = t == tab;
+					boolean hover = over(mouseX, mouseY, sx, ty, w, h);
+					text(context, label, sx + 6, ty + (h - 8) / 2 + 1, on ? WHITE : hover ? 0xFFE7ECF2 : 0xFF9AA8B8);
+					hits.add(new Hit(sx, HEADER, sx + w, BODY, t == Tab.ALL ? "view:ALL" : "tab:" + t.name(), () -> showTab(t)));
+					sx += w;
+				}
+				// The list you're looking at, as a chip in its colour that goes back to everyone.
+				if (list) {
+					int color = tab == Tab.FRIENDS ? FRIEND : tab == Tab.NICE ? NICE : tab == Tab.LOOK ? LOOK : NAUGHTY;
+					String label = tab.label + " ✕";
+					int w = textRenderer.getWidth(label) + 12;
+					int lx = width - 6 - w;
+					boolean hover = over(mouseX, mouseY, lx, ty, w, h);
+					rounded(context, lx, ty, w, h, tint(color, SUBNAV, hover ? 0.5f : 0.3f));
+					text(context, label, lx + 6, ty + (h - 8) / 2 + 1, tint(color, WHITE, 0.4f));
+					hits.add(new Hit(lx, HEADER, lx + w, BODY, "view:clear", () -> showTab(Tab.ALL)));
+				}
 			}
+		} else {
+			segmentW = 0;
 		}
+	}
+
+	private float underlineX, underlineW, segmentX, segmentW;
+
+	/** A thin line along the bottom of the header that glows in the middle and fades out to both sides. */
+	private static void hGlow(DrawContext context, int x, int y, int w, int color) {
+		int half = w / 2;
+		hGradient(context, x, y, half, 1, alpha(color, 0), alpha(color, 0x90));
+		hGradient(context, x + half, y, w - half, 1, alpha(color, 0x90), alpha(color, 0));
 	}
 
 	private static boolean playersTab(Tab t) {
@@ -1422,29 +1516,46 @@ public class ShopScreen extends Screen {
 	}
 
 	/** Room either side of a tab's label, together (less when the window is narrow). */
-	private int tabPad = 10;
+	private int tabPad = 12;
 
-	/** A tab: filled orange when it's the one open, lit up under the mouse. Returns its width. */
-	private int pill(DrawContext context, int mouseX, int mouseY, int x, String label, boolean active, String hit, Runnable action) {
-		int w = textRenderer.getWidth(label) + tabPad;
+	/** A section tab: plain text, bright when open, a faint wash under the mouse, and a dot for unread chat. */
+	private void tab(DrawContext context, int mouseX, int mouseY, int x, int w, String label, boolean active, boolean unread, String hit, Runnable action) {
 		int y = HEADER + 1, h = TABS - 2;
-		boolean hover = over(mouseX, mouseY, x, y, w, h);
-		if (active) rounded(context, x, y, w, h, ORANGE);
-		else if (hover) rounded(context, x, y, w, h, 0x33FFFFFF);
-		context.drawText(textRenderer, label, x + tabPad / 2, y + (h - 8) / 2 + 1, active ? 0xFF131A22 : hover ? WHITE : 0xFFC8D0DA, false);
+		float a = ease(hit, over(mouseX, mouseY, x, y, w, h) && !active);
+		if (a > 0) rounded(context, x, y + 1, w, h - 3, alpha(WHITE, (int) (0x1C * a)));
+		Text t = Text.literal(label).styled(s -> s.withBold(active));
+		int tw = textRenderer.getWidth(t);
+		context.drawText(textRenderer, t, x + (w - tw - (unread ? 6 : 0)) / 2, y + (h - 8) / 2, active ? WHITE : tint(WHITE, 0xFF9AA8B8, 0.15f + 0.6f * a), false);
+		if (unread) rounded(context, x + w - tabPad / 2 - 4, y + 3, 4, 4, ORANGE);
 		hits.add(new Hit(x, HEADER, x + w, BODY, hit, action));
-		return w;
 	}
 
-	private void counter(DrawContext context, int mouseX, int mouseY, int x, String label, Tab target, int color) {
+	/** A stat chip in the header: an icon tile in the list's colour, the count, the list's name; outlined when open. */
+	private void counter(DrawContext context, int mouseX, int mouseY, int x, String label, String icon, Tab target, int color) {
 		int w = counterWidth();
-		boolean hover = over(mouseX, mouseY, x - 2, 3, w, 20);
-		if (hover) context.drawStrokedRectangle(x - 2, 3, w, 20, WHITE);
+		int y = 3, h = 20;
+		boolean open = tab == target && (target != Tab.FRIENDS || friendCircle == null);
+		float a = ease("counter:" + target.name(), over(mouseX, mouseY, x - 2, y, w, h));
+		int fill = tint(color, NAV, 0.08f + 0.1f * a + (open ? 0.1f : 0));
+		rounded(context, x - 2, y, w, h, open ? color : tint(color, NAV, 0.25f + 0.2f * a));
+		rounded(context, x - 1, y + 1, w - 2, h - 2, fill);
+		rounded(context, x + 1, y + 4, 12, 12, tint(color, NAV, 0.3f));
+		text(context, icon, x + 1 + (12 - textRenderer.getWidth(icon)) / 2 + 1, y + 6, color);
 		int n = target == Tab.LOOK ? mod.ledger.onList(Profile.Verdict.LOOK).size() : count(target);
-		text(context, label, x, 4, 0xFFCCCCCC);
-		context.drawText(textRenderer, Text.literal(n + (n == 1 ? " person" : " people")).styled(s -> s.withBold(true)), x, 14, color, false);
+		context.drawText(textRenderer, Text.literal(String.valueOf(n)).styled(s -> s.withBold(true)), x + 17, y + 2, WHITE, false);
+		context.drawText(textRenderer, fit(label, w - 21), x + 17, y + 11, tint(color, 0xFFB8C2CE, 0.35f), false);
 		hits.add(new Hit(x - 2, 3, x - 2 + w, 23, "counter:" + target.name(), () -> showTab(target)));
 		hits.add(new Hit(x - 2, 3, x - 2 + w, 23, "tab:" + target.name(), () -> showTab(target)));
+	}
+
+	/** The magnifier, in a colour. */
+	private static void magnifierAt(DrawContext context, int x, int y, int c) {
+		context.fill(x + 1, y, x + 5, y + 1, c);
+		context.fill(x + 1, y + 5, x + 5, y + 6, c);
+		context.fill(x, y + 1, x + 1, y + 5, c);
+		context.fill(x + 5, y + 1, x + 6, y + 5, c);
+		context.fill(x + 5, y + 5, x + 7, y + 7, c);
+		context.fill(x + 6, y + 6, x + 8, y + 8, c);
 	}
 
 	private static void magnifier(DrawContext context, int x, int y) {
@@ -1564,9 +1675,6 @@ public class ShopScreen extends Screen {
 	 * sliding switches, and a tip card. Rows ease in under the mouse, so it's plain what can be clicked.
 	 */
 	private void renderSidebar(DrawContext context, int mouseX, int mouseY, int y) {
-		long now = System.nanoTime();
-		animStep = lastAnimNanos == 0 ? 1 : Math.min(1f, (now - lastAnimNanos) / 1_000_000_000f * 14f);
-		lastAnimNanos = now;
 		int x = 8;
 		int top = y;
 		int px = x - 4, py = top - 4, pw = SIDEBAR + 8, ph = sidebarHeight;
