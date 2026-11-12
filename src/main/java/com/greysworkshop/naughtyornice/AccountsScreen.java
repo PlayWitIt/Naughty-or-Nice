@@ -49,6 +49,7 @@ public final class AccountsScreen extends Screen {
 
 	@Override
 	protected void init() {
+		textRenderer = UiFont.renderer();
 		nameBox = new TextFieldWidget(textRenderer, 0, 0, 140, 16, Text.literal("Name"));
 		nameBox.setMaxLength(16);
 		nameBox.setTextPredicate(s -> s.matches("[A-Za-z0-9_]*"));

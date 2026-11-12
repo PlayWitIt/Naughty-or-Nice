@@ -565,6 +565,7 @@ public class ShopScreen extends Screen {
 
 	@Override
 	protected void init() {
+		textRenderer = UiFont.renderer();
 		uiScale = chooseScale();
 		width = (int) Math.ceil(client.getWindow().getScaledWidth() / uiScale);
 		height = (int) Math.ceil(client.getWindow().getScaledHeight() / uiScale);
