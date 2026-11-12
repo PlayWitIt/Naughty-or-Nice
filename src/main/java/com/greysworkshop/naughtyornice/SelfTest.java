@@ -2049,7 +2049,7 @@ public final class SelfTest {
 	private static long accountCodeAt;
 
 	/** The account switcher, from the menus: opens, switches to an offline name and back, and Microsoft gives a code. */
-	private static int skinWait;
+	private static int skinWait, accountScale;
 	private static final java.util.UUID SKIN_TEST_ID = java.util.UUID.fromString("069a79f4-44e9-4726-a5be-fca90e38aaf5");
 
 	private static void accountTest(MinecraftClient client) {
@@ -2085,6 +2085,8 @@ public final class SelfTest {
 				screenshot(client, "70_accounts");
 			}
 			case 35 -> {
+				client.options.getGuiScale().setValue(accountScale);
+				client.onResolutionChanged();
 				Accounts.Account back = new Accounts.Account();
 				back.name = accountsBefore;
 				back.offline = true;
@@ -2110,6 +2112,17 @@ public final class SelfTest {
 						!skin.equals(net.minecraft.client.util.DefaultSkinHelper.getSkinTextures(SKIN_TEST_ID)));
 				check("an offline name gets the default skin", Accounts.skin(java.util.UUID.fromString(Accounts.offline("SelfTestAlt").uuid))
 						.equals(net.minecraft.client.util.DefaultSkinHelper.getSkinTextures(java.util.UUID.fromString(Accounts.offline("SelfTestAlt").uuid))));
+			}
+			case 32 -> {
+				// A big window (like 1920x1009 maximized): the skin panel shows you in 3D.
+				accountScale = client.options.getGuiScale().getValue();
+				client.options.getGuiScale().setValue(1);
+				client.onResolutionChanged();
+			}
+			case 34 -> {
+				check("a big window shows the 3D skin panel (" + client.getWindow().getScaledWidth() + " wide)",
+						client.currentScreen instanceof AccountsScreen && client.getWindow().getScaledWidth() >= 442);
+				screenshot(client, "70b_accounts_wide");
 			}
 			default -> {
 				if (step >= 1000) {
