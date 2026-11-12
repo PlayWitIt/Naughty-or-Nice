@@ -61,6 +61,7 @@ public class NaughtyOrNiceClient implements ClientModInitializer {
 		INSTANCE = this;
 		NNConfig.load();
 		Safe.run("looking for a downloaded update", UpdateCheck::init);
+		Safe.run("adding the account switcher", Accounts::register);
 
 		KeyBinding.Category category = KeyBinding.Category.create(Identifier.of(MOD_ID, "main"));
 		openKey = KeyBindingHelper.registerKeyBinding(new KeyBinding("key.naughtyornice.open", InputUtil.Type.KEYSYM, GLFW.GLFW_KEY_N, category));

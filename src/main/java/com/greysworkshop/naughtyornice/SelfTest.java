@@ -95,6 +95,7 @@ public final class SelfTest {
 
 	private static void tick(MinecraftClient client) {
 		afterDisconnect(client);
+		accountTest(client);
 		if (downloadCheck(client)) return;
 		if (client.player == null || client.world == null || client.getServer() == null) return;
 		if (frames == framesAtLastStep) return;
@@ -2038,6 +2039,67 @@ public final class SelfTest {
 				&& e.detail.contains("SelfTest"));
 		check("...with who was near", e != null && e.nearby.stream().anyMatch(n -> n.name.equals(GRIEFER)));
 		check("...and the player in the reason picked out", e != null && Disconnects.namedInReason(e) != null);
+		// Now in the menus: the account switcher, then the downloaded world.
+		accountStep = 1;
+	}
+
+	private static int accountStep;
+	private static String accountsBefore;
+	private static java.util.concurrent.CompletableFuture<Accounts.DeviceCode> accountCode;
+	private static long accountCodeAt;
+
+	/** The account switcher, from the menus: opens, switches to an offline name and back, and Microsoft gives a code. */
+	private static void accountTest(MinecraftClient client) {
+		if (accountStep == 0) return;
+		int step = accountStep++;
+		switch (step) {
+			case 1 -> {
+				Accounts.all().removeIf(a -> a.name.equals("SelfTestAlt"));
+				accountsBefore = client.getSession().getUsername();
+				client.setScreen(new AccountsScreen(new net.minecraft.client.gui.screen.TitleScreen()));
+			}
+			case 15 -> {
+				check("the Accounts screen opens", client.currentScreen instanceof AccountsScreen);
+				Accounts.Account alt = Accounts.offline("SelfTestAlt");
+				Accounts.applyNow(alt);
+				check("switching to an offline name changes who you play as (" + client.getSession().getUsername() + ")",
+						client.getSession().getUsername().equals("SelfTestAlt") && client.getSession().getUuidOrNull().toString().equals(alt.uuid));
+				check("...and it's saved", Accounts.all().stream().anyMatch(a -> a.name.equals("SelfTestAlt")));
+			}
+			case 30 -> screenshot(client, "70_accounts");
+			case 35 -> {
+				Accounts.Account back = new Accounts.Account();
+				back.name = accountsBefore;
+				back.offline = true;
+				back.uuid = java.util.UUID.nameUUIDFromBytes(("OfflinePlayer:" + accountsBefore).getBytes(java.nio.charset.StandardCharsets.UTF_8)).toString();
+				Accounts.applyNow(back);
+				check("switching back works (" + client.getSession().getUsername() + ")", client.getSession().getUsername().equals(accountsBefore));
+				Accounts.all().stream().filter(a -> a.name.equals("SelfTestAlt")).findFirst().ifPresent(Accounts::forget);
+				check("removing an account forgets it", Accounts.all().stream().noneMatch(a -> a.name.equals("SelfTestAlt")));
+				accountCode = java.util.concurrent.CompletableFuture.supplyAsync(() -> {
+					try {
+						return Accounts.startSignIn();
+					} catch (Exception e) {
+						log("Microsoft code request failed: " + e.getMessage());
+						return null;
+					}
+				});
+				accountCodeAt = System.currentTimeMillis();
+			}
+			default -> {
+				if (step < 36) return;
+				if (!accountCode.isDone() && System.currentTimeMillis() - accountCodeAt < 20_000) return;
+				Accounts.DeviceCode c = accountCode.getNow(null);
+				check("Microsoft gives a sign-in code for microsoft.com/link (" + (c == null ? "none" : c.userCode().length() + " letters, " + c.url()) + ")",
+						c != null && c.userCode().length() >= 6 && c.url().contains("microsoft") || c != null && c.url().contains("live.com"));
+				accountStep = 0;
+				client.setScreen(new net.minecraft.client.gui.screen.TitleScreen());
+				afterAccounts(client);
+			}
+		}
+	}
+
+	private static void afterAccounts(MinecraftClient client) {
 		if (downloadName != null) {
 			// Open the downloaded world, to see the gold block and sign really are in it.
 			WorldDownload.flush();
