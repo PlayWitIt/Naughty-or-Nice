@@ -55,9 +55,9 @@ It also has:
   never did anything are forgotten after 180 days unseen (configurable).
 - Light and dark themes: the ☾ / ☀ button at the top (dark by default).
 - Comfortable at any GUI scale: the screen picks its own size from the window, whatever the game's GUI scale.
-  Settings → **Screen size**: Small fits the most (about 900 wide), Medium is in between (about 680), Large is the
-  biggest (about 540, never so big the panels don't fit). Whole-pixel scales are used where they're close, so text
-  stays sharp.
+  Settings → **Screen size**: Small (the default) fits the most (about 900 wide), Medium is in between (about 680),
+  Large is the biggest (about 540). Each size is at least 1.3 times the one before, even in a small window, so
+  they never look the same. Whole-pixel scales are used where they're close, so text stays sharp.
 - **Your coordinates** show in green right down in the bottom-right corner (x y z, facing, and the matching nether or
   overworld spot), half the size of the rest of the HUD, on a light backing. Settings move them to the bottom-left
   corner, under the chat (they never move up into it), or make them full size. Not showing? `/nn coords` says why and turns
@@ -288,6 +288,10 @@ only what it's for, in the same colours as the squares in the world (X) and the 
 - **Blue squares: yours**: land you were the first in, on an earlier visit. You've been there, but as far as anyone can
   tell from your side nobody else had been there before you. It never counts as a trail, so your own path isn't
   taken for someone else's.
+- **How much old land, and how far, each way**: small green text inside the radar, in each of the 8 directions
+  that has old land, gives the number of old chunks that way and how far the nearest one is (`42 180m`). The
+  direction with the most is in bold, and under the radar it's said in words: "Most old land: NE (ahead-right),
+  42 chunks from 180 blocks".
 - **Yellow line**: a **trail**, a long, narrow strip of old land with new land on both sides. That's someone's path.
   The **arrow** is on the end further from spawn (when one end clearly is). That's a fact about the trail, not a
   promise of a base: it's where they went, or came from.
