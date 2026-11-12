@@ -22,9 +22,13 @@ public final class UiFont {
 
 	private UiFont() {}
 
-	/** A text renderer that draws the default font as Inter, and leaves any other font as it is. */
+	/**
+	 * A text renderer that draws the default font as Inter, and leaves any other font as it is. At GUI scale 1 the
+	 * letters would be too few pixels to read well, so there it's the game's own (pixel-perfect) font.
+	 */
 	public static TextRenderer renderer() {
 		MinecraftClient client = MinecraftClient.getInstance();
+		if (client.getWindow() != null && client.getWindow().getScaleFactor() < 2) return client.textRenderer;
 		TextRenderer.GlyphsProvider fonts = client.textRenderer.fonts;
 		if (renderer == null || base != fonts) {
 			base = fonts;

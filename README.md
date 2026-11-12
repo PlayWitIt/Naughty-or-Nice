@@ -53,11 +53,15 @@ It also has:
   suggests a list), Naughty list, **Groups**, **Activity**, **Server**, **Intel**, **Chat**, Settings.
 - Everyone you see (nearby or on the tab list) is remembered, so they're still listed after logging off. Players who
   never did anything are forgotten after 180 days unseen (configurable).
-- **Accounts**: switch Minecraft accounts from the title or multiplayer screen (the **Account: name** button at the
-  top right), with no Essential or other mod needed. **+ Microsoft** shows a code to type at microsoft.com/link (the
-  page opens and the code is copied for you); your password never goes through the game. After that, **Use** switches
-  in one click. Only Microsoft's refresh token is kept, in `config/playwit/accounts.json` on your computer; don't share
-  that file. **+ Offline name** is for single player and offline servers. Switch from the menus, not in a world.
+- **Accounts**: switch Minecraft accounts in game, with no Essential or other mod needed. Your skin's face and name sit
+  at the top right of the title, multiplayer and pause screens, so you always know who you're playing as; click it for
+  the account screen. There you see yourself in 3D (drag to turn; point at another account to preview its skin), and
+  your accounts as cards with **Use** on each. **+ Microsoft account** walks you through a code to type at
+  microsoft.com/link (the page opens and the code is copied for you); your password never goes through the game.
+  The account the launcher started the game with is always listed, so you can go back to it. On a server, **Rejoin**
+  leaves, switches, and joins the same server again; in single player it saves and quits to the title first. Only
+  Microsoft's refresh token is kept, in `config/playwit/accounts.json` on your computer; don't share that file.
+  **+ Offline name** is for single player and offline-mode servers.
 - Light and dark themes: the ☾ / ☀ button at the top (dark by default).
 - Comfortable at any GUI scale: the screen picks its own size from the window, whatever the game's GUI scale.
   Settings → **Screen size**: Small (the default) fits the most (about 900 wide), Medium is in between (about 680),

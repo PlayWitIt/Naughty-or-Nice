@@ -57,6 +57,12 @@ public final class SelfTest {
 			client.options.pauseOnLostFocus = false;
 			// No "move with WASD" pop-up over the screenshots.
 			client.getTutorialManager().setStep(net.minecraft.client.tutorial.TutorialStep.NONE);
+			// NN_SELFTEST_ONLY=accounts: just the account screen, from the menus (quick, for working on its looks).
+			if ("accounts".equals(System.getenv("NN_SELFTEST_ONLY"))) {
+				log("Only the account test");
+				accountStep = 1;
+				return;
+			}
 			client.send(() -> openWorld(client));
 		});
 		ClientTickEvents.END_CLIENT_TICK.register(SelfTest::tick);
@@ -2065,7 +2071,16 @@ public final class SelfTest {
 	/** Puts the real mouse pointer on a point of the screen (in GUI units), so hover looks can be screenshotted. */
 	private static void pointAt(MinecraftClient client, double x, double y) {
 		double scale = client.getWindow().getScaleFactor();
-		org.lwjgl.glfw.GLFW.glfwSetCursorPos(client.getWindow().getHandle(), x * scale, y * scale);
+		long handle = client.getWindow().getHandle();
+		org.lwjgl.glfw.GLFW.glfwSetCursorPos(handle, x * scale, y * scale);
+		// Moving the pointer doesn't always report back to the game; tell its mouse directly too.
+		try {
+			java.lang.reflect.Method moved = net.minecraft.client.Mouse.class.getDeclaredMethod("onCursorPos", long.class, double.class, double.class);
+			moved.setAccessible(true);
+			moved.invoke(client.mouse, handle, x * scale, y * scale);
+		} catch (ReflectiveOperationException e) {
+			log("Couldn't move the mouse: " + e);
+		}
 	}
 
 	/**
@@ -2078,6 +2093,11 @@ public final class SelfTest {
 		int step = accountStep++;
 		switch (step) {
 			case 1 -> {
+				// Not over the loading screen: wait until the game has finished loading.
+				if (client.getOverlay() != null) {
+					accountStep--;
+					return;
+				}
 				Accounts.all().removeIf(a -> a.name.equals("SelfTestAlt") || a.name.equals("Notch"));
 				accountsBefore = client.getSession().getUsername();
 				Accounts.Account real = new Accounts.Account();
@@ -2099,7 +2119,7 @@ public final class SelfTest {
 				pointAt(client, 2, 2);
 			}
 			case 11 -> {
-				if (!accountWait(AccountSkins.ready(SKIN_TEST_ID), 15_000)) return;
+				if (!accountWait(AccountSkins.ready(SKIN_TEST_ID), 70_000)) return;
 				var skin = AccountSkins.of(SKIN_TEST_ID);
 				check("a Microsoft account shows its real skin, not a default one (" + skin.body().texturePath() + ")",
 						!skin.equals(net.minecraft.client.util.DefaultSkinHelper.getSkinTextures(SKIN_TEST_ID)));
