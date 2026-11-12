@@ -170,7 +170,7 @@ public class ShopScreen extends Screen {
 	private static final int CARD_W = 172;
 	private static final int CARD_H = 74;
 	private static final int GAP = 6;
-	private static final int SIDEBAR = 96;
+	private static final int SIDEBAR = 112;
 	private static final int BUY_BOX = 150;
 
 	private static Tab lastTab;
@@ -1556,101 +1556,144 @@ public class ShopScreen extends Screen {
 		scrollbar(context, top);
 	}
 
+	/**
+	 * The sidebar on the player lists: a panel of its own, so it reads as the menu. Your lists first (where you go),
+	 * each a full row in its own colour with its count, the one you're on filled in; then your groups; then the
+	 * filters as on/off chips; a tip last. Every row lights up under the mouse, so it's plain what can be clicked.
+	 */
 	private void renderSidebar(DrawContext context, int mouseX, int mouseY, int y) {
 		int x = 8;
 		int top = y;
-		context.drawText(textRenderer, Text.literal("Rating").styled(s -> s.withBold(true)), x, y, TEXT, false);
-		y += 12;
-		y = filterRow(context, mouseX, mouseY, x, y, 4, "& Up", rating == Rating.GOOD, () -> rating = rating == Rating.GOOD ? Rating.ANY : Rating.GOOD);
-		y = filterRow(context, mouseX, mouseY, x, y, 2, "& Under", rating == Rating.BAD, () -> rating = rating == Rating.BAD ? Rating.ANY : Rating.BAD);
-		y += 8;
-		context.drawText(textRenderer, Text.literal("Show").styled(s -> s.withBold(true)), x, y, TEXT, false);
-		y += 12;
-		y = checkbox(context, mouseX, mouseY, x, y, SIDEBAR, "Online only", onlineOnly, "online only", () -> onlineOnly = !onlineOnly);
-		y += 8;
-		context.drawText(textRenderer, Text.literal("Your lists").styled(s -> s.withBold(true)), x, y, TEXT, false);
-		y += 12;
+		roundedBorder(context, x - 4, top - 4, SIDEBAR + 8, sidebarHeight, CARD, BORDER);
+
+		y = sideHeading(context, x, y, "YOUR LISTS");
 		for (Tab t : new Tab[] {Tab.FRIENDS, Tab.NICE, Tab.LOOK, Tab.NAUGHTY}) {
 			int n = t == Tab.LOOK ? mod.ledger.onList(Profile.Verdict.LOOK).size() : count(t);
-			String label = t.label + " (" + n + ")";
-			boolean hover = over(mouseX, mouseY, x, y - 1, SIDEBAR, 11);
+			int accent = switch (t) {
+				case FRIENDS -> FRIEND;
+				case NICE -> NICE;
+				case LOOK -> LOOK;
+				default -> NAUGHTY;
+			};
+			String icon = switch (t) {
+				case FRIENDS -> "★";
+				case NICE -> "✔";
+				case LOOK -> "?";
+				default -> "✖";
+			};
 			boolean active = tab == t && (t != Tab.FRIENDS || friendCircle == null);
-			context.drawText(textRenderer, Text.literal(label).styled(s -> s.withUnderline(hover).withBold(active)), x, y, hover ? HOVER_LINK : LINK, false);
-			int fy = y;
-			hits.add(new Hit(x, Math.max(fy - 1, BODY + 17), x + SIDEBAR, fy + 10, "side:" + t.name(), () -> {
+			y = navRow(context, mouseX, mouseY, x, y, 0, accent, icon, t.label, n, active, true, "side:" + t.name(), () -> {
 				showTab(t);
 				friendCircle = null;
-			}));
-			y += 11;
+			});
 			if (t == Tab.FRIENDS) {
-				// The circles, indented, with their colour.
+				// Friend types, indented under Friends, in their own colours.
 				for (Friends.Circle c : Friends.circles()) {
-					int members = Friends.members(mod.ledger, c).size();
-					String count = " " + members;
-					int countW = textRenderer.getWidth(count);
-					boolean cHover = over(mouseX, mouseY, x, y - 1, SIDEBAR, 11);
+					int color = GROUP_COLORS[c.color % GROUP_COLORS.length];
 					boolean cActive = tab == Tab.FRIENDS && c.id.equals(friendCircle);
-					text(context, "★", x + 4, y, GROUP_COLORS[c.color % GROUP_COLORS.length]);
-					context.drawText(textRenderer, Text.literal(fit(c.name, SIDEBAR - 16 - countW)).styled(st -> st.withUnderline(cHover).withBold(cActive)),
-							x + 14, y, cHover ? HOVER_LINK : LINK, false);
-					text(context, count, x + SIDEBAR - countW, y, MUTED);
-					int cy = y;
-					hits.add(new Hit(x, Math.max(cy - 1, BODY + 17), x + SIDEBAR, cy + 10, "side-circle:" + c.name, () -> showCircle(c)));
-					y += 11;
+					y = navRow(context, mouseX, mouseY, x, y, 10, color, "★", c.name, Friends.members(mod.ledger, c).size(), cActive, false,
+							"side-circle:" + c.name, () -> showCircle(c));
 				}
 			}
 		}
-		boolean addHover = over(mouseX, mouseY, x, y - 1, SIDEBAR, 11);
-		context.drawText(textRenderer, Text.literal("+ Add players").styled(s -> s.withBold(true).withUnderline(addHover)), x, y,
-				addHover ? HOVER_LINK : LINK, false);
-		int addY = y;
-		hits.add(new Hit(x, Math.max(addY - 1, BODY + 17), x + SIDEBAR, addY + 10, "side-add", () -> openAdd(Profile.Verdict.NICE)));
-		y += 11;
-		boolean shareHover = over(mouseX, mouseY, x, y - 1, SIDEBAR, 11);
-		context.drawText(textRenderer, Text.literal("⇄ Share lists").styled(s -> s.withBold(true).withUnderline(shareHover)), x, y,
-				shareHover ? HOVER_LINK : LINK, false);
-		int shareY = y;
-		hits.add(new Hit(x, Math.max(shareY - 1, BODY + 17), x + SIDEBAR, shareY + 10, "side-share", () -> openShare(ShareView.SEND)));
-		y += 11;
-		y += 8;
+		y += 3;
+		int half = (SIDEBAR - 4) / 2;
+		pill(context, mouseX, mouseY, x, y, half, 14, "+ Add", YELLOW, YELLOW_EDGE, BUTTON_TEXT, "side-add", () -> openAdd(Profile.Verdict.NICE));
+		pill(context, mouseX, mouseY, x + half + 4, y, SIDEBAR - half - 4, 14, "⇄ Share", SOFT, BORDER, TEXT, "side-share", () -> openShare(ShareView.SEND));
+		y += 14 + 10;
+
 		y = sidebarGroups(context, mouseX, mouseY, x, y);
+		y += 10;
+
+		y = sideHeading(context, x, y, "FILTERS");
+		y = chip(context, mouseX, mouseY, x, y, 4, "& up", rating == Rating.GOOD, "rating:& Up", () -> rating = rating == Rating.GOOD ? Rating.ANY : Rating.GOOD);
+		y = chip(context, mouseX, mouseY, x, y, 2, "& under", rating == Rating.BAD, "rating:& Under", () -> rating = rating == Rating.BAD ? Rating.ANY : Rating.BAD);
+		y = chip(context, mouseX, mouseY, x, y, -1, "● Online only", onlineOnly, "online only", () -> onlineOnly = !onlineOnly);
 		y += 8;
-		context.drawText(textRenderer, Text.literal("Tip").styled(s -> s.withBold(true)), x, y, TEXT, false);
-		y += 11;
-		for (var line : textRenderer.wrapLines(Text.literal("Look at a player and press N to open their page."), SIDEBAR)) {
+
+		context.fill(x, y, x + SIDEBAR, y + 1, BORDER);
+		y += 5;
+		for (var line : textRenderer.wrapLines(Text.literal("Tip: look at a player and press N to open their page."), SIDEBAR)) {
 			context.drawText(textRenderer, line, x, y, MUTED, false);
 			y += 10;
 		}
-		sidebarHeight = y - top + 10;
+		sidebarHeight = y - top + 6;
 	}
 
 	private int sidebarHeight = 190;
 
-	/** "Groups" in the sidebar: each group with a colour dot and size, then New group. */
+	/** A section heading in the sidebar: small, muted capitals with a rule under it. */
+	private int sideHeading(DrawContext context, int x, int y, String label) {
+		context.drawText(textRenderer, label, x, y, MUTED, false);
+		context.fill(x, y + 10, x + SIDEBAR, y + 11, BORDER);
+		return y + 14;
+	}
+
+	/**
+	 * One row of the sidebar's menu: the whole width is the button. A colour stripe and icon say which it is, the count
+	 * sits in a badge on the right, the row lights up under the mouse, and the one you're on is filled in its colour.
+	 * {@code indent} sets sub-rows (friend types) in; {@code strong} makes the label bold (the lists themselves).
+	 */
+	private int navRow(DrawContext context, int mouseX, int mouseY, int x, int y, int indent, int accent, String icon, String label, int count,
+			boolean active, boolean strong, String hitLabel, Runnable run) {
+		int h = strong ? 14 : 12;
+		boolean hover = over(mouseX, mouseY, x, y, SIDEBAR, h) && mouseY >= BODY + 17;
+		if (active) {
+			context.fill(x, y, x + SIDEBAR, y + h, tint(accent, CARD, 0.22f));
+			context.fill(x, y, x + 2, y + h, accent);
+		} else if (hover) {
+			context.fill(x, y, x + SIDEBAR, y + h, SOFT_HOVER);
+			context.fill(x, y, x + 2, y + h, tint(accent, CARD, 0.6f));
+		}
+		int ty = y + (h - 8) / 2;
+		int ix = x + 5 + indent;
+		text(context, icon, ix, ty, accent);
+		String n = String.valueOf(count);
+		int bw = textRenderer.getWidth(n) + 6;
+		int bx = x + SIDEBAR - bw - 2;
+		roundedBorder(context, bx, ty - 1, bw, 10, active ? accent : SOFT, active ? accent : SOFT);
+		text(context, n, bx + 3, ty, active ? CARD : MUTED);
+		int lx = ix + textRenderer.getWidth(icon) + 4;
+		String shown = fit(label, bx - lx - 3);
+		context.drawText(textRenderer, Text.literal(shown).styled(s -> s.withBold(strong || active)), lx, ty, active || hover ? TEXT : strong ? TEXT : MUTED, false);
+		hits.add(new Hit(x, Math.max(y, BODY + 17), x + SIDEBAR, y + h, hitLabel, run));
+		return y + h + 1;
+	}
+
+	/**
+	 * A filter as an on/off chip, the full width of the sidebar: lit in the link colour when on. {@code stars} draws that
+	 * many stars before the label (-1 for none).
+	 */
+	private int chip(DrawContext context, int mouseX, int mouseY, int x, int y, int stars, String label, boolean on, String hitLabel, Runnable run) {
+		int h = 13;
+		boolean hover = over(mouseX, mouseY, x, y, SIDEBAR, h) && mouseY >= BODY + 17;
+		int fill = on ? tint(LINK, CARD, 0.25f) : hover ? SOFT_HOVER : SOFT;
+		roundedBorder(context, x, y, SIDEBAR, h, fill, on ? LINK : BORDER);
+		int cx = x + 5;
+		if (stars >= 0) cx += stars(context, cx, y + 3, stars);
+		context.drawText(textRenderer, Text.literal((stars >= 0 ? " " : "") + label).styled(s -> s.withBold(on)), cx, y + 3, on ? TEXT : MUTED, false);
+		if (on) text(context, "✔", x + SIDEBAR - 10, y + 3, LINK);
+		hits.add(new Hit(x, Math.max(y, BODY + 17), x + SIDEBAR, y + h, hitLabel, () -> {
+			run.run();
+			cachedResults = null;
+		}));
+		return y + h + 3;
+	}
+
+	/** "Groups" in the sidebar: each group a row in its colour with its size, then New group. */
 	private int sidebarGroups(DrawContext context, int mouseX, int mouseY, int x, int y) {
-		context.drawText(textRenderer, Text.literal("Groups").styled(s -> s.withBold(true)), x, y, TEXT, false);
-		y += 12;
+		y = sideHeading(context, x, y, "GROUPS");
 		Map<String, List<Profile>> groups = mod.ledger.groups();
 		int shown = 0;
 		for (Map.Entry<String, List<Profile>> group : groups.entrySet()) {
 			if (shown++ >= 8) {
 				int more = groups.size() - 8;
-				y = sideLink(context, mouseX, mouseY, x, y, "All " + groups.size() + " groups (+" + more + ")", false, "side-groups", () -> showTab(Tab.GROUPS));
+				y = sideLink(context, mouseX, mouseY, x + 5, y + 1, "All " + groups.size() + " groups (+" + more + ")", false, "side-groups", () -> showTab(Tab.GROUPS));
 				break;
 			}
 			String g = group.getKey();
-			int color = groupColor(g);
-			context.fill(x, y + 1, x + 7, y + 8, color);
-			String count = " " + group.getValue().size();
-			int countW = textRenderer.getWidth(count);
-			boolean hover = over(mouseX, mouseY, x, y - 1, SIDEBAR, 11);
 			boolean active = tab == Tab.GROUPS && g.equalsIgnoreCase(openGroup);
-			context.drawText(textRenderer, Text.literal(fit(g, SIDEBAR - 10 - countW)).styled(s -> s.withUnderline(hover).withBold(active)), x + 10, y,
-					hover ? HOVER_LINK : LINK, false);
-			text(context, count, x + SIDEBAR - countW, y, MUTED);
-			int fy = y;
-			hits.add(new Hit(x, Math.max(fy - 1, BODY + 17), x + SIDEBAR, fy + 10, "side-group:" + g, () -> showGroup(g)));
-			y += 11;
+			y = navRow(context, mouseX, mouseY, x, y, 0, groupColor(g), "■", g, group.getValue().size(), active, false, "side-group:" + g, () -> showGroup(g));
 		}
 		if (groups.isEmpty()) {
 			for (var line : textRenderer.wrapLines(Text.literal("Who plays together: crews, teams, alts."), SIDEBAR)) {
@@ -1658,7 +1701,7 @@ public class ShopScreen extends Screen {
 				y += 10;
 			}
 		}
-		return sideLink(context, mouseX, mouseY, x, y, "+ New group", true, "side-new-group", () -> openGroupPanel(null, null));
+		return sideLink(context, mouseX, mouseY, x + 5, y + 2, "+ New group", true, "side-new-group", () -> openGroupPanel(null, null));
 	}
 
 	private int sideLink(DrawContext context, int mouseX, int mouseY, int x, int y, String label, boolean bold, String hitLabel, Runnable run) {
@@ -7628,6 +7671,10 @@ public class ShopScreen extends Screen {
 
 	/** Clicks the first visible thing with this label (e.g. "nice:Steve", "tab:NICE"); used by the self-test. */
 	/** Whether every section tab and the search box's hint fit on screen; used by the self-test at each size. */
+	public String testTab() {
+		return tab == null ? "" : tab.name();
+	}
+
 	public boolean testHeaderFits() {
 		for (String t : new String[] {"ALL", "GROUPS", "CHAT", "INTEL", "ACTIVITY", "SERVER", "BARITONE", "SETTINGS"}) {
 			Hit hit = hits.stream().filter(h -> h.label.equals("tab:" + t)).findFirst().orElse(null);
