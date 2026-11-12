@@ -18,9 +18,10 @@ import java.util.function.Supplier;
  * from Mojang once, in the background, and kept. Until it arrives, and for offline names, it's the default skin.
  */
 final class AccountSkins {
-	private static final long RETRY_AFTER_MS = 60_000;
+	/** A failed lookup (Mojang busy or rate-limiting) is tried again after this long, then twice as long each time. */
+	private static final long RETRY_AFTER_MS = 5_000, RETRY_MAX_MS = 120_000;
 
-	private record Lookup(CompletableFuture<Supplier<SkinTextures>> skin, long started) {
+	private record Lookup(CompletableFuture<Supplier<SkinTextures>> skin, long started, long retryAfter) {
 		boolean failed() {
 			return skin.isDone() && skin.getNow(null) == null;
 		}
@@ -38,8 +39,9 @@ final class AccountSkins {
 	static SkinTextures of(UUID id) {
 		if (offlineId(id)) return DefaultSkinHelper.getSkinTextures(id);
 		Lookup lookup = LOOKUPS.get(id);
-		if (lookup == null || (lookup.failed() && System.currentTimeMillis() - lookup.started() > RETRY_AFTER_MS)) {
-			lookup = new Lookup(fetch(id), System.currentTimeMillis());
+		if (lookup == null || (lookup.failed() && System.currentTimeMillis() - lookup.started() > lookup.retryAfter())) {
+			long retry = lookup == null ? RETRY_AFTER_MS : Math.min(RETRY_MAX_MS, lookup.retryAfter() * 2);
+			lookup = new Lookup(fetch(id), System.currentTimeMillis(), retry);
 			LOOKUPS.put(id, lookup);
 		}
 		Supplier<SkinTextures> skin = lookup.skin().getNow(null);
@@ -49,7 +51,10 @@ final class AccountSkins {
 	/** Whether the real skin is in (or there's none to wait for). */
 	static boolean ready(UUID id) {
 		Lookup lookup = LOOKUPS.get(id);
-		return offlineId(id) || (lookup != null && lookup.skin().getNow(null) != null);
+		if (offlineId(id)) return true;
+		Supplier<SkinTextures> skin = lookup == null ? null : lookup.skin().getNow(null);
+		// The game hands back the default skin until the real one has downloaded.
+		return skin != null && !skin.get().equals(DefaultSkinHelper.getSkinTextures(id));
 	}
 
 	private static CompletableFuture<Supplier<SkinTextures>> fetch(UUID id) {

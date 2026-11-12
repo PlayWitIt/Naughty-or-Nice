@@ -101,7 +101,10 @@ public final class AccountsScreen extends Screen {
 	@Override
 	protected void init() {
 		textRenderer = UiFont.renderer();
-		nameBox = new TextFieldWidget(textRenderer, 0, 0, 120, 18, Text.literal("Name"));
+		nameBox = new TextFieldWidget(textRenderer, 0, 0, 120, 10, Text.literal("Name"));
+		nameBox.setDrawsBackground(false);
+		nameBox.setEditableColor(TEXT);
+		nameBox.setPlaceholder(Text.literal("Name").withColor(FAINT));
 		nameBox.setMaxLength(16);
 		nameBox.setTextPredicate(s -> s.matches("[A-Za-z0-9_]*"));
 		nameBox.visible = view == View.OFFLINE;
@@ -114,8 +117,9 @@ public final class AccountsScreen extends Screen {
 	}
 
 	private Layout layout() {
-		int w = Math.min(width - 2 * MARGIN, 540), h = Math.min(height - 2 * MARGIN, 290);
-		int heroW = width >= 330 && height >= 200 ? Math.max(118, Math.min(170, w * 32 / 100)) : 0;
+		int w = Math.min(width - 2 * MARGIN, Math.max(540, width * 6 / 10));
+		int h = Math.min(height - 2 * MARGIN, Math.max(290, height * 2 / 3));
+		int heroW = width >= 330 && height >= 200 ? Math.max(118, Math.min(240, w * 32 / 100)) : 0;
 		return new Layout((width - w) / 2, (height - h) / 2, w, h, heroW);
 	}
 
@@ -170,7 +174,7 @@ public final class AccountsScreen extends Screen {
 		skinView.setX(cx - skinView.getWidth() / 2);
 		skinView.setY(bottom - skinView.getHeight() - 2);
 
-		String hint = shown.kind() == Accounts.Kind.OFFLINE ? "Offline names get a default skin" : "Drag to turn";
+		String hint = shown.kind() == Accounts.Kind.OFFLINE ? "Default skin · drag to turn" : "Drag to turn";
 		context.drawText(textRenderer, fit(hint, w - 10), x + (w - Math.min(w - 10, textRenderer.getWidth(hint))) / 2, y + h - 13, FAINT, false);
 	}
 
@@ -347,6 +351,7 @@ public final class AccountsScreen extends Screen {
 			return;
 		}
 		boolean signingIn = codeProgress != null;
+		y += Math.max(0, (bottom - y - 106) / 2);
 		step(context, x, y, 1, "Open microsoft.com/link", signingIn ? Tone.GOOD : null);
 		ghost(context, mouseX, mouseY, x + w - 58, y - 2, 58, 15, "Open page", () -> Util.getOperatingSystem().open(URI.create(code.url())));
 
@@ -410,9 +415,12 @@ public final class AccountsScreen extends Screen {
 		String name = nameBox.getText();
 		UiPaint.rounded(context, x - 1, ly - 1, 20, 20, 3, FAINT);
 		PlayerSkinDrawer.draw(context, DefaultSkinHelper.getSkinTextures(Accounts.offlineUuid(name.isEmpty() ? "Steve" : name)), x, ly, 18);
-		nameBox.setX(x + 26);
-		nameBox.setY(ly);
-		nameBox.setWidth(w - 26);
+		// Our own field: a dark rounded box that lights up yellow while you type.
+		boolean focused = nameBox.isFocused();
+		UiPaint.framed(context, x + 26, ly - 1, w - 26, 20, 4, 0xFF0F151C, focused ? YELLOW : ROW_EDGE_HOVER);
+		nameBox.setX(x + 32);
+		nameBox.setY(ly + 5);
+		nameBox.setWidth(w - 38);
 		boolean valid = name.length() >= 3;
 		String rule = name.isEmpty() ? "3 to 16 letters, numbers or _" : valid ? "Looks good" : "At least 3 characters";
 		context.drawText(textRenderer, rule, x + 26, ly + 23, name.isEmpty() ? FAINT : valid ? GREEN : RED, false);
