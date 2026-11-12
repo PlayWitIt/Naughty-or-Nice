@@ -30,8 +30,10 @@ public final class NNConfig {
 	// ---- Looks ----
 	/** Dark theme for the lists screen. */
 	public boolean darkMode = true;
-	/** How big the lists screen is drawn: 0 small, 1 medium, 2 large (the game's own GUI scale). */
-	public int screenSize = 1;
+	/** How big the lists screen is drawn: 0 small, 1 medium, 2 large (the game's own GUI scale). Small by default. */
+	public int screenSize = 0;
+	/** Set once 1.21.2 has moved a Medium screen to Small, the new default. */
+	public boolean screenSmallSet = false;
 	/** The Chat tab shows chat from players on no list too (otherwise just listed or grouped players). */
 	public boolean chatShowEveryone = true;
 
@@ -253,6 +255,7 @@ public final class NNConfig {
 			INSTANCE.radarPutAway = true;
 			INSTANCE.coordsBackLeft = true;
 			INSTANCE.coordsMovedRight = true;
+			INSTANCE.screenSmallSet = true;
 			return;
 		}
 		try (Reader reader = Files.newBufferedReader(file())) {
@@ -278,6 +281,11 @@ public final class NNConfig {
 					loaded.coordsRight = true;
 					loaded.smallCoords = true;
 					loaded.coordsMovedRight = true;
+				}
+				boolean smallSet = !loaded.screenSmallSet;
+				if (smallSet) {
+					if (loaded.screenSize == 1) loaded.screenSize = 0;
+					loaded.screenSmallSet = true;
 				}
 				boolean putAway = !loaded.radarPutAway;
 				if (putAway) {

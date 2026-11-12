@@ -505,6 +505,8 @@ public class ShopScreen extends Screen {
 	private static final int[] SIZE_WIDTHS = {900, 680, 540};
 	/** The screen never gets shorter than this, so panels fit. */
 	private static final int MIN_HEIGHT = 300;
+	/** How much bigger each size is than the one before, at least. */
+	private static final float SIZE_STEP = 1.3f;
 
 	/**
 	 * The scale to draw at, as window pixels per screen pixel divided by the game's GUI scale. Each size aims for
@@ -529,9 +531,25 @@ public class ShopScreen extends Screen {
 			if (whole >= 1 && whole <= cap && Math.abs(whole - exact) / exact <= 0.08f) pick = whole;
 			else if (half >= 1 && half <= cap && Math.abs(half - exact) / exact <= 0.08f) pick = half;
 			else pick = Math.max(1, (float) Math.floor(exact * 4) / 4f);
-			// Each size bigger than the last, even in small windows.
-			if (i > 0 && pick <= chosen[i - 1]) pick = chosen[i - 1] + 0.25f;
 			chosen[i] = pick;
+		}
+		// Each size clearly bigger than the last (at least STEP times), even in small windows, where the sizes used
+		// to land a quarter apart and Small and Medium looked the same. Smaller sizes give way first, down to one
+		// window pixel per screen pixel; then the bigger ones grow.
+		for (int i = SIZE_WIDTHS.length - 2; i >= 0; i--) {
+			chosen[i] = Math.max(1, Math.min(chosen[i], (float) Math.floor(chosen[i + 1] / SIZE_STEP * 4) / 4f));
+		}
+		float[] first = chosen.clone();
+		for (int i = 1; i < SIZE_WIDTHS.length; i++) {
+			chosen[i] = Math.max(chosen[i], (float) Math.ceil(chosen[i - 1] * SIZE_STEP * 4) / 4f);
+		}
+		// In a small window that would make Large too tall for the panels: Large stops at the tallest that fits, and
+		// Medium sits halfway between (by ratio), so the three still differ clearly and everything fits.
+		int last = SIZE_WIDTHS.length - 1;
+		float cap = Math.max(1, windowH / (float) MIN_HEIGHT);
+		if (chosen[last] > Math.max(first[last], cap)) {
+			chosen[last] = Math.max(first[last], cap);
+			chosen[1] = Math.min(chosen[1], Math.max(first[1], (float) Math.sqrt(chosen[0] * chosen[last])));
 		}
 		return chosen[Math.max(0, Math.min(SIZE_WIDTHS.length - 1, size))];
 	}

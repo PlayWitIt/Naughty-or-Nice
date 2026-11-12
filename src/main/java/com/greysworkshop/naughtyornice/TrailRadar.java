@@ -129,13 +129,21 @@ public final class TrailRadar {
 		int pcx = (int) Math.floor(me.x) >> 4, pcz = (int) Math.floor(me.z) >> 4;
 		int cell = Math.max(2, (int) Math.round(16 * scale));
 		int oldCount = 0, newCount = 0;
+		// Old land per compass direction (ChunkTrails.COMPASS order): how many chunks, and how far the nearest is.
+		int[] dirCount = new int[8];
+		double[] dirNear = new double[8];
+		java.util.Arrays.fill(dirNear, Double.MAX_VALUE);
 		for (int i = -span; i <= span; i++) {
 			for (int j = -span; j <= span; j++) {
 				byte s = trails.shown(dim, pcx + i, pcz + j);
 				if (s == 0) continue;
-				if (s == ChunkTrails.OLD) oldCount++;
-				else newCount++;
 				double bx = (pcx + i) * 16 + 8 - me.x, bz = (pcz + j) * 16 + 8 - me.z;
+				if (s == ChunkTrails.OLD) {
+					oldCount++;
+					int k = direction(bx, bz);
+					dirCount[k]++;
+					dirNear[k] = Math.min(dirNear[k], Math.hypot(bx, bz));
+				} else newCount++;
 				int[] p = toScreen(bx, bz, scale, cos, sin, cx, cy);
 				if (Math.hypot(p[0] - cx, p[1] - cy) + cell * 0.71 > radius - 3) continue;
 				boolean loaded = client.world.getChunkManager().isChunkLoaded(pcx + i, pcz + j);
@@ -145,6 +153,12 @@ public final class TrailRadar {
 		}
 		lastOld = oldCount;
 		lastNew = newCount;
+		int best = -1;
+		for (int k = 0; k < 8; k++) {
+			if (dirCount[k] > 0 && (best < 0 || dirCount[k] > dirCount[best])) best = k;
+		}
+		lastBest = best;
+		lastCounts = dirCount.clone();
 
 		// Trails: thick amber lines, an arrow on the end away from spawn.
 		for (ChunkTrails.Trail t : trails.trails) {
@@ -165,6 +179,16 @@ public final class TrailRadar {
 			double a = sweep - k * 0.06;
 			int alpha = (SWEEP >>> 24) * (6 - k) / 6;
 			spoke(context, cx, cy, radius - 3, a, (alpha << 24) | (SWEEP & 0xFFFFFF));
+		}
+
+		// How much old land lies each way, and how far to the nearest of it, in small green text (old land's colour): the most in bold.
+		float tiny = ts * 0.6f;
+		for (int k = 0; k < 8; k++) {
+			if (dirCount[k] == 0) continue;
+			double a = Math.toRadians(k * 45);
+			int[] p = toScreen(-Math.sin(a), Math.cos(a), radius * 0.6, cos, sin, cx, cy);
+			String label = (k == best ? "§a§l" : "§a") + dirCount[k] + " §7" + (int) dirNear[k] + "m";
+			centered(context, font, label, p[0], p[1], tiny);
 		}
 
 		// You, pointing ahead; N, E, S, W on the rim.
@@ -198,6 +222,12 @@ public final class TrailRadar {
 		} else {
 			lines.add("§7No trail in range");
 			lines.add("§8Fly through new land and one will show up");
+		}
+		if (best >= 0) {
+			double a = Math.toRadians(best * 45);
+			String side = ChunkTrails.side(ChunkTrails.turn(yaw, -Math.sin(a), Math.cos(a)));
+			lines.add(String.format(java.util.Locale.ROOT, "§aMost old land: %s (%s), %,d chunks from %,d blocks",
+					ChunkTrails.COMPASS[best], side, dirCount[best], (int) dirNear[best]));
 		}
 		int ty = y0 + size + 4;
 		for (String line : lines) {
@@ -271,6 +301,25 @@ public final class TrailRadar {
 				context.fill(px, py, px + 1, py + 1, TRAIL);
 			}
 		}
+	}
+
+	/** For the self-tests: the direction with the most old land last frame (-1 for none), and the counts each way. */
+	static int lastBest = -1;
+	static int[] lastCounts = new int[8];
+
+	/** Which of the 8 compass directions (ChunkTrails.COMPASS order) a step (dx, dz) points. */
+	static int direction(double dx, double dz) {
+		return (int) Math.floorMod(Math.round(Math.toDegrees(Math.atan2(-dx, dz)) / 45), 8);
+	}
+
+	/** A line of text at scale {@code s}, centred on a spot. */
+	private static void centered(DrawContext context, TextRenderer font, String line, int x, int y, float s) {
+		var m = context.getMatrices();
+		m.pushMatrix();
+		m.translate(x - font.getWidth(line) * s / 2f, y - 4 * s);
+		m.scale(s, s);
+		context.drawTextWithShadow(font, line, 0, 0, 0xFFFFFFFF);
+		m.popMatrix();
 	}
 
 	/** A line of text at scale {@code s}, its right end at {@code right} (never past {@code limit}). */

@@ -561,11 +561,15 @@ public final class SelfTest {
 				screenshot(client, "18_chat_log_dark");
 			}
 			case 700 -> {
-				mediumWidth = screen(client).width;
-				log("Medium screen is " + mediumWidth + " wide");
+				check("the screen is Small by default", new NNConfig().screenSize == 0);
+				NNConfig.INSTANCE.screenSize = 1;
 				client.setScreen(new ShopScreen(ShopScreen.Tab.SETTINGS, null));
 			}
-			case 705 -> screenshot(client, "19_settings_size");
+			case 705 -> {
+				mediumWidth = screen(client).width;
+				log("Medium screen is " + mediumWidth + " wide");
+				screenshot(client, "19_settings_size");
+			}
 			case 710 -> check("Screen size is at the top of Settings", screen(client).testClick("step-:Screen size") && NNConfig.INSTANCE.screenSize == 0);
 			case 715 -> {
 				smallWidth = screen(client).width;
@@ -583,6 +587,8 @@ public final class SelfTest {
 				log("Large screen is " + large + " wide, " + screen(client).height + " high");
 				check("Small, Medium and Large are three different sizes (" + smallWidth + " > " + mediumWidth + " > " + large + ")",
 						NNConfig.INSTANCE.screenSize == 2 && smallWidth > mediumWidth && mediumWidth > large);
+				check("each size is clearly bigger than the last (" + smallWidth + " / " + mediumWidth + " / " + large + ")",
+						smallWidth >= mediumWidth * 1.2 && mediumWidth >= large * 1.2);
 				check("Large still leaves room for the panels (" + screen(client).height + " high)", screen(client).height >= 290);
 				screen(client).testClick("step-:Screen size");
 			}
@@ -1652,6 +1658,10 @@ public final class SelfTest {
 						&& CoordsHud.textScale(client) == (gui <= 1 ? 1f : (float) Math.max(0.5, 1 / gui)));
 				check("the chunks are drawn in the world (" + ChunkOverlay.shown() + " squares)", ChunkOverlay.shown() > 100);
 				check("the radar shows the land it has read (" + TrailRadar.lastOld + " old, " + TrailRadar.lastNew + " new chunks)", TrailRadar.lastOld + TrailRadar.lastNew > 20);
+				check("the radar counts the old land each way and points to the most (" + java.util.Arrays.toString(TrailRadar.lastCounts) + ")",
+						TrailRadar.lastOld == 0 ? TrailRadar.lastBest < 0
+								: TrailRadar.lastBest >= 0 && java.util.Arrays.stream(TrailRadar.lastCounts).sum() == TrailRadar.lastOld
+										&& java.util.Arrays.stream(TrailRadar.lastCounts).max().getAsInt() == TrailRadar.lastCounts[TrailRadar.lastBest]);
 				screenshot(client, "59b_chunks_in_world");
 				// The ground under you (grass, green) must really show the red of new land through the squares' fill.
 				groundPixels = null;
