@@ -2045,106 +2045,141 @@ public final class SelfTest {
 
 	private static int accountStep;
 	private static String accountsBefore;
-	private static java.util.concurrent.CompletableFuture<Accounts.DeviceCode> accountCode;
-	private static long accountCodeAt;
-
-	/** The account switcher, from the menus: opens, switches to an offline name and back, and Microsoft gives a code. */
-	private static int skinWait, accountScale;
+	private static java.util.concurrent.CompletableFuture<MicrosoftLogin.DeviceCode> accountCode;
+	private static long accountWaitStart;
+	private static int accountScale;
+	/** A real Microsoft account (Notch), to see real skins are looked up and shown. */
 	private static final java.util.UUID SKIN_TEST_ID = java.util.UUID.fromString("069a79f4-44e9-4726-a5be-fca90e38aaf5");
 
+	/** Holds the account test on this step until {@code ready}, or {@code maxMs} has gone by. */
+	private static boolean accountWait(boolean ready, long maxMs) {
+		if (accountWaitStart == 0) accountWaitStart = System.currentTimeMillis();
+		if (ready || System.currentTimeMillis() - accountWaitStart > maxMs) {
+			accountWaitStart = 0;
+			return true;
+		}
+		accountStep--;
+		return false;
+	}
+
+	/** Puts the real mouse pointer on a point of the screen (in GUI units), so hover looks can be screenshotted. */
+	private static void pointAt(MinecraftClient client, double x, double y) {
+		double scale = client.getWindow().getScaleFactor();
+		org.lwjgl.glfw.GLFW.glfwSetCursorPos(client.getWindow().getHandle(), x * scale, y * scale);
+	}
+
+	/**
+	 * The account screen, from the menus: the list with real skins, hovering an account previews it, the Microsoft code
+	 * step with a real code, the offline-name step, a big window, switching to an offline name and back, and your chip
+	 * on the title screen.
+	 */
 	private static void accountTest(MinecraftClient client) {
 		if (accountStep == 0) return;
 		int step = accountStep++;
 		switch (step) {
 			case 1 -> {
-				Accounts.all().removeIf(a -> a.name.equals("SelfTestAlt"));
+				Accounts.all().removeIf(a -> a.name.equals("SelfTestAlt") || a.name.equals("Notch"));
 				accountsBefore = client.getSession().getUsername();
-				// A real Microsoft account's id (Notch), to see its real skin is looked up and shown.
-				Accounts.all().removeIf(a -> a.name.equals("Notch"));
 				Accounts.Account real = new Accounts.Account();
 				real.name = "Notch";
 				real.uuid = SKIN_TEST_ID.toString();
+				real.lastUsed = System.currentTimeMillis() - 3 * 3600_000L;
 				Accounts.all().add(real);
-				Accounts.skin(SKIN_TEST_ID);
+				AccountSkins.of(SKIN_TEST_ID);
 				client.setScreen(new AccountsScreen(new net.minecraft.client.gui.screen.TitleScreen()));
 			}
-			case 15 -> {
+			case 10 -> {
 				check("the Accounts screen opens", client.currentScreen instanceof AccountsScreen);
 				Accounts.Account alt = Accounts.offline("SelfTestAlt");
 				Accounts.applyNow(alt);
 				check("switching to an offline name changes who you play as (" + client.getSession().getUsername() + ")",
 						client.getSession().getUsername().equals("SelfTestAlt") && client.getSession().getUuidOrNull().toString().equals(alt.uuid));
 				check("...and it's saved", Accounts.all().stream().anyMatch(a -> a.name.equals("SelfTestAlt")));
+				check("...and it's the account in use", Accounts.currentAccount().name.equals("SelfTestAlt"));
+				pointAt(client, 2, 2);
+			}
+			case 11 -> {
+				if (!accountWait(AccountSkins.ready(SKIN_TEST_ID), 15_000)) return;
+				var skin = AccountSkins.of(SKIN_TEST_ID);
+				check("a Microsoft account shows its real skin, not a default one (" + skin.body().texturePath() + ")",
+						!skin.equals(net.minecraft.client.util.DefaultSkinHelper.getSkinTextures(SKIN_TEST_ID)));
+				java.util.UUID offlineId = Accounts.offlineUuid("SelfTestAlt");
+				check("an offline name gets the default skin", AccountSkins.of(offlineId).equals(net.minecraft.client.util.DefaultSkinHelper.getSkinTextures(offlineId)));
+			}
+			case 20 -> screenshot(client, "70_accounts");
+			case 21 -> {
+				// Point at Notch's card: the left card previews that skin.
+				if (client.currentScreen instanceof AccountsScreen screen) {
+					int[] at = screen.rowForTest("Notch");
+					check("Notch's card is on the screen", at != null);
+					if (at != null) pointAt(client, at[0], at[1]);
+				}
 			}
 			case 30 -> {
-				// Wait (up to 15 s) for the real skin to arrive, so the screenshot shows it.
-				if (Accounts.skin(SKIN_TEST_ID).equals(net.minecraft.client.util.DefaultSkinHelper.getSkinTextures(SKIN_TEST_ID)) && skinWait++ < 300) {
-					accountStep--;
-					return;
-				}
-				screenshot(client, "70_accounts");
-			}
-			case 35 -> {
-				client.options.getGuiScale().setValue(accountScale);
-				client.onResolutionChanged();
-				Accounts.Account back = new Accounts.Account();
-				back.name = accountsBefore;
-				back.offline = true;
-				back.uuid = java.util.UUID.nameUUIDFromBytes(("OfflinePlayer:" + accountsBefore).getBytes(java.nio.charset.StandardCharsets.UTF_8)).toString();
-				Accounts.applyNow(back);
-				check("switching back works (" + client.getSession().getUsername() + ")", client.getSession().getUsername().equals(accountsBefore));
-				Accounts.all().stream().filter(a -> a.name.equals("SelfTestAlt")).findFirst().ifPresent(Accounts::forget);
-				Accounts.all().stream().filter(a -> a.name.equals("Notch")).findFirst().ifPresent(Accounts::forget);
-				check("removing an account forgets it", Accounts.all().stream().noneMatch(a -> a.name.equals("SelfTestAlt")));
+				check("hovering an account previews it", client.currentScreen instanceof AccountsScreen screen && "Notch".equals(screen.previewNameForTest()));
+				screenshot(client, "70c_accounts_hover");
+				pointAt(client, 2, 2);
 				accountCode = java.util.concurrent.CompletableFuture.supplyAsync(() -> {
 					try {
-						return Accounts.startSignIn();
+						return MicrosoftLogin.requestCode();
 					} catch (Exception e) {
 						log("Microsoft code request failed: " + e.getMessage());
 						return null;
 					}
 				});
-				accountCodeAt = System.currentTimeMillis();
 			}
 			case 31 -> {
-				var skin = Accounts.skin(SKIN_TEST_ID);
-				check("a Microsoft account shows its real skin, not a default one (" + skin.body().texturePath() + ")",
-						!skin.equals(net.minecraft.client.util.DefaultSkinHelper.getSkinTextures(SKIN_TEST_ID)));
-				check("an offline name gets the default skin", Accounts.skin(java.util.UUID.fromString(Accounts.offline("SelfTestAlt").uuid))
-						.equals(net.minecraft.client.util.DefaultSkinHelper.getSkinTextures(java.util.UUID.fromString(Accounts.offline("SelfTestAlt").uuid))));
+				if (!accountWait(accountCode.isDone(), 20_000)) return;
+				MicrosoftLogin.DeviceCode c = accountCode.getNow(null);
+				check("Microsoft gives a sign-in code for microsoft.com/link (" + (c == null ? "none" : c.userCode().length() + " letters, " + c.url()) + ")",
+						c != null && c.userCode().length() >= 6 && (c.url().contains("microsoft") || c.url().contains("live.com")));
+				if (c != null && client.currentScreen instanceof AccountsScreen screen) screen.showCodeForTest(c);
 			}
-			case 32 -> {
-				// A big window (like 1920x1009 maximized): the skin panel shows you in 3D.
+			case 40 -> screenshot(client, "70d_accounts_code");
+			case 41 -> {
+				if (client.currentScreen instanceof AccountsScreen screen) screen.showOfflineForTest("Builder_42");
+			}
+			case 50 -> {
+				check("typing an offline name previews its skin", client.currentScreen instanceof AccountsScreen screen
+						&& "Builder_42".equals(screen.previewNameForTest()));
+				screenshot(client, "70e_accounts_offline");
+				if (client.currentScreen instanceof AccountsScreen screen) screen.showListForTest();
+				// A big window (GUI scale 1 here): more room, same layout.
 				accountScale = client.options.getGuiScale().getValue();
 				client.options.getGuiScale().setValue(1);
 				client.onResolutionChanged();
 			}
-			case 34 -> {
-				check("a big window shows the 3D skin panel (" + client.getWindow().getScaledWidth() + " wide)",
-						client.currentScreen instanceof AccountsScreen && client.getWindow().getScaledWidth() >= 442);
+			case 58 -> {
+				check("a big window still shows the 3D skin card (" + client.getWindow().getScaledWidth() + " wide)",
+						client.currentScreen instanceof AccountsScreen screen && screen.heroForTest());
 				screenshot(client, "70b_accounts_wide");
 			}
-			default -> {
-				if (step >= 1000) {
-					if (step == 1015) {
-						screenshot(client, "71_title_account");
-						check("the title screen shows who you're playing as", client.currentScreen instanceof net.minecraft.client.gui.screen.TitleScreen
-								&& net.fabricmc.fabric.api.client.screen.v1.Screens.getButtons(client.currentScreen).stream()
-										.anyMatch(b -> b.getMessage().getString().equals(client.getSession().getUsername())));
-					}
-					if (step == 1020) {
-						accountStep = 0;
-						afterAccounts(client);
-					}
-					return;
-				}
-				if (step < 36) return;
-				if (!accountCode.isDone() && System.currentTimeMillis() - accountCodeAt < 20_000) return;
-				Accounts.DeviceCode c = accountCode.getNow(null);
-				check("Microsoft gives a sign-in code for microsoft.com/link (" + (c == null ? "none" : c.userCode().length() + " letters, " + c.url()) + ")",
-						c != null && c.userCode().length() >= 6 && c.url().contains("microsoft") || c != null && c.url().contains("live.com"));
-				accountStep = 1000;
+			case 60 -> {
+				client.options.getGuiScale().setValue(accountScale);
+				client.onResolutionChanged();
+				Accounts.Account back = new Accounts.Account();
+				back.name = accountsBefore;
+				back.offline = true;
+				back.uuid = Accounts.offlineUuid(accountsBefore).toString();
+				Accounts.applyNow(back);
+				check("switching back works (" + client.getSession().getUsername() + ")", client.getSession().getUsername().equals(accountsBefore));
+				Accounts.all().stream().filter(a -> a.name.equals("SelfTestAlt")).findFirst().ifPresent(Accounts::forget);
+				Accounts.all().stream().filter(a -> a.name.equals("Notch")).findFirst().ifPresent(Accounts::forget);
+				Accounts.all().stream().filter(a -> a.name.equals(accountsBefore) && a.offline).findFirst().ifPresent(Accounts::forget);
+				check("removing an account forgets it", Accounts.all().stream().noneMatch(a -> a.name.equals("SelfTestAlt") || a.name.equals("Notch")));
 				client.setScreen(new net.minecraft.client.gui.screen.TitleScreen());
+			}
+			case 75 -> {
+				screenshot(client, "71_title_account");
+				check("the title screen shows who you're playing as", client.currentScreen instanceof net.minecraft.client.gui.screen.TitleScreen
+						&& net.fabricmc.fabric.api.client.screen.v1.Screens.getButtons(client.currentScreen).stream()
+								.anyMatch(b -> b instanceof AccountChip && b.getMessage().getString().equals(client.getSession().getUsername())));
+			}
+			case 80 -> {
+				accountStep = 0;
+				afterAccounts(client);
+			}
+			default -> {
 			}
 		}
 	}
