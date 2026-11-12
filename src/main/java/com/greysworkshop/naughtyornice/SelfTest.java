@@ -1107,6 +1107,11 @@ public final class SelfTest {
 			}
 			case 978 -> {
 				screenshot(client, "46_friends_tab");
+				check("the sidebar's Nice list row is a button", screen(client).testClick("side:NICE"));
+			}
+			case 979 -> {
+				check("...and opens the Nice list (" + screen(client).testTab() + ")", "NICE".equals(screen(client).testTab()));
+				screenshot(client, "46b_sidebar_nice");
 				client.setScreen(new ShopScreen(null, ledger.byName("Helpful_Hana")));
 			}
 			case 980 -> {
