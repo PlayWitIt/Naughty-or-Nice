@@ -6,7 +6,6 @@ import net.minecraft.client.gui.PlayerSkinDrawer;
 import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.client.gui.widget.TextFieldWidget;
 import net.minecraft.client.input.KeyInput;
-import net.minecraft.client.util.DefaultSkinHelper;
 import net.minecraft.text.Text;
 import net.minecraft.util.Util;
 import org.lwjgl.glfw.GLFW;
@@ -14,7 +13,6 @@ import org.lwjgl.glfw.GLFW;
 import java.net.URI;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 
 /**
@@ -37,6 +35,7 @@ public final class AccountsScreen extends Screen {
 	private Accounts.DeviceCode code;
 	private volatile boolean cancelled;
 	private TextFieldWidget nameBox;
+	private net.minecraft.client.gui.widget.PlayerSkinWidget skinView;
 	private double scroll;
 	private final List<Hit> hits = new ArrayList<>();
 
@@ -55,6 +54,16 @@ public final class AccountsScreen extends Screen {
 		nameBox.setTextPredicate(s -> s.matches("[A-Za-z0-9_]*"));
 		nameBox.visible = view == View.OFFLINE;
 		addDrawableChild(nameBox);
+		// Who you're playing as, in 3D: drag to turn them round.
+		skinView = new net.minecraft.client.gui.widget.PlayerSkinWidget(SKIN_W - 20, 104, client.getLoadedEntityModels(), Accounts::currentSkin);
+		addDrawableChild(skinView);
+	}
+
+	/** Width of the skin panel on the card's left, when the window has room for it. */
+	private static final int SKIN_W = 96;
+
+	private boolean wide() {
+		return width >= 330 + SKIN_W + 16 && height >= 190;
 	}
 
 	@Override
@@ -64,7 +73,7 @@ public final class AccountsScreen extends Screen {
 	}
 
 	private int cardW() {
-		return Math.min(330, width - 16);
+		return wide() ? 330 + SKIN_W : Math.min(330, width - 16);
 	}
 
 	private int cardH() {
@@ -83,9 +92,45 @@ public final class AccountsScreen extends Screen {
 		context.fillGradient(x + 1, y + 1, x + w - 1, y + 40, 0x2A5CC8E0, 0x005CC8E0);
 		context.fill(x + 3, y + 1, x + w - 3, y + 2, 0x20FFFFFF);
 
+		String me = client.getSession().getUsername();
+		boolean wide = wide();
+		skinView.visible = wide;
+		if (wide) {
+			// The skin panel: you in 3D on a soft spotlight, your name, and what kind of account it is.
+			int px = x + 1, pw = SKIN_W;
+			context.fill(px, y + 1, px + pw, y + h - 1, 0x30000000);
+			context.fill(px + pw, y + 8, px + pw + 1, y + h - 8, EDGE);
+			context.fillGradient(px + 8, y + 30, px + pw - 8, y + 150, 0x004CD39B, 0x284CD39B);
+			rounded(context, px + 14, y + 140, pw - 28, 8, 0x40000000);
+			context.drawText(textRenderer, "PLAYING AS", px + (pw - textRenderer.getWidth("PLAYING AS")) / 2, y + 10, MUTED, false);
+			String shownName = fit(me, pw - 8);
+			context.drawText(textRenderer, Text.literal(shownName).styled(s -> s.withBold(true)),
+					px + (pw - textRenderer.getWidth(Text.literal(shownName).styled(s -> s.withBold(true)))) / 2, y + 21, TEXT, false);
+			skinView.setX(px + 10);
+			skinView.setY(y + 40);
+			String kind = Accounts.currentKind();
+			boolean online = kind.equals("Microsoft");
+			int kw = textRenderer.getWidth(kind) + 12;
+			int kx = px + (pw - kw) / 2, ky = y + 154;
+			rounded(context, kx, ky, kw, 13, online ? 0x404CD39B : 0x409AA5B1);
+			context.drawText(textRenderer, kind, kx + 6, ky + 3, online ? GOOD : MUTED, false);
+			for (var line : textRenderer.wrapLines(Text.literal(online ? "Your skin, as others see it. Drag to turn."
+					: "Offline names get a default skin."), pw - 12)) {
+				context.drawText(textRenderer, line, px + (pw - textRenderer.getWidth(line)) / 2, ky + 18, MUTED, false);
+				ky += 10;
+			}
+			x += pw;
+			w -= pw;
+		}
+
 		context.drawText(textRenderer, Text.literal("Accounts").styled(s -> s.withBold(true)), x + 10, y + 9, TEXT, false);
-		String playing = "Playing as " + client.getSession().getUsername();
-		context.drawText(textRenderer, playing, x + w - 10 - textRenderer.getWidth(playing), y + 9, GOOD, false);
+		if (!wide) {
+			String playing = "Playing as " + me;
+			int tx = x + w - 10 - textRenderer.getWidth(playing);
+			context.fill(tx - 15, y + 6, tx - 3, y + 18, 0xFF000000 | (GOOD & 0xFFFFFF));
+			PlayerSkinDrawer.draw(context, Accounts.currentSkin(), tx - 14, y + 7, 10);
+			context.drawText(textRenderer, playing, tx, y + 9, GOOD, false);
+		}
 		context.fill(x + 10, y + 22, x + w - 10, y + 23, EDGE);
 
 		int bottom = y + h - 26;
@@ -142,14 +187,8 @@ public final class AccountsScreen extends Screen {
 			} else if (hover) {
 				hGradient(context, x, ry, w, rowH, 0x405CC8E0, 0x005CC8E0);
 			}
-			UUID id;
-			try {
-				id = UUID.fromString(a.uuid);
-			} catch (RuntimeException e) {
-				id = UUID.nameUUIDFromBytes(a.name.getBytes());
-			}
 			rounded(context, x + 5, ry + 3, 18, 18, 0xFF000000 | (accent & 0xFFFFFF));
-			PlayerSkinDrawer.draw(context, DefaultSkinHelper.getSkinTextures(id), x + 6, ry + 4, 16);
+			PlayerSkinDrawer.draw(context, Accounts.skin(a), x + 6, ry + 4, 16);
 			context.drawText(textRenderer, Text.literal(a.name).styled(s -> s.withBold(true)), x + 28, ry + 4, TEXT, false);
 			context.drawText(textRenderer, now ? "● Playing now" : a.offline ? "Offline name" : "Microsoft account", x + 28, ry + 14,
 					now ? GOOD : MUTED, false);

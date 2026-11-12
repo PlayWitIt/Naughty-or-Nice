@@ -325,18 +325,84 @@ public final class Accounts {
 		NaughtyOrNiceClient.LOGGER.info("Switched account to {}", account.name);
 	}
 
-	/** An Accounts button on the title and multiplayer screens, showing who you're playing as. */
+	// ---- Skins ----
+
+	private record SkinLookup(CompletableFuture<java.util.function.Supplier<net.minecraft.entity.player.SkinTextures>> future, long started) {}
+
+	private static final Map<UUID, SkinLookup> SKINS = new java.util.concurrent.ConcurrentHashMap<>();
+
+	/** Offline accounts (and the name-based ids the game makes for them) have no skin of their own. */
+	public static boolean offlineId(UUID id) {
+		return id.version() == 3;
+	}
+
+	/**
+	 * The real skin for an account, looked up from Mojang once (in the background) and then kept; the default skin
+	 * until it arrives, for offline names, and if the lookup failed (tried again after a minute).
+	 */
+	public static net.minecraft.entity.player.SkinTextures skin(UUID id) {
+		if (offlineId(id)) return net.minecraft.client.util.DefaultSkinHelper.getSkinTextures(id);
+		MinecraftClient client = MinecraftClient.getInstance();
+		SkinLookup lookup = SKINS.get(id);
+		if (lookup == null || (lookup.future().isDone() && lookup.future().getNow(null) == null
+				&& System.currentTimeMillis() - lookup.started() > 60_000)) {
+			lookup = new SkinLookup(CompletableFuture.supplyAsync(() -> {
+				var result = client.getApiServices().sessionService().fetchProfile(id, false);
+				return result == null ? null : result.profile();
+			}, net.minecraft.util.Util.getIoWorkerExecutor()).thenApplyAsync(
+					profile -> profile == null ? null : client.getSkinProvider().supplySkinTextures(profile, true), client)
+					.exceptionally(e -> null), System.currentTimeMillis());
+			SKINS.put(id, lookup);
+		}
+		var got = lookup.future().getNow(null);
+		return got != null ? got.get() : net.minecraft.client.util.DefaultSkinHelper.getSkinTextures(id);
+	}
+
+	public static net.minecraft.entity.player.SkinTextures skin(Account account) {
+		try {
+			return skin(UUID.fromString(account.uuid));
+		} catch (RuntimeException e) {
+			return net.minecraft.client.util.DefaultSkinHelper.getSkinTextures(UUID.nameUUIDFromBytes(account.name.getBytes(StandardCharsets.UTF_8)));
+		}
+	}
+
+	/** Whoever you're playing as right now. */
+	public static net.minecraft.entity.player.SkinTextures currentSkin() {
+		return skin(MinecraftClient.getInstance().getSession().getUuidOrNull() == null
+				? UUID.nameUUIDFromBytes(new byte[0]) : MinecraftClient.getInstance().getSession().getUuidOrNull());
+	}
+
+	/** "Microsoft" or "Offline", for the account you're playing as now. */
+	public static String currentKind() {
+		UUID id = MinecraftClient.getInstance().getSession().getUuidOrNull();
+		return id == null || offlineId(id) ? "Offline" : "Microsoft";
+	}
+
+	/**
+	 * Your face and name at the top right of the title, multiplayer and pause screens, so you always know who you're
+	 * playing as; click it for the account switcher.
+	 */
 	public static void register() {
 		net.fabricmc.fabric.api.client.screen.v1.ScreenEvents.AFTER_INIT.register((client, screen, w, h) -> {
-			boolean title = screen instanceof net.minecraft.client.gui.screen.TitleScreen;
-			if (!title && !(screen instanceof net.minecraft.client.gui.screen.multiplayer.MultiplayerScreen)) return;
-			String label = "Account: " + client.getSession().getUsername();
-			int bw = Math.max(90, client.textRenderer.getWidth(label) + 16);
-			net.fabricmc.fabric.api.client.screen.v1.Screens.getButtons(screen).add(net.minecraft.client.gui.widget.ButtonWidget
-					.builder(net.minecraft.text.Text.literal(label), b -> client.setScreen(new AccountsScreen(screen)))
+			boolean menu = screen instanceof net.minecraft.client.gui.screen.TitleScreen
+					|| screen instanceof net.minecraft.client.gui.screen.multiplayer.MultiplayerScreen
+					|| screen instanceof net.minecraft.client.gui.screen.GameMenuScreen;
+			if (!menu) return;
+			String name = client.getSession().getUsername();
+			int bw = Math.max(70, client.textRenderer.getWidth(name) + 40);
+			var button = net.minecraft.client.gui.widget.ButtonWidget
+					.builder(net.minecraft.text.Text.literal(name), b -> client.setScreen(new AccountsScreen(screen)))
 					.dimensions(w - bw - 4, 4, bw, 20)
-					.tooltip(net.minecraft.client.gui.tooltip.Tooltip.of(net.minecraft.text.Text.literal("Accounts: switch who you play as")))
-					.build());
+					.tooltip(net.minecraft.client.gui.tooltip.Tooltip.of(net.minecraft.text.Text.literal(
+							"Playing as " + name + " (" + currentKind() + " account)\nClick to see your skin and switch accounts")))
+					.build();
+			net.fabricmc.fabric.api.client.screen.v1.Screens.getButtons(screen).add(button);
+			// The label is centred in the space right of the face.
+			net.fabricmc.fabric.api.client.screen.v1.ScreenEvents.afterRender(screen).register((s, context, mx, my, delta) -> {
+				if (!button.visible) return;
+				context.fill(button.getX() + 3, button.getY() + 3, button.getX() + 17, button.getY() + 17, 0xFF000000);
+				net.minecraft.client.gui.PlayerSkinDrawer.draw(context, currentSkin(), button.getX() + 4, button.getY() + 4, 12);
+			});
 		});
 	}
 

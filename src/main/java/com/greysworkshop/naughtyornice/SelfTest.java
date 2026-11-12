@@ -2049,6 +2049,9 @@ public final class SelfTest {
 	private static long accountCodeAt;
 
 	/** The account switcher, from the menus: opens, switches to an offline name and back, and Microsoft gives a code. */
+	private static int skinWait;
+	private static final java.util.UUID SKIN_TEST_ID = java.util.UUID.fromString("069a79f4-44e9-4726-a5be-fca90e38aaf5");
+
 	private static void accountTest(MinecraftClient client) {
 		if (accountStep == 0) return;
 		int step = accountStep++;
@@ -2056,6 +2059,13 @@ public final class SelfTest {
 			case 1 -> {
 				Accounts.all().removeIf(a -> a.name.equals("SelfTestAlt"));
 				accountsBefore = client.getSession().getUsername();
+				// A real Microsoft account's id (Notch), to see its real skin is looked up and shown.
+				Accounts.all().removeIf(a -> a.name.equals("Notch"));
+				Accounts.Account real = new Accounts.Account();
+				real.name = "Notch";
+				real.uuid = SKIN_TEST_ID.toString();
+				Accounts.all().add(real);
+				Accounts.skin(SKIN_TEST_ID);
 				client.setScreen(new AccountsScreen(new net.minecraft.client.gui.screen.TitleScreen()));
 			}
 			case 15 -> {
@@ -2066,7 +2076,14 @@ public final class SelfTest {
 						client.getSession().getUsername().equals("SelfTestAlt") && client.getSession().getUuidOrNull().toString().equals(alt.uuid));
 				check("...and it's saved", Accounts.all().stream().anyMatch(a -> a.name.equals("SelfTestAlt")));
 			}
-			case 30 -> screenshot(client, "70_accounts");
+			case 30 -> {
+				// Wait (up to 15 s) for the real skin to arrive, so the screenshot shows it.
+				if (Accounts.skin(SKIN_TEST_ID).equals(net.minecraft.client.util.DefaultSkinHelper.getSkinTextures(SKIN_TEST_ID)) && skinWait++ < 300) {
+					accountStep--;
+					return;
+				}
+				screenshot(client, "70_accounts");
+			}
 			case 35 -> {
 				Accounts.Account back = new Accounts.Account();
 				back.name = accountsBefore;
@@ -2075,6 +2092,7 @@ public final class SelfTest {
 				Accounts.applyNow(back);
 				check("switching back works (" + client.getSession().getUsername() + ")", client.getSession().getUsername().equals(accountsBefore));
 				Accounts.all().stream().filter(a -> a.name.equals("SelfTestAlt")).findFirst().ifPresent(Accounts::forget);
+				Accounts.all().stream().filter(a -> a.name.equals("Notch")).findFirst().ifPresent(Accounts::forget);
 				check("removing an account forgets it", Accounts.all().stream().noneMatch(a -> a.name.equals("SelfTestAlt")));
 				accountCode = java.util.concurrent.CompletableFuture.supplyAsync(() -> {
 					try {
@@ -2086,15 +2104,34 @@ public final class SelfTest {
 				});
 				accountCodeAt = System.currentTimeMillis();
 			}
+			case 31 -> {
+				var skin = Accounts.skin(SKIN_TEST_ID);
+				check("a Microsoft account shows its real skin, not a default one (" + skin.body().texturePath() + ")",
+						!skin.equals(net.minecraft.client.util.DefaultSkinHelper.getSkinTextures(SKIN_TEST_ID)));
+				check("an offline name gets the default skin", Accounts.skin(java.util.UUID.fromString(Accounts.offline("SelfTestAlt").uuid))
+						.equals(net.minecraft.client.util.DefaultSkinHelper.getSkinTextures(java.util.UUID.fromString(Accounts.offline("SelfTestAlt").uuid))));
+			}
 			default -> {
+				if (step >= 1000) {
+					if (step == 1015) {
+						screenshot(client, "71_title_account");
+						check("the title screen shows who you're playing as", client.currentScreen instanceof net.minecraft.client.gui.screen.TitleScreen
+								&& net.fabricmc.fabric.api.client.screen.v1.Screens.getButtons(client.currentScreen).stream()
+										.anyMatch(b -> b.getMessage().getString().equals(client.getSession().getUsername())));
+					}
+					if (step == 1020) {
+						accountStep = 0;
+						afterAccounts(client);
+					}
+					return;
+				}
 				if (step < 36) return;
 				if (!accountCode.isDone() && System.currentTimeMillis() - accountCodeAt < 20_000) return;
 				Accounts.DeviceCode c = accountCode.getNow(null);
 				check("Microsoft gives a sign-in code for microsoft.com/link (" + (c == null ? "none" : c.userCode().length() + " letters, " + c.url()) + ")",
 						c != null && c.userCode().length() >= 6 && c.url().contains("microsoft") || c != null && c.url().contains("live.com"));
-				accountStep = 0;
+				accountStep = 1000;
 				client.setScreen(new net.minecraft.client.gui.screen.TitleScreen());
-				afterAccounts(client);
 			}
 		}
 	}
