@@ -347,11 +347,15 @@ public final class Accounts {
 		if (lookup == null || (lookup.future().isDone() && lookup.future().getNow(null) == null
 				&& System.currentTimeMillis() - lookup.started() > 60_000)) {
 			lookup = new SkinLookup(CompletableFuture.supplyAsync(() -> {
-				var result = client.getApiServices().sessionService().fetchProfile(id, false);
+				// Signed, so the game trusts the textures (it shows only signed skins on secure lookups).
+				var result = client.getApiServices().sessionService().fetchProfile(id, true);
 				return result == null ? null : result.profile();
 			}, net.minecraft.util.Util.getIoWorkerExecutor()).thenApplyAsync(
 					profile -> profile == null ? null : client.getSkinProvider().supplySkinTextures(profile, true), client)
-					.exceptionally(e -> null), System.currentTimeMillis());
+					.exceptionally(e -> {
+						NaughtyOrNiceClient.LOGGER.warn("Couldn't look up the skin for {}: {}", id, e.toString());
+						return null;
+					}), System.currentTimeMillis());
 			SKINS.put(id, lookup);
 		}
 		var got = lookup.future().getNow(null);
