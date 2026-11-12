@@ -494,8 +494,13 @@ public class ShopScreen extends Screen {
 		return countersLeft() - 22;
 	}
 
+	/** In a narrow screen the header's list chips show just their icon and count (the names are in the sidebar). */
+	private boolean compactCounters() {
+		return width < 700;
+	}
+
 	private int counterWidth() {
-		return textRenderer.getWidth("Naughty list") + textRenderer.getWidth("999") + 27;
+		return compactCounters() ? textRenderer.getWidth("999") + 24 : textRenderer.getWidth("Naughty list") + textRenderer.getWidth("999") + 27;
 	}
 
 	/** The screen is laid out at its own size and drawn scaled down by this, so it isn't huge at big GUI scales. */
@@ -1545,7 +1550,7 @@ public class ShopScreen extends Screen {
 		Text count = Text.literal(String.valueOf(n)).styled(s -> s.withBold(true));
 		context.drawText(textRenderer, count, x + 17, y + 6, WHITE, false);
 		int lx = x + 17 + textRenderer.getWidth(count) + 4;
-		context.drawText(textRenderer, fit(label, x - 2 + w - 4 - lx), lx, y + 6, tint(color, 0xFFB8C2CE, 0.35f), false);
+		if (!compactCounters()) context.drawText(textRenderer, fit(label, x - 2 + w - 4 - lx), lx, y + 6, tint(color, 0xFFB8C2CE, 0.35f), false);
 		hits.add(new Hit(x - 2, 3, x - 2 + w, 23, "counter:" + target.name(), () -> showTab(target)));
 		hits.add(new Hit(x - 2, 3, x - 2 + w, 23, "tab:" + target.name(), () -> showTab(target)));
 	}
