@@ -54,7 +54,7 @@ It also has:
 - Everyone you see (nearby or on the tab list) is remembered, so they're still listed after logging off. Players who
   never did anything are forgotten after 180 days unseen (configurable).
 - **Accounts**: switch Minecraft accounts in game, with no Essential or other mod needed. Your skin's face and name sit
-  at the top right of the title, multiplayer and pause screens, so you always know who you're playing as; click it for
+  at the top left of the title, multiplayer and pause screens (right under the PlayWit Hub button), so you always know who you're playing as; click it for
   the account screen. There you see yourself in 3D (drag to turn; point at another account to preview its skin), and
   your accounts as cards with **Use** on each. **+ Microsoft account** walks you through a code to type at
   microsoft.com/link (the page opens and the code is copied for you); your password never goes through the game.

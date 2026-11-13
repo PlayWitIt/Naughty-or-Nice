@@ -4,16 +4,19 @@ import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.font.TextRenderer;
 import net.minecraft.client.gui.Click;
 import net.minecraft.client.gui.DrawContext;
+import net.minecraft.client.gui.Element;
 import net.minecraft.client.gui.PlayerSkinDrawer;
 import net.minecraft.client.gui.screen.Screen;
+import net.minecraft.client.gui.screen.TitleScreen;
 import net.minecraft.client.gui.screen.narration.NarrationMessageBuilder;
 import net.minecraft.client.gui.tooltip.Tooltip;
 import net.minecraft.client.gui.widget.ClickableWidget;
 import net.minecraft.text.Text;
 
 /**
- * Who you're playing as, at the top right of the title, multiplayer and pause screens: your skin's face, your name, and
- * a dot for the kind of account (green Microsoft, grey offline). Click it for the account screen.
+ * Who you're playing as, at the top left of the title, multiplayer and pause screens (under the PlayWit Hub button
+ * where there is one, the same width): your skin's face, your name, and a dot for the kind of account (green
+ * Microsoft, grey offline). Click it for the account screen.
  */
 final class AccountChip extends ClickableWidget {
 	static final int HEIGHT = 20;
@@ -25,15 +28,16 @@ final class AccountChip extends ClickableWidget {
 	private final Accounts.Account account;
 	private float hover;
 	private long lastFrame;
+	private boolean placed;
+	/** Its width with everything shown. */
+	private int full;
 
 	AccountChip(Screen parent, int screenWidth) {
-		super(0, MARGIN, 0, HEIGHT, Text.literal(MinecraftClient.getInstance().getSession().getUsername()));
+		super(MARGIN, MARGIN, 0, HEIGHT, Text.literal(MinecraftClient.getInstance().getSession().getUsername()));
 		this.parent = parent;
 		this.account = Accounts.currentAccount();
-		TextRenderer font = UiFont.renderer();
-		int width = PAD + FACE + 6 + font.getWidth(name()) + 8 + 5 + 6;
-		setWidth(width);
-		setX(screenWidth - width - MARGIN);
+		full = PAD + FACE + 6 + UiFont.renderer().getWidth(name()) + 6 + 4 + 6 + 5 + 6;
+		setWidth(full);
 		setTooltip(Tooltip.of(Text.literal("Playing as " + account.name + " · " + kindLabel()
 				+ "\nClick to see your skin and switch accounts")));
 	}
@@ -50,11 +54,44 @@ final class AccountChip extends ClickableWidget {
 		};
 	}
 
+	/**
+	 * Lines up under the PlayWit Hub button, if the screen has one, the two the same width when there's room. On the
+	 * title screen the chip mustn't run into the Minecraft logo, so in a small window it stays narrower (the name cut
+	 * short only if even the arrow and dot make no room; the full name is in the tooltip). Done on the first frame rather than when made: the hub
+	 * may be added after the chip (by whichever PlayWit mod draws it).
+	 */
+	private void place() {
+		placed = true;
+		for (Element child : parent.children()) {
+			if (child != this && child instanceof ClickableWidget hub && hub.getMessage().getString().equals(ModsPanel.NAME)) {
+				setPosition(hub.getX(), hub.getY() + hub.getHeight() + 4);
+				int hubWidth = hub instanceof ModsPanel.HubButton b ? b.naturalWidth() : hub.getWidth();
+				// The logo is 256 wide, centred, from 30 down: keep 3 pixels clear of it.
+				int room = parent instanceof TitleScreen ? parent.width / 2 - 128 - 3 - getX() : Integer.MAX_VALUE;
+				int width = Math.max(full, hubWidth);
+				if (width <= room) {
+					if (hub instanceof ModsPanel.HubButton) hub.setWidth(width);
+					full = width;
+				}
+				setWidth(Math.min(full, Math.max(room, PAD + FACE + 6 + 24)));
+				return;
+			}
+		}
+	}
+
+	/** Where the chip ended up (it moves under the hub button on the first frame), for the self-test. */
+	void placeForTest() {
+		if (!placed) place();
+	}
+
+
 	@Override
 	protected void renderWidget(DrawContext context, int mouseX, int mouseY, float delta) {
+		if (!placed) place();
 		long now = System.currentTimeMillis();
-		hover = UiPaint.approach(hover, isHovered() ? 1 : 0, lastFrame == 0 ? 0 : now - lastFrame);
+		float frame = lastFrame == 0 ? 0 : now - lastFrame;
 		lastFrame = now;
+		hover = UiPaint.approach(hover, isHovered() ? 1 : 0, frame);
 		TextRenderer font = UiFont.renderer();
 		int x = getX(), y = getY(), w = getWidth(), h = getHeight();
 		boolean online = account.kind() != Accounts.Kind.OFFLINE;
@@ -68,16 +105,29 @@ final class AccountChip extends ClickableWidget {
 		UiPaint.rounded(context, fx - 1, fy - 1, FACE + 2, FACE + 2, 2, online ? ONLINE : OFFLINE);
 		PlayerSkinDrawer.draw(context, account.skin(), fx, fy, FACE);
 
-		int tx = fx + FACE + 6;
-		context.drawText(font, name(), tx, y + (h - 8) / 2 + 1, NAME, false);
-
-		// A status dot and a little chevron: it opens something.
-		int dx = tx + font.getWidth(name()) + 6;
-		UiPaint.rounded(context, dx, y + h / 2 - 2, 4, 4, 2, online ? ONLINE : OFFLINE);
-		int cx = dx + 8, cy = y + h / 2 - 1;
-		context.fill(cx, cy, cx + 5, cy + 1, CHEVRON);
-		context.fill(cx + 1, cy + 1, cx + 4, cy + 2, CHEVRON);
-		context.fill(cx + 2, cy + 2, cx + 3, cy + 3, CHEVRON);
+		// The name, a status dot, and a chevron at the right edge (it opens something). Where the chip is kept narrow
+		// the chevron goes first, then the dot (the ring says the same), and only then is the name cut short.
+		int tx = fx + FACE + 6, nameWidth = font.getWidth(name());
+		boolean chevron = tx + nameWidth + 6 + 4 + 6 + 5 + 6 <= x + w;
+		boolean dot = tx + nameWidth + 6 + 4 + 6 <= x + w;
+		int cx = x + w - 6 - 5, cy = y + h / 2 - 1, room = x + w - 6 - tx;
+		Text name = name();
+		if (nameWidth > room) {
+			// Too long in bold: plain letters are narrower; cut short only if even those don't fit.
+			name = Text.literal(account.name);
+			String cut = account.name;
+			while (font.getWidth(name) > room && !cut.isEmpty()) {
+				cut = cut.substring(0, cut.length() - 1);
+				name = Text.literal(cut + "…");
+			}
+		}
+		context.drawText(font, name, tx, y + (h - 8) / 2 + 1, NAME, false);
+		if (dot) UiPaint.rounded(context, tx + font.getWidth(name) + 6, y + h / 2 - 2, 4, 4, 2, online ? ONLINE : OFFLINE);
+		if (!chevron) return;
+		int color = UiPaint.mix(CHEVRON, BORDER_HOVER, hover);
+		context.fill(cx, cy, cx + 5, cy + 1, color);
+		context.fill(cx + 1, cy + 1, cx + 4, cy + 2, color);
+		context.fill(cx + 2, cy + 2, cx + 3, cy + 3, color);
 	}
 
 	@Override
