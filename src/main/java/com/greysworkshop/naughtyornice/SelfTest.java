@@ -2205,8 +2205,17 @@ public final class SelfTest {
 				check("the title screen shows who you're playing as", client.currentScreen instanceof net.minecraft.client.gui.screen.TitleScreen
 						&& net.fabricmc.fabric.api.client.screen.v1.Screens.getButtons(client.currentScreen).stream()
 								.anyMatch(b -> b instanceof AccountChip && b.getMessage().getString().equals(client.getSession().getUsername())));
+				var buttons = net.fabricmc.fabric.api.client.screen.v1.Screens.getButtons(client.currentScreen);
+				var hub = buttons.stream().filter(b -> b instanceof ModsPanel.HubButton).findFirst().orElse(null);
+				var chip = buttons.stream().filter(b -> b instanceof AccountChip).findFirst().orElse(null);
+				if (chip instanceof AccountChip c) c.placeForTest();
+				int logoLeft = client.currentScreen.width / 2 - 128;
+				check("the account chip sits right under the PlayWit Hub button, clear of the logo (" + (hub == null ? "no hub" : hub.getX() + "," + hub.getY() + " " + hub.getWidth())
+						+ " / " + (chip == null ? "no chip" : chip.getX() + "," + chip.getY() + " " + chip.getWidth()) + ", logo from " + logoLeft + ")",
+						hub != null && chip != null && chip.getX() == hub.getX() && chip.getY() == hub.getY() + hub.getHeight() + 4
+								&& chip.getX() + chip.getWidth() < logoLeft);
 			}
-			case 80 -> {
+			case 95 -> {
 				accountStep = 0;
 				afterAccounts(client);
 			}
