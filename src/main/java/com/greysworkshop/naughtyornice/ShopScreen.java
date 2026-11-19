@@ -12,6 +12,8 @@ import net.minecraft.client.util.DefaultSkinHelper;
 import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.entity.player.SkinTextures;
 import net.minecraft.text.Text;
+import net.minecraft.item.ItemStack;
+import net.minecraft.item.Items;
 import net.minecraft.util.Util;
 import net.minecraft.client.gui.screen.ConfirmLinkScreen;
 import org.lwjgl.glfw.GLFW;
@@ -588,6 +590,7 @@ public class ShopScreen extends Screen {
 		search.setChangedListener(q -> {
 			query = q.trim();
 			scroll = 0;
+			pick = -1;
 			cachedResults = null;
 			if (selected != null || tab == Tab.SETTINGS || tab == Tab.ACTIVITY || tab == Tab.SERVER) {
 				selected = null;
@@ -952,6 +955,7 @@ public class ShopScreen extends Screen {
 	}
 
 	private void showTab(Tab t) {
+		pick = -1;
 		if (t == Tab.BARITONE) {
 			// Its own screen (Esc comes back here). It needs to be in a world; offline there's nothing for it to do.
 			if (client.player == null) {
@@ -1250,6 +1254,7 @@ public class ShopScreen extends Screen {
 	private void renderPage(DrawContext context, int mouseX, int mouseY) {
 		hits.clear();
 		chartTip = null;
+		hint = null;
 		// Under the panels, nothing reacts to the mouse.
 		if (modal()) {
 			mouseX = -1000;
@@ -1268,6 +1273,71 @@ public class ShopScreen extends Screen {
 		renderBanner(context, mouseX, mouseY);
 		// Whatever's under the mouse explains itself, on top of everything.
 		if (chartTip != null) chartTooltip(context, chartTip, chartTipX, chartTipY);
+		else drawHint(context, mouseX, mouseY);
+	}
+
+	/** What the thing under the mouse does, shown once the mouse rests on it a moment (like the Baritone screen). */
+	private List<String> hint;
+	private List<String> hintShown;
+	private long hintSince;
+
+	private void hint(int mouseX, int mouseY, int x, int y, int w, int h, String... lines) {
+		if (over(mouseX, mouseY, x, y, w, h)) hint = List.of(lines);
+	}
+
+	private void drawHint(DrawContext context, int mouseX, int mouseY) {
+		if (hint == null) {
+			hintShown = null;
+			return;
+		}
+		if (!hint.equals(hintShown)) {
+			hintShown = hint;
+			hintSince = System.currentTimeMillis();
+		}
+		if (System.currentTimeMillis() - hintSince < 420) return;
+		int tw = textRenderer.getWidth(Text.literal(hint.get(0)).styled(s -> s.withBold(true)));
+		for (String line : hint) tw = Math.max(tw, textRenderer.getWidth(line));
+		int th = hint.size() * 10 + 6;
+		int tx = Math.max(2, Math.min(mouseX + 10, width - tw - 14));
+		int ty = mouseY + 14;
+		if (ty + th > height - 2) ty = Math.max(2, mouseY - th - 6);
+		context.fill(tx + 1, ty + 2, tx + tw + 11, ty + th + 2, 0x50000000);
+		roundedBorder(context, tx, ty, tw + 10, th, CARD, HOVER_BORDER);
+		context.drawText(textRenderer, Text.literal(hint.get(0)).styled(s -> s.withBold(true)), tx + 5, ty + 4, TEXT, false);
+		for (int i = 1; i < hint.size(); i++) text(context, hint.get(i), tx + 5, ty + 4 + i * 10, MUTED);
+	}
+
+	/** The sections along the top, in order (1 to 8 on the keyboard). No Baritone without a player to walk. */
+	private Tab[] sections() {
+		return offline || client.player == null
+				? new Tab[] {Tab.ALL, Tab.GROUPS, Tab.CHAT, Tab.INTEL, Tab.ACTIVITY, Tab.SERVER, Tab.SETTINGS}
+				: new Tab[] {Tab.ALL, Tab.GROUPS, Tab.CHAT, Tab.INTEL, Tab.ACTIVITY, Tab.SERVER, Tab.BARITONE, Tab.SETTINGS};
+	}
+
+	private static ItemStack sectionIcon(Tab t) {
+		return new ItemStack(switch (t) {
+			case GROUPS -> Items.WHITE_BANNER;
+			case CHAT -> Items.WRITABLE_BOOK;
+			case INTEL -> Items.SPYGLASS;
+			case ACTIVITY -> Items.CLOCK;
+			case SERVER -> Items.GRASS_BLOCK;
+			case BARITONE -> Items.DIAMOND_PICKAXE;
+			case SETTINGS -> Items.COMPARATOR;
+			default -> Items.PLAYER_HEAD;
+		});
+	}
+
+	private static String sectionHint(Tab t) {
+		return switch (t) {
+			case GROUPS -> "Who plays together: crews, teams, alts";
+			case CHAT -> "The chat, coloured by who's on your lists; talk from here";
+			case INTEL -> "Coordinates given away, stashes, world events, chat by topic";
+			case ACTIVITY -> "Who was on when, and who you met";
+			case SERVER -> "The server's numbers: top players, busy hours, joins";
+			case BARITONE -> "Walk, mine, follow and build with Baritone";
+			case SETTINGS -> "Alerts, chunk trails, sizes, your data and more";
+			default -> "Everyone you've met: your lists, groups and filters";
+		};
 	}
 
 	/** Shows a tooltip by the mouse this frame. */
@@ -1326,6 +1396,12 @@ public class ShopScreen extends Screen {
 		matrices.popMatrix();
 	}
 
+	/** The card picked with the arrow keys (-1: none), the grid's columns, and whether to scroll to it. */
+	private int pick = -1, gridCols = 1;
+	private boolean pickScroll;
+	/** The "/" or number that was a key is not typed anywhere as well. */
+	private boolean swallowChar;
+
 	/** A panel is open over the page. */
 	private boolean modal() {
 		return adding || sharing || grouping || checking || circleMenu != null;
@@ -1370,6 +1446,7 @@ public class ShopScreen extends Screen {
 		magnifierAt(context, left + 6, 9, focused ? ORANGE : MUTED);
 		hits.add(new Hit(left, 5, left + 18, 21, "search", () -> setFocused(search)));
 		hits.add(new Hit(right - 22, 5, right, 21, "search", () -> setFocused(search)));
+		if (!focused) hint(mouseX, mouseY, left, 5, right - left, 16, "Search everything", "Players, details, groups and chat. Press / or just start typing");
 
 		// Light/dark: a round button.
 		int themeX = themeLeft();
@@ -1378,6 +1455,7 @@ public class ShopScreen extends Screen {
 		String glyph = NNConfig.INSTANCE.darkMode ? "☀" : "☾";
 		text(context, glyph, themeX + (16 - textRenderer.getWidth(glyph)) / 2 + 1, 9, NNConfig.INSTANCE.darkMode ? 0xFFFFD866 : 0xFFDDE3EA);
 		hits.add(new Hit(themeX, 5, themeX + 16, 21, "theme", this::toggleTheme));
+		hint(mouseX, mouseY, themeX, 5, 16, 16, NNConfig.INSTANCE.darkMode ? "Light mode" : "Dark mode", "Switches this screen and the Baritone screen");
 
 		// The four lists, as stat chips.
 		int cw = counterWidth();
@@ -1405,24 +1483,32 @@ public class ShopScreen extends Screen {
 			context.fill(tx + 1, HEADER + 3, tx + 2, BODY - 3, 0x44FFFFFF);
 			tx += 6;
 		}
-		Tab[] sections = offline || client.player == null
-				? new Tab[] {Tab.ALL, Tab.GROUPS, Tab.CHAT, Tab.INTEL, Tab.ACTIVITY, Tab.SERVER, Tab.SETTINGS}
-				: new Tab[] {Tab.ALL, Tab.GROUPS, Tab.CHAT, Tab.INTEL, Tab.ACTIVITY, Tab.SERVER, Tab.BARITONE, Tab.SETTINGS};
-		// Tighter when the window is narrow, so every section stays on screen.
+		Tab[] sections = sections();
+		// Tighter when the window is narrow, so every section stays on screen; pictures only when there's room for them.
 		int roomy = 0;
 		for (Tab t : sections) roomy += textRenderer.getWidth(t == Tab.ALL ? "Players" : t.label + (t == Tab.CHAT ? " •" : "")) + 14;
 		tabPad = roomy + 6 > width - 6 ? 6 : 12;
+		// Room the All / Near / Online / Offline switch takes on the right (measured as it's drawn below).
+		int viewsRoom = 0;
+		if (playersTab(tab) && selected == null) {
+			viewsRoom = 6 + 12;
+			for (Tab t : new Tab[] {Tab.ALL, Tab.NEARBY, Tab.ONLINE, Tab.OFFLINE}) viewsRoom += textRenderer.getWidth(viewLabel(t)) + 12;
+			if (tab == Tab.FRIENDS || tab == Tab.NICE || tab == Tab.LOOK || tab == Tab.NAUGHTY) viewsRoom += textRenderer.getWidth(tab.label + " ✕") + 18;
+		}
+		tabIcons = tx + roomy + sections.length * 14 + 6 + viewsRoom <= width - 6;
 		int activeX = -1, activeW = 0;
-		for (Tab t : sections) {
+		for (int i = 0; i < sections.length; i++) {
+			Tab t = sections[i];
 			String label = t == Tab.ALL ? "Players" : t.label;
 			boolean active = t == Tab.ALL ? playersTab(tab) : t == tab;
 			boolean unread = t == Tab.CHAT && !active && mod.chatLogger.feedVersion() != chatSeen && !mod.chatLogger.feed().isEmpty();
-			int w = textRenderer.getWidth(label) + tabPad + (unread ? 6 : 0);
+			int w = textRenderer.getWidth(label) + tabPad + (unread ? 6 : 0) + (tabIcons ? 14 : 0);
 			if (active) {
 				activeX = tx;
 				activeW = w;
 			}
-			tab(context, mouseX, mouseY, tx, w, label, active, unread, "tab:" + t.name(), () -> showTab(t));
+			tab(context, mouseX, mouseY, tx, w, label, tabIcons ? sectionIcon(t) : null, active, unread, "tab:" + t.name(), () -> showTab(t));
+			hint(mouseX, mouseY, tx, HEADER, w, TABS, label + "  ·  key " + (i + 1), sectionHint(t));
 			tx += w + 2;
 		}
 		// The underline glides to the open section.
@@ -1479,6 +1565,17 @@ public class ShopScreen extends Screen {
 					boolean hover = over(mouseX, mouseY, sx, ty, w, h);
 					text(context, label, sx + 6, ty + (h - 8) / 2 + 1, on ? WHITE : hover ? 0xFFE7ECF2 : 0xFF9AA8B8);
 					hits.add(new Hit(sx, HEADER, sx + w, BODY, t == Tab.ALL ? "view:ALL" : "tab:" + t.name(), () -> showTab(t)));
+					hint(mouseX, mouseY, sx, ty, w, h, switch (t) {
+						case NEARBY -> "Near you now";
+						case ONLINE -> "Online now";
+						case OFFLINE -> "Not online";
+						default -> "Everyone";
+					}, switch (t) {
+						case NEARBY -> "Players your game can see right now";
+						case ONLINE -> "On the server's player list";
+						case OFFLINE -> "Met before, not on now";
+						default -> "Everyone you've met on this server";
+					});
 					sx += w;
 				}
 				// The list you're looking at, as a chip in its colour that goes back to everyone.
@@ -1522,15 +1619,27 @@ public class ShopScreen extends Screen {
 
 	/** Room either side of a tab's label, together (less when the window is narrow). */
 	private int tabPad = 12;
+	/** The section tabs have their pictures (when the window's wide enough). */
+	private boolean tabIcons;
 
 	/** A section tab: plain text, bright when open, a faint wash under the mouse, and a dot for unread chat. */
-	private void tab(DrawContext context, int mouseX, int mouseY, int x, int w, String label, boolean active, boolean unread, String hit, Runnable action) {
+	private void tab(DrawContext context, int mouseX, int mouseY, int x, int w, String label, ItemStack icon, boolean active, boolean unread, String hit, Runnable action) {
 		int y = HEADER + 1, h = TABS - 2;
 		float a = ease(hit, over(mouseX, mouseY, x, y, w, h) && !active);
 		if (a > 0) rounded(context, x, y + 1, w, h - 3, alpha(WHITE, (int) (0x1C * a)));
 		Text t = Text.literal(label).styled(s -> s.withBold(active));
 		int tw = textRenderer.getWidth(t);
-		context.drawText(textRenderer, t, x + (w - tw - (unread ? 6 : 0)) / 2, y + (h - 8) / 2, active ? WHITE : tint(WHITE, 0xFF9AA8B8, 0.15f + 0.6f * a), false);
+		int lx = x + (w - tw - (unread ? 6 : 0) - (icon != null ? 14 : 0)) / 2;
+		if (icon != null) {
+			var m = context.getMatrices();
+			m.pushMatrix();
+			m.translate(lx, y + (h - 12) / 2f);
+			m.scale(0.75f, 0.75f);
+			context.drawItem(icon, 0, 0);
+			m.popMatrix();
+			lx += 14;
+		}
+		context.drawText(textRenderer, t, lx, y + (h - 8) / 2, active ? WHITE : tint(WHITE, 0xFF9AA8B8, 0.15f + 0.6f * a), false);
 		if (unread) rounded(context, x + w - tabPad / 2 - 4, y + 3, 4, 4, ORANGE);
 		hits.add(new Hit(x, HEADER, x + w, BODY, hit, action));
 	}
@@ -1552,6 +1661,7 @@ public class ShopScreen extends Screen {
 		int lx = x + 17 + textRenderer.getWidth(count) + 4;
 		if (!compactCounters()) context.drawText(textRenderer, fit(label, x - 2 + w - 4 - lx), lx, y + 6, tint(color, 0xFFB8C2CE, 0.35f), false);
 		hits.add(new Hit(x - 2, 3, x - 2 + w, 23, "counter:" + target.name(), () -> showTab(target)));
+		hint(mouseX, mouseY, x - 2, y, w, h, label + ": " + n, "Click to see everyone on it");
 		hits.add(new Hit(x - 2, 3, x - 2 + w, 23, "tab:" + target.name(), () -> showTab(target)));
 	}
 
@@ -1663,11 +1773,29 @@ public class ShopScreen extends Screen {
 			emptyState(context, left, y, gridW);
 			y += 60;
 		}
+		gridCols = cols;
+		if (pick >= results.size()) pick = results.size() - 1;
+		// The card picked with the arrow keys is scrolled into view.
+		if (pick >= 0 && pickScroll) {
+			int py = y + (pick / cols) * (CARD_H + GAP);
+			if (py < top + 4) scroll = Math.max(0, scroll - (top + 4 - py));
+			else if (py + CARD_H > height - 4) scroll += py + CARD_H - (height - 4);
+			pickScroll = false;
+		}
 		for (int i = 0; i < results.size(); i++) {
 			int col = i % cols;
 			int cy = y + (i / cols) * (CARD_H + GAP);
 			if (cy > height || cy + CARD_H < top) continue;
 			card(context, mouseX, mouseY, results.get(i), left + col * (cardW + GAP), cy, cardW);
+			if (i == pick) {
+				int cx = left + col * (cardW + GAP);
+				float g = ease("pick", true);
+				int c = alpha(ORANGE, (int) (0xFF * g));
+				context.fill(cx - 1, cy - 1, cx + cardW + 1, cy, c);
+				context.fill(cx - 1, cy + CARD_H, cx + cardW + 1, cy + CARD_H + 1, c);
+				context.fill(cx - 1, cy, cx, cy + CARD_H, c);
+				context.fill(cx + cardW, cy, cx + cardW + 1, cy + CARD_H, c);
+			}
 		}
 		if (!results.isEmpty()) y += ((results.size() + cols - 1) / cols) * (CARD_H + GAP);
 		context.disableScissor();
@@ -6079,6 +6207,9 @@ public class ShopScreen extends Screen {
 
 	// ---- Disconnects ----
 
+	/** When Clear was first pressed: a second press within 4 seconds clears. */
+	private long clearAskedAt;
+
 	/** The latest disconnects: the reason, what did it, and who was near. Returns the y after it. */
 	private int disconnectsCard(DrawContext context, int mouseX, int mouseY, int x, int y, int w) {
 		List<Disconnects.Entry> all = Disconnects.all();
@@ -6094,9 +6225,16 @@ public class ShopScreen extends Screen {
 		roundedBorder(context, x, y, w, h, CARD, warn ? LOOK : BORDER);
 		context.drawText(textRenderer, Text.literal("Disconnects").styled(s -> s.withBold(true)), x + 10, y + 7, TEXT, false);
 		if (!shown.isEmpty()) {
-			String clear = "Clear";
+			// Asks "Sure?" first: the history can't be brought back.
+			boolean asking = System.currentTimeMillis() - clearAskedAt < 4000;
+			String clear = asking ? "Sure? Clear all" : "Clear";
 			int clw = textRenderer.getWidth(clear) + 12;
-			pill(context, mouseX, mouseY, x + w - 10 - clw, y + 4, clw, 13, clear, SOFT, BORDER, TEXT, "disconnects-clear", () -> {
+			pill(context, mouseX, mouseY, x + w - 10 - clw, y + 4, clw, 13, clear, asking ? tint(NAUGHTY, CARD, 0.25f) : SOFT, asking ? NAUGHTY : BORDER, TEXT, "disconnects-clear", () -> {
+				if (System.currentTimeMillis() - clearAskedAt >= 4000) {
+					clearAskedAt = System.currentTimeMillis();
+					return;
+				}
+				clearAskedAt = 0;
 				Disconnects.clear();
 				flash("Cleared the disconnect history", MUTED, null);
 			});
@@ -6827,16 +6965,73 @@ public class ShopScreen extends Screen {
 			return true;
 		}
 		if (input.key() == GLFW.GLFW_KEY_ENTER && search.isFocused()) {
-			// Enter on a search with one result opens it.
+			// Enter on a search with one result opens it; with more, it goes to the first, for the arrow keys.
 			List<Profile> results = results();
 			if (results.size() == 1) open(results.get(0));
+			else if (!results.isEmpty() && playersTab(tab) && selected == null) {
+				search.setFocused(false);
+				setFocused(null);
+				pick = 0;
+				pickScroll = true;
+			}
 			return true;
+		}
+		int key = input.key();
+		// ↓ from the search box goes into the results.
+		if (key == GLFW.GLFW_KEY_DOWN && search.isFocused() && playersTab(tab) && selected == null && !results().isEmpty()) {
+			search.setFocused(false);
+			setFocused(null);
+			pick = 0;
+			pickScroll = true;
+			return true;
+		}
+		boolean typing = getFocused() instanceof TextFieldWidget typed && typed.isFocused();
+		if (!typing && !modal() && tab != Tab.CHAT) {
+			// "/" searches; 1 to 8 open the sections (as on the Baritone screen).
+			if (key == GLFW.GLFW_KEY_SLASH) {
+				setFocused(search);
+				search.setFocused(true);
+				swallowChar = true;
+				return true;
+			}
+			Tab[] sections = sections();
+			if (key >= GLFW.GLFW_KEY_1 && key < GLFW.GLFW_KEY_1 + sections.length && !input.hasCtrlOrCmd()) {
+				showTab(sections[key - GLFW.GLFW_KEY_1]);
+				swallowChar = true;
+				return true;
+			}
+			// Arrow keys move along the cards; Enter opens the picked one.
+			if (playersTab(tab) && selected == null) {
+				List<Profile> results = results();
+				int n = results.size();
+				int step = switch (key) {
+					case GLFW.GLFW_KEY_RIGHT -> 1;
+					case GLFW.GLFW_KEY_LEFT -> -1;
+					case GLFW.GLFW_KEY_DOWN -> gridCols;
+					case GLFW.GLFW_KEY_UP -> -gridCols;
+					default -> 0;
+				};
+				if (step != 0 && n > 0) {
+					pick = pick < 0 ? 0 : Math.max(0, Math.min(n - 1, pick + step));
+					pickScroll = true;
+					return true;
+				}
+				if (enter && pick >= 0 && pick < n) {
+					open(results.get(pick));
+					return true;
+				}
+			}
 		}
 		return super.keyPressed(input);
 	}
 
 	@Override
 	public boolean charTyped(CharInput input) {
+		if (swallowChar) {
+			swallowChar = false;
+			int c = input.codepoint();
+			if (c == '/' || c >= '1' && c <= '9') return true;
+		}
 		if (sharing || checking) return true;
 		if (grouping) {
 			if (getFocused() != groupField && getFocused() != membersField) setFocused(groupPanelGroup != null ? membersField : groupField);
@@ -7885,6 +8080,35 @@ public class ShopScreen extends Screen {
 			if (hit == null || hit.x1 > width) return false;
 		}
 		return search.getX() + search.getWidth() <= themeLeft();
+	}
+
+	public int testPick() {
+		return pick;
+	}
+
+	public boolean testTabIcons() {
+		return tabIcons;
+	}
+
+	/** The tip for what's under the mouse, shown at once (no waiting) for the screenshot. */
+	public String testHint() {
+		hintSince = 0;
+		return hint == null ? "" : String.join(" / ", hint);
+	}
+
+	/** Where a clickable thing's middle is on screen, in GUI units (for pointing the real mouse at it). */
+	public double[] testCenter(String label) {
+		for (Hit h : List.copyOf(hits))
+			if (h.label.equals(label)) return new double[] {(h.x0 + h.x1) / 2.0 * uiScale, (h.y0 + h.y1) / 2.0 * uiScale};
+		return null;
+	}
+
+	public boolean testFocusedSearch() {
+		return search.isFocused() && getFocused() == search;
+	}
+
+	public String testSearchText() {
+		return search.getText();
 	}
 
 	public boolean testClick(String label) {

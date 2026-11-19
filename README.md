@@ -49,6 +49,10 @@ It also has:
   suggestions, add an optional detail and group, and press **Nice list**, **Look Into** or **Naughty list**. Works for
   offline players too.
 - Search finds players by name, their details, their groups, or anything they've said in chat.
+- **Keys**, as on the Baritone screen: **/** goes to the search box (or just start typing), **1** to **8** open the
+  sections along the top, the **arrow keys** move along the player cards and **Enter** opens the picked one (↓ or
+  Enter from the search box goes into the results too). Point at a tab, a list counter or the search box for a moment
+  and it says what it's for.
 - Tabs: All, Nearby, Online, **Offline**, **Friends**, Nice list, **Look Into** (your Look Into list, then players whose behaviour
   suggests a list), Naughty list, **Groups**, **Activity**, **Server**, **Intel**, **Chat**, Settings.
 - Everyone you see (nearby or on the tab list) is remembered, so they're still listed after logging off. Players who
@@ -494,7 +498,9 @@ creative. Everything you didn't load is empty, never made up.
 ## Guarding your own location
 **Guard my coordinates** (on by default) reads your own chat messages and whispers before they're sent. If one would
 give away coordinates, one of your base names, or your own current x or z, it's held, with **[Send anyway]** and
-**[Edit]**. It catches Baritone commands typed into public chat by mistake, pasted F3 coordinates, and slips.
+**[Edit]**. The chat box stays open with your message still in it: press **Enter again** (within 15 seconds) to send
+it anyway. Change it and it's checked again. It catches Baritone commands typed into public chat by mistake, pasted
+F3 coordinates, and slips.
 
 What else gives players' locations away in 1.21.11, so you know what to avoid:
 - **Being in someone's tracking range**: they get your exact position, through walls. If they're near when you log

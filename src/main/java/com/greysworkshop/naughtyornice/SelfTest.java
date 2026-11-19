@@ -573,6 +573,39 @@ public final class SelfTest {
 				screen(client).testClick("theme");
 				screen(client).testClick("tab:ALL");
 			}
+			case 672 -> {
+				// The main screen's keys, as on the Baritone screen.
+				ShopScreen s = screen(client);
+				check("the section tabs have pictures, and every tab still fits", s.testTabIcons() && s.testHeaderFits());
+				int n = s.testResultCount();
+				key(s, org.lwjgl.glfw.GLFW.GLFW_KEY_DOWN);
+				boolean first = s.testPick() == 0;
+				key(s, org.lwjgl.glfw.GLFW.GLFW_KEY_RIGHT);
+				check("arrow keys pick along the player cards (" + n + " cards)", first && s.testPick() == Math.min(1, n - 1));
+				key(s, org.lwjgl.glfw.GLFW.GLFW_KEY_ENTER);
+				check("...and Enter opens the picked card", s.testSelected() != null);
+				key(s, org.lwjgl.glfw.GLFW.GLFW_KEY_ESCAPE);
+				key(s, org.lwjgl.glfw.GLFW.GLFW_KEY_4);
+				s.charTyped(new net.minecraft.client.input.CharInput('4', 0));
+				boolean intel = "INTEL".equals(s.testTab());
+				key(s, org.lwjgl.glfw.GLFW.GLFW_KEY_1);
+				s.charTyped(new net.minecraft.client.input.CharInput('1', 0));
+				check("number keys open the sections (4 Intel, 1 Players), and aren't typed", intel && "ALL".equals(s.testTab()) && s.testSearchText().isEmpty());
+				key(s, org.lwjgl.glfw.GLFW.GLFW_KEY_SLASH);
+				s.charTyped(new net.minecraft.client.input.CharInput('/', 0));
+				check("/ goes to the search box, and isn't typed in it", s.testFocusedSearch() && s.testSearchText().isEmpty());
+				key(s, org.lwjgl.glfw.GLFW.GLFW_KEY_ESCAPE);
+				double[] at = s.testCenter("tab:INTEL");
+				if (at != null) pointAt(client, at[0], at[1]);
+			}
+			case 676 -> {
+				String hint = screen(client).testHint();
+				check("pointing at a tab explains it, with its key (" + hint + ")", hint.startsWith("Intel") && hint.contains("key 4"));
+			}
+			case 678 -> {
+				screenshot(client, "74_main_tab_hint");
+				pointAt(client, 2, 470);
+			}
 			case 680 -> {
 				screen(client).testClick("card:Helpful_Hana");
 			}
@@ -601,6 +634,9 @@ public final class SelfTest {
 			case 719 -> {
 				screenshot(client, "19b_settings_large");
 				check("at the large size every tab and the search box fit (" + screen(client).width + " wide)", screen(client).testHeaderFits());
+				int before = Disconnects.all().size();
+				boolean clicked = screen(client).testClick("disconnects-clear");
+				check("Clear on the disconnects asks \"Sure?\" first, and clears nothing yet (" + before + " kept)", clicked && before > 0 && Disconnects.all().size() == before);
 			}
 			case 720 -> {
 				int large = screen(client).width;
@@ -2106,6 +2142,11 @@ public final class SelfTest {
 		}
 		accountStep--;
 		return false;
+	}
+
+	/** Presses a key on a screen, as the keyboard would. */
+	private static void key(net.minecraft.client.gui.screen.Screen screen, int key) {
+		screen.keyPressed(new net.minecraft.client.input.KeyInput(key, 0, 0));
 	}
 
 	/** Puts the real mouse pointer on a point of the screen (in GUI units), so hover looks can be screenshotted. */
