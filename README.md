@@ -66,6 +66,12 @@ It also has:
   leaves, switches, and joins the same server again; in single player it saves and quits to the title first. Only
   Microsoft's refresh token is kept, in `config/playwit/accounts.json` on your computer; don't share that file.
   **+ Offline name** is for single player and offline-mode servers.
+- **Settings** is in parts, picked from a sidebar like the Baritone screen's: **General** (screen size, how long
+  things are kept, dark mode, updates), **On screen** (marks on names, your coordinates, the trip bar), **Alerts**
+  (warnings, pings, words to watch for, each notification's sound, phone alerts), **Chat** (reading the chat, the send
+  guard, chat logs), **Watching**, **Chunk trails**, **Friend circles**, **Your data**, **Troubleshooting** (the chat
+  check and disconnects, with a badge when something needs a look) and **Commands**. Every switch is a row with what
+  it does and an on/off switch on the right; click anywhere on the row.
 - Light and dark themes: the ☾ / ☀ button at the top (dark by default).
 - Comfortable at any GUI scale: the screen picks its own size from the window, whatever the game's GUI scale.
   Settings → **Screen size**: Small (the default) fits the most (about 900 wide), Medium is in between (about 680),
@@ -268,7 +274,9 @@ Lists are saved per server in `config/naughtyornice/lists/`. The address is tidi
 address are merged automatically (the extra files are kept as `.merged`).
 
 ## Intel
-The **Intel** tab gathers what's been given away on the server, newest first, with filters and counts:
+The **Intel** tab gathers what's been given away on the server, newest first. A sidebar picks what to show, with
+counts: places and events first, then what the chat's about. **List / Map** switches at the top right; point at the
+title for what's counted.
 - **Places**: coordinates players wrote in chat, read strictly so only real places count. Labeled (`x: 1200 z: -3400`,
   `xz 1200 -3400`), `x y z` (the middle number a height), F3 pastes (`1200.5 / 64 / -400.2`), `12k -4k`, highway
   distances (`-x 20k`, `+x+z hwy 5000`), and pairs when the line says it's a place ("base at 1200 -3400", "meet me at...")

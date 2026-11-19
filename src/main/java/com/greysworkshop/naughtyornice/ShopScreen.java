@@ -1921,11 +1921,35 @@ public class ShopScreen extends Screen {
 
 	/** A section heading: a short bar in its colour, small muted capitals, and a rule that fades out to the right. */
 	private int sideHeading(DrawContext context, int x, int y, String label, int accent) {
+		return sideHeading(context, x, y, SIDEBAR, label, accent);
+	}
+
+	private int sideHeading(DrawContext context, int x, int y, int w, String label, int accent) {
 		context.fill(x, y, x + 2, y + 8, accent);
 		context.drawText(textRenderer, label, x + 6, y, MUTED, false);
 		int lx = x + 6 + textRenderer.getWidth(label) + 5;
-		hGradient(context, lx, y + 4, x + SIDEBAR - lx, 1, BORDER, alpha(BORDER, 0));
+		hGradient(context, lx, y + 4, x + w - lx, 1, BORDER, alpha(BORDER, 0));
 		return y + 13;
+	}
+
+	/** A raised side panel, like the one on the player lists: shadow, card, a soft glow along the top. */
+	private void sidePanel(DrawContext context, int x, int y, int w, int h, int glow) {
+		rounded(context, x + 2, y + 3, w, h, 0x50000000);
+		roundedBorder(context, x, y, w, h, CARD, BORDER);
+		context.fillGradient(x + 1, y + 1, x + w - 1, y + 34, alpha(glow, 0x1C), alpha(glow, 0));
+		context.fill(x + 3, y + 1, x + w - 3, y + 2, 0x18FFFFFF);
+	}
+
+	/** The page's title, and what it's for in a line beside it (or under it when there's no room). Returns the y after. */
+	private int pageTitle(DrawContext context, int x, int y, int w, String title, String about) {
+		big(context, title, x, y, TEXT, 1.4f);
+		int tw = Math.round(textRenderer.getWidth(Text.literal(title)) * 1.4f) + 10;
+		if (about.isEmpty()) return y + 18;
+		if (textRenderer.getWidth(about) <= w - tw) {
+			text(context, about, x + tw, y + 3, MUTED);
+			return y + 18;
+		}
+		return wrapped(context, about, x, y + 16, w, MUTED, 2) + 6;
 	}
 
 	/**
@@ -1936,8 +1960,14 @@ public class ShopScreen extends Screen {
 	 */
 	private int navRow(DrawContext context, int mouseX, int mouseY, int x, int y, int indent, int accent, String icon, String label, int count,
 			boolean active, boolean strong, String hitLabel, Runnable run) {
+		return navRow(context, mouseX, mouseY, x, y, SIDEBAR, BODY + 17, indent, accent, icon, label, count, active, strong, hitLabel, run);
+	}
+
+	/** A sidebar row of any width, clickable below {@code minY}; a count under 0 has no badge. */
+	private int navRow(DrawContext context, int mouseX, int mouseY, int x, int y, int SIDEBAR, int minY, int indent, int accent, String icon, String label, int count,
+			boolean active, boolean strong, String hitLabel, Runnable run) {
 		int h = strong ? 15 : 12;
-		boolean hover = over(mouseX, mouseY, x, y, SIDEBAR, h) && mouseY >= BODY + 17;
+		boolean hover = over(mouseX, mouseY, x, y, SIDEBAR, h) && mouseY >= minY;
 		float a = ease(hitLabel, hover), act = ease(hitLabel + "#on", active);
 		int rx = x + indent, rw = SIDEBAR - indent;
 		float wash = Math.max(act * 0.42f, a * 0.2f);
@@ -1960,16 +1990,19 @@ public class ShopScreen extends Screen {
 			lx = ix + textRenderer.getWidth(icon) + 4;
 		}
 		lx += Math.round(2 * a);
-		String n = String.valueOf(count);
-		int bw = Math.max(10, textRenderer.getWidth(n) + 6);
-		int bx = x + SIDEBAR - bw - 3;
-		int badge = count == 0 ? SOFT : active ? accent : tint(accent, CARD, 0.28f);
-		rounded(context, bx, ty - 1, bw, 10, badge);
-		text(context, n, bx + (bw - textRenderer.getWidth(n)) / 2 + 1, ty, count == 0 ? MUTED : active ? CARD : tint(accent, TEXT, 0.55f));
+		int bx = x + SIDEBAR - 3;
+		if (count >= 0) {
+			String n = String.valueOf(count);
+			int bw = Math.max(10, textRenderer.getWidth(n) + 6);
+			bx -= bw;
+			int badge = count == 0 ? SOFT : active ? accent : tint(accent, CARD, 0.28f);
+			rounded(context, bx, ty - 1, bw, 10, badge);
+			text(context, n, bx + (bw - textRenderer.getWidth(n)) / 2 + 1, ty, count == 0 ? MUTED : active ? CARD : tint(accent, TEXT, 0.55f));
+		}
 		String shown = fit(label, bx - lx - 3);
 		int color = active ? TEXT : tint(TEXT, MUTED, strong ? 0.8f + 0.2f * a : 0.4f + 0.6f * a);
 		context.drawText(textRenderer, Text.literal(shown).styled(s -> s.withBold(strong || active)), lx, ty, color, false);
-		hits.add(new Hit(x, Math.max(y, BODY + 17), x + SIDEBAR, y + h, hitLabel, run));
+		hits.add(new Hit(x, Math.max(y, minY), x + SIDEBAR, y + h, hitLabel, run));
 		return y + h + 1;
 	}
 
@@ -4843,50 +4876,245 @@ public class ShopScreen extends Screen {
 		});
 	}
 
-	/** Where each part of the settings starts (from the top of the page), for the "Jump to" chips; filled while drawing. */
-	private final java.util.LinkedHashMap<String, Integer> settingsAnchors = new java.util.LinkedHashMap<>();
+	/** The parts of Settings, one at a time, picked in the sidebar (like the Baritone screen's settings). */
+	enum SettingsPage {
+		GENERAL("General", "⚙", "The screen, the mod itself, and how long things are kept"),
+		SCREEN("On screen", "▣", "Marks on names, your coordinates, the trip bar and other things drawn over the game"),
+		ALERTS("Alerts", "!", "What warns you, how it sounds, and pings to your phone"),
+		CHAT("Chat", "✉", "Reading the chat, guarding what you send, and chat logs"),
+		WATCHING("Watching", "◉", "What's noted about players as you play"),
+		TRAILS("Chunk trails", "▦", "Old and new land, in the world, on the radar and the Intel map"),
+		CIRCLES("Friend circles", "★", "Kinds of friends, each with its own colour and alerts"),
+		DATA("Your data", "⇩", "Export, backups, and where everything is kept"),
+		TROUBLE("Troubleshooting", "✚", "The chat check, and why you were disconnected"),
+		COMMANDS("Commands", "/", "Every /nn command");
+
+		final String label, icon, about;
+
+		SettingsPage(String label, String icon, String about) {
+			this.label = label;
+			this.icon = icon;
+			this.about = about;
+		}
+	}
+
+	private SettingsPage settingsPage = SettingsPage.GENERAL;
+
+	/** Which part of Settings a switch is in. */
+	private static SettingsPage pageOf(Option o) {
+		String l = o.label;
+		return switch (l) {
+			case "Marks on nametags", "Marks in the tab list", "Group tags on names", "Totems popped on names", "Logout spots", "Death recap", "My coordinates",
+					"Trip bar", "Coordinates on the right", "Small coordinates" -> SettingsPage.SCREEN;
+			case "Warn when a naughty player is near", "Warn when a naughty player joins", "Note when a Look Into player is near or joins", "Warning sound",
+					"Alert on threats against you", "Ping on any coordinates", "Alert when your bases are named", "Alert on coordinates near your bases" -> SettingsPage.ALERTS;
+			case "Read the chat", "Guard my coordinates", "Ask before sending any message", "Log chat of listed players", "Chat tab shows everyone",
+					"Save chat logs as text files", "Save all chat as text files", "Summary when you join" -> SettingsPage.CHAT;
+			case "Killers go on the Naughty list", "Note sightings", "Track who plays together", "Track hours online", "Evidence screenshots", "Record disconnects",
+					"Nice list counts as Base Insurance friends" -> SettingsPage.WATCHING;
+			case "Note new chunk trails in chat", "Tell me when the land changes ahead" -> SettingsPage.TRAILS;
+			default -> l.startsWith("Ping on talk about") ? SettingsPage.ALERTS : SettingsPage.GENERAL;
+		};
+	}
+
+	private static SettingsPage pageOf(Stepper st) {
+		String l = st.label;
+		if (l.startsWith("Squares") || l.startsWith("Radar")) return SettingsPage.TRAILS;
+		return SettingsPage.GENERAL;
+	}
+
+	/** Problems worth a look on the Troubleshooting page: lines the chat check couldn't read, a mod that disconnected you lately. */
+	private int troubleCount() {
+		int n = mod.diagnostics.count(Diagnostics.Kind.UNKNOWN) > 0 ? 1 : 0;
+		List<Disconnects.Entry> all = Disconnects.all();
+		if (!all.isEmpty()) {
+			Disconnects.Entry last = all.get(all.size() - 1);
+			if ((last.kind == Disconnects.Kind.MOD || last.kind == Disconnects.Kind.ERROR) && System.currentTimeMillis() - last.time < 86_400_000L) n++;
+		}
+		return n;
+	}
+
+	private void showSettingsPage(SettingsPage p) {
+		if (settingsPage != p) scroll = 0;
+		settingsPage = p;
+	}
 
 	private void renderSettings(DrawContext context, int mouseX, int mouseY) {
-		// The whole width, in two columns when there's room for them.
-		int w = Math.min(860, width - 16);
-		boolean wide = w >= 600;
-		int x = (width - w) / 2;
+		// Boxes on pages that aren't shown stay hidden.
+		alertFieldTop = phoneFieldTop = circleFieldTop = joinCmdTop = -1000;
+		if (scrollToDisconnects) {
+			scrollToDisconnects = false;
+			showSettingsPage(SettingsPage.TROUBLE);
+		}
+		if (scrollToCircles) {
+			scrollToCircles = false;
+			showSettingsPage(SettingsPage.CIRCLES);
+		}
+		boolean side = width >= 520;
+		int navW = 128;
+		int x = 8;
 		int y0 = BODY + 8 - (int) scroll;
 		int y = y0;
 		context.enableScissor(0, BODY, width, height);
-		big(context, "Settings", x, y, TEXT, 1.4f);
-		// PlayWit Hub (switches, profiles and backups for all the PlayWit mods), unless this was opened from it.
-		int jEnd = x + w;
-		if (!ModsPanel.isHub(parent)) {
-			int hw = textRenderer.getWidth(ModsPanel.NAME) + 14;
-			jEnd -= hw + 6;
-			pill(context, mouseX, mouseY, x + w - hw, y, hw, 13, ModsPanel.NAME, SOFT, BORDER, TEXT, "hub", () -> ModsPanel.openHub(this));
+
+		// The sidebar: every part of Settings, the open one lit; it stays put while the page scrolls.
+		int cx = side ? x + navW + 14 : x;
+		int cw = Math.min(side ? 720 : 860, width - cx - 10);
+		if (side) {
+			int sy = BODY + 8;
+			int ph = 13 + SettingsPage.values().length * 16 + 30;
+			sidePanel(context, x - 4, sy - 4, navW + 8, ph, LINK);
+			sy = sideHeading(context, x, sy, navW, "SETTINGS", LINK);
+			for (SettingsPage p : SettingsPage.values()) {
+				int accent = p == SettingsPage.TROUBLE && troubleCount() > 0 ? LOOK : p == SettingsPage.ALERTS ? NAUGHTY : p == SettingsPage.CIRCLES ? FRIEND
+						: p == SettingsPage.TRAILS ? NICE : LINK;
+				int count = p == SettingsPage.TROUBLE ? troubleCount() : -1;
+				int rowY = sy;
+				sy = navRow(context, mouseX, mouseY, x, sy, navW, BODY, 0, accent, p.icon, p.label, count > 0 ? count : -1, p == settingsPage, true,
+						"settings:" + p.name(), () -> showSettingsPage(p));
+				hint(mouseX, mouseY, x, rowY, navW, 15, p.label, p.about);
+			}
+			sy += 6;
+			// PlayWit Hub (switches, profiles and backups for all the PlayWit mods), unless this was opened from it.
+			if (!ModsPanel.isHub(parent)) {
+				button(context, mouseX, mouseY, x, sy, navW, 15, ModsPanel.NAME + " ›", SOFT_HOVER, SOFT, BORDER, TEXT, "hub", () -> ModsPanel.openHub(this));
+				hint(mouseX, mouseY, x, sy, navW, 15, ModsPanel.NAME, "Switches, profiles and backups for every PlayWit mod");
+			}
+		} else {
+			// Narrow: the parts as chips across the top.
+			int px = x;
+			for (SettingsPage p : SettingsPage.values()) {
+				int pw = textRenderer.getWidth(p.label) + 12;
+				if (px + pw > width - 8) {
+					px = x;
+					y += 16;
+				}
+				boolean on = p == settingsPage;
+				pill(context, mouseX, mouseY, px, y, pw, 13, p.label, on ? LINK : SOFT, on ? LINK : BORDER, on ? CARD : TEXT, "settings:" + p.name(), () -> showSettingsPage(p));
+				px += pw + 4;
+			}
+			y += 20;
 		}
-		// Jump to a part of the page (where each starts was noted last frame).
-		int jx = x + (int) (textRenderer.getWidth("Settings") * 1.4f) + 14;
-		for (var anchor : List.copyOf(settingsAnchors.entrySet())) {
-			int jw = textRenderer.getWidth(anchor.getKey()) + 12;
-			if (jx + jw > jEnd) break;
-			int target = anchor.getValue();
-			pill(context, mouseX, mouseY, jx, y, jw, 13, anchor.getKey(), SOFT, BORDER, TEXT, "jump:" + anchor.getKey(),
-					() -> scroll = Math.max(0, Math.min(target - 4, Math.max(0, contentHeight - (height - BODY)))));
-			jx += jw + 4;
+
+		SettingsPage page = settingsPage;
+		y = pageTitle(context, cx, y, cw, page.label, page.about);
+		y += 2;
+		List<Option> options = new ArrayList<>();
+		for (Option o : options()) if (pageOf(o) == page) options.add(o);
+		List<Stepper> steppers = new ArrayList<>();
+		if (page == SettingsPage.GENERAL) steppers.add(sizeStepper());
+		for (Stepper st : steppers()) if (pageOf(st) == page) steppers.add(st);
+		switch (page) {
+			case GENERAL -> {
+				y = stepperCard(context, mouseX, mouseY, cx, y, cw, steppers);
+				y = switchCard(context, mouseX, mouseY, cx, y, cw, options);
+			}
+			case ALERTS -> {
+				y = switchCard(context, mouseX, mouseY, cx, y, cw, options);
+				y = alertWordsCard(context, mouseX, mouseY, cx, y, cw);
+				y = notificationsCard(context, mouseX, mouseY, cx, y, cw) + 10;
+				y = phoneCard(context, mouseX, mouseY, cx, y, cw) + 10;
+			}
+			case TRAILS -> {
+				y = chunkTrailsCard(context, mouseX, mouseY, cx, y, cw) + 10;
+				y = switchCard(context, mouseX, mouseY, cx, y, cw, options);
+				y = stepperCard(context, mouseX, mouseY, cx, y, cw, steppers);
+			}
+			case CIRCLES -> y = circlesCard(context, mouseX, mouseY, cx, y, cw) + 10;
+			case DATA -> {
+				y = dataCard(context, mouseX, mouseY, cx, y, cw) + 10;
+				y = foldersCard(context, mouseX, mouseY, cx, y, cw);
+			}
+			case TROUBLE -> {
+				y = chatCheckCard(context, mouseX, mouseY, cx, y, cw);
+				y = disconnectsCard(context, mouseX, mouseY, cx, y, cw) + 10;
+			}
+			case COMMANDS -> y = commandsCard(context, cx, y, cw);
+			default -> y = switchCard(context, mouseX, mouseY, cx, y, cw, options);
 		}
-		settingsAnchors.clear();
-		y += 18;
-		settingsAnchors.put("Chat check", y - y0);
-		// Chat check: how well this server's chat is understood.
+		context.disableScissor();
+		int sideH = side ? 13 + SettingsPage.values().length * 16 + 40 : 0;
+		contentHeight = Math.max(y - y0 + 10, sideH);
+		scrollbar(context, BODY);
+	}
+
+	/**
+	 * Switches, one to a row in a card: the name in bold and what it does under it, and an on/off switch on the right
+	 * that slides (like the Baritone screen's settings). The whole row is the button.
+	 */
+	private int switchCard(DrawContext context, int mouseX, int mouseY, int x, int y, int w, List<Option> options) {
+		if (options.isEmpty()) return y;
+		int textW = w - 54;
+		int h = 0;
+		for (Option o : options) h += 10 + textRenderer.wrapLines(Text.literal(o.help), textW).size() * 10 + 9;
+		roundedBorder(context, x, y, w, h + 2, CARD, BORDER);
+		int ry = y + 1;
+		for (int i = 0; i < options.size(); i++) {
+			Option o = options.get(i);
+			var help = textRenderer.wrapLines(Text.literal(o.help), textW);
+			int rh = 10 + help.size() * 10 + 9;
+			boolean on = o.get.getAsBoolean();
+			String key = "option:" + o.label;
+			boolean hover = over(mouseX, mouseY, x + 1, ry, w - 2, rh) && mouseY >= BODY;
+			float a = ease(key, hover), k = ease(key + "#on", on);
+			if (a > 0) context.fill(x + 1, ry, x + w - 1, ry + rh, alpha(SOFT_HOVER, (int) (255 * a)));
+			if (i > 0) context.fill(x + 8, ry, x + w - 8, ry + 1, BORDER);
+			context.drawText(textRenderer, Text.literal(o.label).styled(st -> st.withBold(true)), x + 10, ry + 5, TEXT, false);
+			int hy = ry + 16;
+			for (var line : help) {
+				context.drawText(textRenderer, line, x + 10, hy, MUTED, false);
+				hy += 10;
+			}
+			// The switch: a track that fills with colour, and a knob that slides across.
+			int tw = 22, th = 11, tx = x + w - tw - 12, ty = ry + (rh - th) / 2;
+			// Off: a plain outlined track with a grey knob, easy to see on both themes; on: green with a white knob.
+			int off = tint(MUTED, CARD, 0.45f + 0.2f * a);
+			roundedBorder(context, tx, ty, tw, th, tint(NICE, tint(MUTED, CARD, 0.18f), k), tint(NICE, off, k));
+			int knob = tx + 1 + Math.round((tw - th) * k);
+			rounded(context, knob, ty + 1, th - 2, th - 2, tint(WHITE, MUTED, k));
+			hit(x + 1, ry, w - 2, rh, key, () -> {
+				o.set.accept(!on);
+				NNConfig.save();
+			});
+			ry += rh;
+		}
+		return y + h + 2 + 10;
+	}
+
+	/** Number settings, each with − and + , in a card. */
+	private int stepperCard(DrawContext context, int mouseX, int mouseY, int x, int y, int w, List<Stepper> steppers) {
+		if (steppers.isEmpty()) return y;
+		int h = steppers.size() * 20 + 8;
+		roundedBorder(context, x, y, w, h, CARD, BORDER);
+		int sy = y + 5;
+		for (Stepper st : steppers) {
+			stepper(context, mouseX, mouseY, x + 10, sy, st);
+			sy += 20;
+		}
+		return y + h + 10;
+	}
+
+	/** Words to be alerted about, in their own card. */
+	private int alertWordsCard(DrawContext context, int mouseX, int mouseY, int x, int y, int w) {
+		int h = 44;
+		roundedBorder(context, x, y, w, h, CARD, BORDER);
+		Text title = Text.literal("Alert me when someone says").styled(st -> st.withBold(true));
+		context.drawText(textRenderer, title, x + 10, y + 7, TEXT, false);
+		textTrim(context, "  commas between; {me} is your name", x + 10 + textRenderer.getWidth(title), y + 7, w - 20 - textRenderer.getWidth(title), MUTED);
+		int ty = y + 20;
+		roundedBorder(context, x + 10, ty, w - 20, 16, FIELD, alertField.isFocused() ? 0xFFE77600 : INPUT_BORDER);
+		alertField.setX(x + 14);
+		alertField.setY(ty + 4);
+		alertField.setWidth(w - 28);
+		alertFieldTop = ty;
+		hit(x + 10, ty, w - 20, 16, "alert-words", () -> setFocused(alertField));
+		return y + h + 10;
+	}
+
+	/** Chat check: how well this server's chat is understood. */
+	private int chatCheckCard(DrawContext context, int mouseX, int mouseY, int x, int y, int w) {
 		Diagnostics d = mod.diagnostics;
 		int ch = 62;
-		int fullW = w, disconnectsAt = y, rowEnd = -1;
-		if (wide) {
-			// Chat check and Disconnects side by side.
-			int half = (fullW - 10) / 2;
-			rowEnd = disconnectsCard(context, mouseX, mouseY, x + half + 10, y, fullW - half - 10);
-			// Phone alerts go under the chat check, beside Disconnects.
-			rowEnd = Math.max(rowEnd, phoneCard(context, mouseX, mouseY, x, y + ch + 10, half));
-			w = half;
-		}
 		roundedBorder(context, x, y, w, ch, CARD, d.count(Diagnostics.Kind.UNKNOWN) > 0 ? LOOK : BORDER);
 		context.drawText(textRenderer, Text.literal("Chat check").styled(s -> s.withBold(true)), x + 10, y + 7, TEXT, false);
 		String counts = d.total() == 0 ? "No chat seen yet since the game started."
@@ -4904,115 +5132,21 @@ public class ShopScreen extends Screen {
 		String copy = "Copy report";
 		int cw2 = textRenderer.getWidth(copy) + 14;
 		pill(context, mouseX, mouseY, bx, y + 43, cw2, 14, copy, SOFT, BORDER, TEXT, "check-copy-settings", this::copyCheckReport);
-		y = wide ? rowEnd + 10 : y + ch + 10;
-		w = fullW;
-		if (!wide) {
-			disconnectsAt = y;
-			y = disconnectsCard(context, mouseX, mouseY, x, y, w) + 10;
-		}
-		if (scrollToDisconnects) {
-			scrollToDisconnects = false;
-			scroll = Math.max(0, disconnectsAt - y0 - 4);
-		}
-		settingsAnchors.put("Disconnects", disconnectsAt - y0);
-		settingsAnchors.put("Chunk trails", y - y0);
-		y = chunkTrailsCard(context, mouseX, mouseY, x, y, w) + 10;
-		settingsAnchors.put("Notifications", y - y0);
-		y = notificationsCard(context, mouseX, mouseY, x, y, w) + 10;
-		settingsAnchors.put("Your data", y - y0);
-		y = dataCard(context, mouseX, mouseY, x, y, w) + 10;
-		int circlesAt = y;
-		settingsAnchors.put("Friend circles", y - y0);
-		y = circlesCard(context, mouseX, mouseY, x, y, w) + 10;
-		if (scrollToCircles) {
-			scrollToCircles = false;
-			scroll = Math.max(0, circlesAt - y0 - 4);
-		}
-		List<Option> options = options();
-		// The switches: in two columns when wide, the first column taking the first half by height.
-		int cols = wide ? 2 : 1, colW = (w - (cols - 1) * 10) / cols;
-		int[] rowHs = new int[options.size()];
-		int total = 0;
-		for (int i = 0; i < options.size(); i++) {
-			rowHs[i] = 12 + textRenderer.wrapLines(Text.literal(options.get(i).help), colW - 34).size() * 10 + 6;
-			total += rowHs[i];
-		}
-		int split = options.size(), acc = 0;
-		if (cols == 2) {
-			for (int i = 0; i < options.size(); i++) {
-				if (acc + rowHs[i] / 2 > total / 2) {
-					split = i;
-					break;
-				}
-				acc += rowHs[i];
-			}
-		}
-		int colH = 0, h0 = 0;
-		for (int i = 0; i < options.size(); i++) {
-			if (i == split) {
-				colH = Math.max(colH, h0);
-				h0 = 0;
-			}
-			h0 += rowHs[i];
-		}
-		colH = Math.max(colH, h0);
-		int boxH = 14 + 20 + colH;
-		boxH += steppers().size() * 18 + 8;
-		boxH += 46;
-		settingsAnchors.put("Switches", y - y0);
-		roundedBorder(context, x, y, w, boxH, CARD, BORDER);
-		int ty = y + 10;
-		stepper(context, mouseX, mouseY, x + 26, ty - 2, sizeStepper());
-		ty += 20;
-		int colTop = ty;
-		for (int i = 0; i < options.size(); i++) {
-			Option o = options.get(i);
-			if (i == split) ty = colTop;
-			int ox = i < split ? x : x + colW + 10;
-			boolean on = o.get.getAsBoolean();
-			int rowY = ty;
-			List<net.minecraft.text.OrderedText> help = textRenderer.wrapLines(Text.literal(o.help), colW - 34);
-			int rowH = 12 + help.size() * 10;
-			boolean hover = over(mouseX, mouseY, ox + 4, rowY - 2, colW - 8, rowH + 2);
-			if (hover) context.fill(ox + 4, rowY - 3, ox + colW - 4, rowY + rowH + 1, HOVER_BG);
-			roundedBorder(context, ox + 10, rowY, 10, 10, on ? LINK : FIELD, on ? LINK : INPUT_BORDER);
-			if (on) text(context, "✔", ox + 11, rowY + 1, CARD);
-			context.drawText(textRenderer, Text.literal(o.label).styled(s -> s.withBold(true)), ox + 26, rowY + 1, TEXT, false);
-			int hy = rowY + 12;
-			for (var line : help) {
-				context.drawText(textRenderer, line, ox + 26, hy, MUTED, false);
-				hy += 10;
-			}
-			hit(ox + 4, rowY - 2, colW - 8, rowH + 2, "option:" + o.label, () -> {
-				o.set.accept(!on);
-				NNConfig.save();
-			});
-			ty += rowH + 6;
-		}
-		ty = colTop + colH;
-		for (Stepper stepper : steppers()) {
-			stepper(context, mouseX, mouseY, x + 26, ty, stepper);
-			ty += 18;
-		}
-		// Words to be alerted about.
-		context.drawText(textRenderer, Text.literal("Alert me when someone says").styled(s -> s.withBold(true)), x + 26, ty + 2, TEXT, false);
-		textTrim(context, "  commas between; {me} is your name", x + 26 + textRenderer.getWidth(Text.literal("Alert me when someone says").styled(s -> s.withBold(true))),
-				ty + 2, w - 40 - textRenderer.getWidth("Alert me when someone says"), MUTED);
-		ty += 13;
-		roundedBorder(context, x + 26, ty, w - 36, 16, FIELD, alertField.isFocused() ? 0xFFE77600 : INPUT_BORDER);
-		alertField.setX(x + 30);
-		alertField.setY(ty + 4);
-		alertField.setWidth(w - 44);
-		alertFieldTop = ty;
-		int fieldY = ty;
-		hit(x + 26, fieldY, w - 36, 16, "alert-words", () -> setFocused(alertField));
-		y += boxH + 10;
+		return y + ch + 10;
+	}
 
-		// Phone alerts: the same warnings, posted to your own Discord channel.
-		if (!wide) y = phoneCard(context, mouseX, mouseY, x, y, w) + 10;
-
-		// Where things are kept, and every command.
-		link(context, mouseX, mouseY, x, y, "Open the mod's folder", "open-mod-folder", () -> {
+	/** Where things are kept, with buttons to open the folders. */
+	private int foldersCard(DrawContext context, int mouseX, int mouseY, int x, int y, int w) {
+		String about = "In config/naughtyornice: lists/ (your lists, per server), chatlogs/ (conversations and all chat), shared/ (shared lists). "
+				+ "Screenshots go in screenshots/naughtyornice.";
+		int lines = Math.min(3, textRenderer.wrapLines(Text.literal(about), w - 20).size());
+		int h = 20 + lines * 10 + 24;
+		roundedBorder(context, x, y, w, h, CARD, BORDER);
+		context.drawText(textRenderer, Text.literal("Where it's kept").styled(s -> s.withBold(true)), x + 10, y + 7, TEXT, false);
+		int ty = wrapped(context, about, x + 10, y + 19, w - 20, MUTED, 3) + 4;
+		String mf = "Open the mod's folder", cf = "Open chat logs";
+		int mw = textRenderer.getWidth(mf) + 14, cfw = textRenderer.getWidth(cf) + 14;
+		pill(context, mouseX, mouseY, x + 10, ty, mw, 14, mf, SOFT, BORDER, TEXT, "open-mod-folder", () -> {
 			try {
 				Files.createDirectories(NNConfig.dir());
 			} catch (java.io.IOException ignored) {
@@ -5020,7 +5154,7 @@ public class ShopScreen extends Screen {
 			}
 			Util.getOperatingSystem().open(NNConfig.dir());
 		});
-		link(context, mouseX, mouseY, x + textRenderer.getWidth("Open the mod's folder") + 16, y, "Open chat logs", "open-chat-folder", () -> {
+		pill(context, mouseX, mouseY, x + 16 + mw, ty, cfw, 14, cf, SOFT, BORDER, TEXT, "open-chat-folder", () -> {
 			try {
 				Files.createDirectories(mod.chatLogger.folder());
 			} catch (java.io.IOException ignored) {
@@ -5028,24 +5162,28 @@ public class ShopScreen extends Screen {
 			}
 			Util.getOperatingSystem().open(mod.chatLogger.folder());
 		});
-		y += 14;
-		y = wrapped(context, "In config/naughtyornice: lists/ (your lists, per server), chatlogs/ (conversations and all chat), shared/ (shared lists). "
-				+ "Screenshots go in screenshots/naughtyornice.", x, y, w, MUTED, 3) + 8;
-		settingsAnchors.put("Commands", y - y0);
-		context.drawText(textRenderer, Text.literal("Commands").styled(st -> st.withBold(true)), x, y, TEXT, false);
-		y += 12;
+		return y + h + 10;
+	}
+
+	/** Every command, with what it does, in a card. */
+	private int commandsCard(DrawContext context, int x, int y, int w) {
 		int cmdW = 0;
 		for (String[] cmd : COMMANDS) cmdW = Math.max(cmdW, textRenderer.getWidth(cmd[0]));
-		cmdW = Math.min(cmdW + 10, w / 2);
-		for (String[] cmd : COMMANDS) {
-			textTrim(context, cmd[0], x, y, cmdW - 6, LINK);
-			var lines = textRenderer.wrapLines(Text.literal(cmd[1]), Math.max(60, w - cmdW));
-			for (int i = 0; i < lines.size(); i++) context.drawText(textRenderer, lines.get(i), x + cmdW, y + i * 10, MUTED, false);
-			y += Math.max(1, lines.size()) * 10 + 1;
+		cmdW = Math.min(cmdW + 14, w / 2);
+		int h = 8;
+		for (String[] cmd : COMMANDS) h += Math.max(1, textRenderer.wrapLines(Text.literal(cmd[1]), Math.max(60, w - 20 - cmdW)).size()) * 10 + 3;
+		roundedBorder(context, x, y, w, h + 4, CARD, BORDER);
+		int ty = y + 7;
+		for (int i = 0; i < COMMANDS.length; i++) {
+			String[] cmd = COMMANDS[i];
+			var lines = textRenderer.wrapLines(Text.literal(cmd[1]), Math.max(60, w - 20 - cmdW));
+			int rh = Math.max(1, lines.size()) * 10 + 3;
+			if (i % 2 == 1) context.fill(x + 1, ty - 2, x + w - 1, ty - 2 + rh, alpha(SOFT, 0x60));
+			textTrim(context, cmd[0], x + 10, ty, cmdW - 8, LINK);
+			for (int l = 0; l < lines.size(); l++) context.drawText(textRenderer, lines.get(l), x + 10 + cmdW, ty + l * 10, MUTED, false);
+			ty += rh;
 		}
-		context.disableScissor();
-		contentHeight = y - y0 + 10;
-		scrollbar(context, BODY);
+		return y + h + 14;
 	}
 
 	// ---- Activity: when the server is busy ----
@@ -5200,56 +5338,74 @@ public class ShopScreen extends Screen {
 		int y0 = BODY + 8 - (int) scroll;
 		int y = y0;
 		context.enableScissor(0, BODY, width, height);
-		big(context, "Intel", x, y, TEXT, 1.4f);
-		// List or map.
-		int tx = x + textRenderer.getWidth("Intel") * 14 / 10 + 14;
+		// List or map, as a two-way switch on the right of the title.
+		int segW = 6;
+		for (String l : new String[] {"List", "Map"}) segW += textRenderer.getWidth(l) + 16;
+		int segX = width - 10 - segW;
+		int titleY = y;
+		y = pageTitle(context, x, y, segX - x - 10, "Intel", "What players gave away, world events, and chat by topic");
+		hint(mouseX, mouseY, x, titleY, Math.round(textRenderer.getWidth("Intel") * 1.4f), 14, "Intel",
+				"Places players gave away (coordinates they wrote, where they logged out in front of you,",
+				"where they summoned a wither), things the server tells everyone (withers, end portals),",
+				"and the last week of chat sorted by what it's about. Only what's certain is shown.");
+		rounded(context, segX, titleY - 1, segW, 16, tint(0xFF000000, PAGE, 0.6f));
+		int sx = segX + 3;
 		for (boolean asMap : new boolean[] {false, true}) {
 			String label = asMap ? "Map" : "List";
-			int pw = textRenderer.getWidth(label) + 14;
+			int pw = textRenderer.getWidth(label) + 16;
 			boolean on = intelMap == asMap;
-			pill(context, mouseX, mouseY, tx, y, pw, 14, label, on ? LINK : SOFT, on ? LINK : BORDER, on ? CARD : TEXT, "intel-view:" + label, () -> {
+			boolean hover = over(mouseX, mouseY, sx, titleY + 1, pw, 12);
+			if (on) rounded(context, sx, titleY + 1, pw, 12, tint(LINK, PAGE, 0.35f));
+			else if (hover) rounded(context, sx, titleY + 1, pw, 12, alpha(WHITE, 0x14));
+			text(context, label, sx + 8, titleY + 3, on ? WHITE : hover ? TEXT : MUTED);
+			hits.add(new Hit(sx, Math.max(titleY, BODY), sx + pw, titleY + 14, "intel-view:" + label, () -> {
 				intelMap = asMap;
 				NNConfig.INSTANCE.intelMap = asMap;
 				NNConfig.save();
 				scroll = 0;
 				if (asMap) centreMap();
-			});
-			tx += pw + 4;
+			}));
+			hint(mouseX, mouseY, sx, titleY + 1, pw, 12, asMap ? "Map" : "List", asMap ? "Land, trails, places and events, around you or anywhere" : "Everything as it happened, newest first");
+			sx += pw;
 		}
 		if (intelMap) {
 			context.disableScissor();
-			renderIntelMap(context, mouseX, mouseY, x, y + 20, width - 16, height - (y + 20) - 8);
+			renderIntelMap(context, mouseX, mouseY, x, y + 2, width - 16, height - (y + 2) - 8);
 			contentHeight = 0;
 			return;
 		}
-		y += 18;
-		y = wrapped(context, "Places players gave away (coordinates they wrote, where they logged out in front of you, where they summoned a wither), "
-				+ "things the server tells everyone (withers, end portals), and the last week of chat sorted by what it's about. Only what's certain is shown.",
-				x, y, width - 16, MUTED, 3) + 8;
+		y += 4;
 
-		// Filters, with how many of each.
+		// What to show, in a raised sidebar like the player lists': places first, then what the chat's about, with counts.
 		int sideW = 130;
 		int sy = y;
-		context.drawText(textRenderer, Text.literal("Show").styled(st -> st.withBold(true)), x, sy, TEXT, false);
-		sy += 12;
+		int rows = IntelFilter.values().length;
+		sidePanel(context, x - 4, sy - 4, sideW + 8, 13 * 2 + rows * 13 + 14, ORANGE);
+		sy = sideHeading(context, x, sy, sideW, "PLACES & EVENTS", ORANGE);
 		for (IntelFilter f : IntelFilter.values()) {
+			if (f == IntelFilter.THREAT) {
+				sy += 4;
+				sy = sideHeading(context, x, sy, sideW, "CHAT ABOUT", LINK);
+			}
 			long n = all.stream().filter(r -> intelMatches(r, f)).count();
-			boolean on = intelFilter == f;
-			boolean hover = over(mouseX, mouseY, x, sy - 1, sideW, 11);
-			int color = f == IntelFilter.THREAT ? NAUGHTY : f == IntelFilter.PLACES || f == IntelFilter.WORLD || f == IntelFilter.TRAILS ? ORANGE : LINK;
-			context.drawText(textRenderer, Text.literal((on ? "› " : "") + f.label).styled(st -> st.withBold(on).withUnderline(hover)), x, sy,
-					hover ? HOVER_LINK : on ? TEXT : color, false);
-			String count = String.valueOf(n);
-			text(context, count, x + sideW - 8 - textRenderer.getWidth(count), sy, MUTED);
-			hits.add(new Hit(x, Math.max(sy - 1, BODY), x + sideW, sy + 10, "intel-filter:" + f.name(), () -> {
+			int color = f == IntelFilter.THREAT ? NAUGHTY : f == IntelFilter.ALL ? TEXT : f == IntelFilter.PLACES || f == IntelFilter.WORLD || f == IntelFilter.TRAILS ? ORANGE : LINK;
+			String icon = switch (f) {
+				case ALL -> "≡";
+				case PLACES -> "◆";
+				case TRAILS -> "▦";
+				case WORLD -> "✦";
+				case THREAT -> "!";
+				default -> "•";
+			};
+			sy = navRow(context, mouseX, mouseY, x, sy, sideW, BODY, 0, color, icon, f.label, (int) n, intelFilter == f, false, "intel-filter:" + f.name(), () -> {
 				intelFilter = f;
 				scroll = 0;
-			}));
-			sy += 11;
+			});
 		}
+		sy += 6;
 
 		// The rows.
-		int rx = x + sideW + 8;
+		int rx = x + sideW + 14;
 		int rw = width - rx - 10;
 		int shown = 0;
 		for (IntelRow r : all) {

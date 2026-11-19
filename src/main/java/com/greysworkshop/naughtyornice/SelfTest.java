@@ -350,6 +350,10 @@ public final class SelfTest {
 			}
 			case 380 -> {
 				screenshot(client, "8_settings");
+				check("Settings opens on General, with a sidebar of its parts", screen(client).testClick("settings:SCREEN"));
+			}
+			case 384 -> {
+				screenshot(client, "8b_settings_on_screen");
 				boolean before = NNConfig.INSTANCE.nametagMarks;
 				check("settings toggle", screen(client).testClick("option:Marks on nametags") && NNConfig.INSTANCE.nametagMarks != before);
 				screen(client).testClick("option:Marks on nametags");
@@ -486,9 +490,15 @@ public final class SelfTest {
 				// Everything is logged now, so there's no conversation length, or how long chat is kept, to set.
 				check("no conversation-length setting", !screen(client).testClick("step+:A conversation ends after"));
 				check("no how-long-to-keep-chat settings", !screen(client).testClick("step+:Chat tab keeps") && !screen(client).testClick("step+:Keep chat logs for"));
+				screen(client).testClick("settings:TRAILS");
+			}
+			case 616 -> {
 				boolean trails = NNConfig.INSTANCE.chunkTrails;
 				check("chunk trails turn off and on from their own card", screen(client).testClick("chunks-main") && NNConfig.INSTANCE.chunkTrails != trails
 						&& screen(client).testClick("chunks-main") && NNConfig.INSTANCE.chunkTrails == trails);
+				screen(client).testClick("settings:ALERTS");
+			}
+			case 618 -> {
 				// Every notification in Settings: its sound turned off and on, its alert itself off and on, and ▶ plays it.
 				boolean soundsOn = NNConfig.INSTANCE.warnSounds;
 				NNConfig.INSTANCE.warnSounds = true;
@@ -576,7 +586,7 @@ public final class SelfTest {
 			case 672 -> {
 				// The main screen's keys, as on the Baritone screen.
 				ShopScreen s = screen(client);
-				check("the section tabs have pictures, and every tab still fits", s.testTabIcons() && s.testHeaderFits());
+				check("the section tabs have pictures, and every tab still fits (pictures " + s.testTabIcons() + ", fits " + s.testHeaderFits() + ", " + s.width + " wide, size " + NNConfig.INSTANCE.screenSize + ")", s.testTabIcons() && s.testHeaderFits());
 				int n = s.testResultCount();
 				key(s, org.lwjgl.glfw.GLFW.GLFW_KEY_DOWN);
 				boolean first = s.testPick() == 0;
@@ -634,9 +644,6 @@ public final class SelfTest {
 			case 719 -> {
 				screenshot(client, "19b_settings_large");
 				check("at the large size every tab and the search box fit (" + screen(client).width + " wide)", screen(client).testHeaderFits());
-				int before = Disconnects.all().size();
-				boolean clicked = screen(client).testClick("disconnects-clear");
-				check("Clear on the disconnects asks \"Sure?\" first, and clears nothing yet (" + before + " kept)", clicked && before > 0 && Disconnects.all().size() == before);
 			}
 			case 720 -> {
 				int large = screen(client).width;
@@ -1199,6 +1206,7 @@ public final class SelfTest {
 				check("a friend's say never takes your friends off your Friends", row.result == Profile.Verdict.FRIEND && row.outcome != Sharing.Outcome.CONFLICT);
 				client.setScreen(new ShopScreen(ShopScreen.Tab.SETTINGS, null));
 			}
+			case 987 -> screen(client).testClick("settings:CIRCLES");
 			case 988 -> {
 				screen(client).testCircleText("Old crew");
 				check("Settings makes new circles", screen(client).testClick("circle-save") && Friends.byName("Old crew") != null);
@@ -1613,9 +1621,12 @@ public final class SelfTest {
 				client.player.setPitch(aimBefore[1]);
 				client.setScreen(new ShopScreen(ShopScreen.Tab.SETTINGS, null));
 			}
-			case 1217 -> screen(client).testScroll(1_000_000);
+			case 1217 -> screen(client).testClick("settings:TROUBLE");
 			case 1218 -> {
-				screenshot(client, "58_settings_bottom");
+				screenshot(client, "58_settings_trouble");
+				int before = Disconnects.all().size();
+				boolean clicked = screen(client).testClick("disconnects-clear");
+				check("Clear on the disconnects asks \"Sure?\" first, and clears nothing yet (" + before + " kept)", clicked && before > 0 && Disconnects.all().size() == before);
 				client.setScreen(null);
 			}
 			// ---- Chunk trails ----
