@@ -296,14 +296,18 @@ public class BaritoneScreen extends Screen {
 				return;
 			}
 			String b = badge == null ? null : badge.get();
+			boolean chevron = label.endsWith("▾");
+			if (chevron) label = label.substring(0, label.length() - 1).stripTrailing();
 			String full = (icon == null ? "" : icon + " ") + label;
 			int iw = item.isEmpty() ? 0 : 18;
 			int bw = b == null ? 0 : textRenderer.getWidth(b) + 6;
 			String shown = fit(full, width - 8 - bw - iw);
-			int tw = textRenderer.getWidth(shown) + bw + iw;
+			int cw = chevron ? (label.isEmpty() ? 5 : 9) : 0;
+			int tw = textRenderer.getWidth(shown) + bw + iw + cw;
 			int tx = getX() + (width - tw) / 2, ty = getY() + (height - 8) / 2;
 			if (iw > 0) drawIcon(context, item, tx, getY() + (height - 16) / 2);
 			context.drawText(textRenderer, shown, tx + iw, ty, text, false);
+			if (chevron) chevron(context, tx + iw + textRenderer.getWidth(shown) + cw - 5, ty + 3, text);
 			if (b != null) context.drawText(textRenderer, b, tx + tw - bw + 6, ty, look == Look.PRIMARY ? 0xFF5A4A00 : MUTED, false);
 		}
 
@@ -1178,7 +1182,8 @@ public class BaritoneScreen extends Screen {
 			int top, int bottom, String hint) {
 		boolean over = overlay == null && mouseX >= gx && mouseX < gx + gw && mouseY >= gy && mouseY < gy + gh && mouseY >= top && mouseY < bottom;
 		int text = paintButton(context, gx, gy, gw, gh, look, ease("hand:" + key, over), true);
-		context.drawText(textRenderer, label, gx + gw / 2 - textRenderer.getWidth(label) / 2, gy + (gh - 8) / 2, text, false);
+		if (label.equals("▾")) chevron(context, gx + gw / 2 - 2, gy + gh / 2 - 1, text);
+		else context.drawText(textRenderer, label, gx + gw / 2 - textRenderer.getWidth(label) / 2, gy + (gh - 8) / 2, text, false);
 		hits.add(new Hit(gx, Math.max(gy, top), gx + gw, Math.min(gy + gh, bottom), run, key, false, hint));
 	}
 
@@ -1443,6 +1448,10 @@ public class BaritoneScreen extends Screen {
 
 	private void initMine(int x, int y) {
 		BlockCatalog.countNear(client);
+		if (!wide()) {
+			initMineCompact(x, y);
+			return;
+		}
 		NNConfig c = NNConfig.INSTANCE;
 		int w = contentW();
 		boolean two = wide();
@@ -1545,6 +1554,112 @@ public class BaritoneScreen extends Screen {
 			mineBrowser.cursor = 0;
 		});
 		mineBrowser.search.onEnter(mineBrowser::enter);
+		setUpMineBrowser();
+		browserArea = new int[] {x, ly + 22, leftW, pageBottom() - ly - 22};
+	}
+
+	/**
+	 * Mine on a narrow screen: the block list fills the page, and a bar along the bottom holds what's picked, how many,
+	 * Start and Clear, with the switches and the best height behind Options.
+	 */
+	private void initMineCompact(int x, int y) {
+		NNConfig c = NNConfig.INSTANCE;
+		int w = contentW();
+		List<BlockCatalog.Entry> picks = minePicks();
+		boolean active = MineJob.active();
+		int barH = 66, by = pageBottom() - barH;
+		card(x, by, w, barH, null, null);
+		// Row one: what's picked (or how it's going), one line.
+		picksArea = new int[] {x + 10, by + 7, w - 20, -1};
+		if (active) mineProgressArea = new int[] {x + 10, by + 7, w - 20, -1};
+		// Row two: how many, then Options, Clear, Start.
+		int ry = by + 40;
+		int px = x + 10;
+		for (int n : new int[] {0, 16, 64, 256}) {
+			String l = n == 0 ? "All" : String.valueOf(n);
+			int pw = textRenderer.getWidth(l) + 12;
+			pill(px, ry, pw, 18, l, c.mineAmount == n ? Look.PICKED : Look.SOFT, () -> {
+				c.mineAmount = n;
+				NNConfig.save();
+				if (amountField != null) amountField.setText("");
+				relayout();
+			}).hint(n == 0 ? "Everything it can find" : "Stops once you've picked up " + n);
+			px += pw + 3;
+		}
+		boolean custom = c.mineAmount != 0 && !List.of(16, 64, 256).contains(c.mineAmount);
+		amountField = field(px, ry, 46, "other", amountField, custom ? String.valueOf(c.mineAmount) : "");
+		amountField.setChangedListener(t -> {
+			Integer n = whole(t);
+			if (n != null && n > 0) {
+				c.mineAmount = n;
+				NNConfig.save();
+			}
+		});
+		amountField.onEnter(this::startMining);
+		int right = x + w - 10;
+		int sw = 104;
+		pill(right - sw, ry, sw, 18, active ? "Stop mining" : "Start mining", active ? Look.DANGER : Look.PRIMARY, () -> {
+			if (MineJob.active()) {
+				MineJob.stopped();
+				run("stop", "Stopped mining");
+				relayout();
+				return;
+			}
+			startMining();
+		}).item(active ? ItemStack.EMPTY : new ItemStack(net.minecraft.item.Items.DIAMOND_PICKAXE)).icon(active ? "■" : null).active = active || !picks.isEmpty();
+		pill(right - sw - 4 - 44, ry, 44, 18, "Clear", Look.SOFT, () -> {
+			c.mineBlocks.clear();
+			NNConfig.save();
+			relayout();
+		}).active = !picks.isEmpty();
+		int ow = textRenderer.getWidth("Options ▾") + 16;
+		Pill opt = pill(right - sw - 4 - 44 - 4 - ow, ry, ow, 18, "Options ▾", Look.SOFT, () -> {});
+		Pill optRef = opt;
+		replaceRun(opt, () -> openMenu(optRef.getX(), optRef.getY() - 4, 260, mineOptions(picks)));
+		// The list above it.
+		Field before = mineBrowser.search;
+		mineBrowser.search = field(x, y, w, "Search every block: diamond, oak log, chest…", before, "");
+		mineBrowser.search.setChangedListener(t -> {
+			mineBrowser.scroll = 0;
+			mineBrowser.cursor = 0;
+		});
+		mineBrowser.search.onEnter(mineBrowser::enter);
+		setUpMineBrowser();
+		browserArea = new int[] {x, y + 22, w, by - 8 - y - 22};
+	}
+
+	/** Mine's switches and the best height, as a menu (on a narrow screen). */
+	private List<Option> mineOptions(List<BlockCatalog.Entry> picks) {
+		List<Option> o = new ArrayList<>();
+		String[][] switches = {{"legitMine", "Only ores it can see (legit)"}, {"mineScanDroppedItems", "Pick up what drops"},
+				{"allowOnlyExposedOres", "Only ores next to air"}, {"exploreForBlocks", "Explore when none are known"}};
+		for (String[] sw : switches) {
+			Boolean on = BaritoneBridge.bool(sw[0]);
+			if (on == null) continue;
+			o.add(new Option((on ? "On: " : "Off: ") + sw[1], on ? "✔" : "•", () -> {
+				BaritoneBridge.setBool(sw[0], !on);
+				BaritoneBridge.saveSettings();
+				say(sw[1] + (on ? ": off" : ": on"), PLAIN);
+			}, BaritoneSettingsGuide.description(sw[0])));
+		}
+		BestY best = picks.isEmpty() ? null : bestY(picks.get(0));
+		if (best != null) {
+			o.add(new Option("Mine where " + best.what().toLowerCase(Locale.ROOT) + " are common (Y " + best.low() + " to " + best.high() + ")", "⇕", () -> {
+				BaritoneBridge.set("minYLevelWhileMining", String.valueOf(best.low()));
+				BaritoneBridge.set("maxYLevelWhileMining", String.valueOf(best.high()));
+				if (BaritoneBridge.bool("legitMine") != null) BaritoneBridge.set("legitMineYLevel", String.valueOf(best.y()));
+				say("Y range set to " + best.low() + " to " + best.high(), OK);
+			}, "Most common at Y " + best.y()));
+		}
+		o.add(new Option("Any height", "•", () -> {
+			BaritoneBridge.set("minYLevelWhileMining", "0");
+			BaritoneBridge.set("maxYLevelWhileMining", "2031");
+			say("Mining at any height", OK);
+		}, null));
+		return o;
+	}
+
+	private void setUpMineBrowser() {
 		mineBrowser.source = BlockCatalog.all();
 		mineBrowser.tabs = blockTabs();
 		mineBrowser.tab = () -> mineTab;
@@ -1560,7 +1675,6 @@ public class BaritoneScreen extends Screen {
 		};
 		mineBrowser.right = BaritoneScreen::nearText;
 		mineBrowser.stars = true;
-		browserArea = new int[] {x, ly + 22, leftW, pageBottom() - ly - 22};
 	}
 
 	private void toggleMinePick(BlockCatalog.Entry e) {
@@ -1599,6 +1713,33 @@ public class BaritoneScreen extends Screen {
 		if (picksArea == null) return;
 		int x = picksArea[0], y = picksArea[1], w = picksArea[2];
 		List<BlockCatalog.Entry> picks = minePicks();
+		if (picksArea[3] == -1) {
+			// One line: "Mining:" and as many chips as fit, then "+3 more" (or how it's going, while it mines).
+			if (mineProgressArea != null) return;
+			bold(context, "Mine", x, y + 5, TEXT);
+			int cx = x + boldWidth("Mine") + 8;
+			if (picks.isEmpty()) {
+				context.drawText(textRenderer, fit("Click blocks above to add them, or Mine now on one", x + w - cx), cx, y + 5, MUTED, false);
+				return;
+			}
+			for (int i = 0; i < picks.size(); i++) {
+				BlockCatalog.Entry e = picks.get(i);
+				int cw = chipWidth(e);
+				String more = "+" + (picks.size() - i) + " more";
+				if (cx + cw > x + w - (i < picks.size() - 1 ? textRenderer.getWidth(more) + 6 : 0)) {
+					context.drawText(textRenderer, more, cx, y + 5, MUTED, false);
+					break;
+				}
+				boolean over = overlay == null && mouseX >= cx && mouseX < cx + cw && mouseY >= y && mouseY < y + 18;
+				roundedBorder(context, cx, y, cw, 18, over ? HOVER_BG : PICKED_BG, over ? BAD : LINK);
+				drawIcon(context, e.icon(), cx + 1, y + 1);
+				context.drawText(textRenderer, fit(e.name(), cw - 36), cx + 19, y + 5, TEXT, false);
+				context.drawText(textRenderer, "×", cx + cw - 10, y + 5, over ? BAD : MUTED, false);
+				hits.add(new Hit(cx, y, cx + cw, y + 18, () -> toggleMinePick(e), "unpick:" + e.key(), true, "Take " + e.name() + " off"));
+				cx += cw + 3;
+			}
+			return;
+		}
 		if (picks.isEmpty()) {
 			context.drawText(textRenderer, "Nothing yet. Click blocks in the list to add them,", x, y + 2, MUTED, false);
 			context.drawText(textRenderer, "or Mine now on one to mine just that.", x, y + 13, MUTED, false);
@@ -2575,17 +2716,28 @@ public class BaritoneScreen extends Screen {
 		});
 		hp.icon("♥").hint("On trips: stops and tells you when your health gets this low. Click to change");
 		int px = x + hp.getWidth() + 14;
-		label("§8Presets", px, y + 5);
+		boolean roomy = wide();
+		if (!roomy) {
+			// Narrow: the presets in a menu.
+			Pill pm = fitPill(px, y, "Presets ▾", Look.SOFT, () -> {});
+			Pill pmRef = pm;
+			replaceRun(pm, () -> {
+				List<Option> o = new ArrayList<>();
+				for (BaritoneSettingsGuide.Preset p : BaritoneSettingsGuide.PRESETS) o.add(new Option(p.name(), "•", () -> applyPreset(p), p.why()));
+				o.add(new Option("Undo all my changes", new ItemStack(net.minecraft.item.Items.BARRIER), null, this::resetAll, "Every setting back to Baritone's own"));
+				openMenu(pmRef.getX(), pmRef.getY() + 18, 220, o);
+			});
+		}
+		if (roomy) label("§8Presets", px, y + 5);
 		px += textRenderer.getWidth("Presets") + 6;
-		for (BaritoneSettingsGuide.Preset p : BaritoneSettingsGuide.PRESETS) {
+		for (BaritoneSettingsGuide.Preset p : roomy ? BaritoneSettingsGuide.PRESETS : List.<BaritoneSettingsGuide.Preset>of()) {
 			Pill b = fitPill(px, y, p.name(), Look.SOFT, () -> applyPreset(p));
 			b.hint(p.why() + " Sets: " + String.join(", ", p.values().keySet()));
 			px += b.getWidth() + 3;
 		}
-		Pill undo = fitPill(px, y, asking("undo-all") ? "Sure? Click again" : "Undo all my changes", asking("undo-all") ? Look.DANGER : Look.SOFT, () -> {
+		if (roomy) fitPill(px, y, asking("undo-all") ? "Sure? Click again" : "Undo all my changes", asking("undo-all") ? Look.DANGER : Look.SOFT, () -> {
 			if (confirmed("undo-all", "Click again to put every Baritone setting back to Baritone's own default")) resetAll();
-		});
-		undo.hint("Puts every Baritone setting back to Baritone's own default");
+		}).hint("Puts every Baritone setting back to Baritone's own default");
 		int sy = y + 24;
 		settingSearch = field(x, sy, Math.min(260, w / 2), "Search Baritone's settings (all of them)", settingSearch, "");
 		settingSearch.setChangedListener(t -> listScroll = 0);
@@ -2598,6 +2750,26 @@ public class BaritoneScreen extends Screen {
 		groups.add(new String[] {"changed", "Changed (" + changed + ")"});
 		groups.add(new String[] {"trips", "Trips"});
 		for (BaritoneSettingsGuide.Category cat : BaritoneSettingsGuide.Category.values()) groups.add(new String[] {cat.name(), cat.label});
+		if (!roomy) {
+			// Narrow: which group, as one button with a menu.
+			String now = "All";
+			for (String[] g : groups) if (java.util.Objects.equals(settingsGroup, g[0])) now = g[1];
+			int gw = Math.min(170, x + w - cx);
+			Pill gp = pill(cx, cy - 1, gw, 18, "Show: " + now + " ▾", Look.SOFT, () -> {});
+			Pill gpRef = gp;
+			replaceRun(gp, () -> {
+				List<Option> o = new ArrayList<>();
+				for (String[] g : groups) {
+					boolean on = java.util.Objects.equals(settingsGroup, g[0]);
+					o.add(new Option(g[1], on ? "✔" : "•", () -> {
+						settingsGroup = g[0];
+						listScroll = 0;
+					}, null));
+				}
+				openMenu(gpRef.getX(), gpRef.getY() + 20, Math.max(gw, 200), o);
+			});
+			groups.clear();
+		}
 		for (String[] g : groups) {
 			int gw = textRenderer.getWidth(g[1]) + 12;
 			if (cx + gw > x + w) {
@@ -3699,9 +3871,6 @@ public class BaritoneScreen extends Screen {
 			roundedBorder(context, f.getX() - 5, f.getY() - 4, f.getWidth() + 10, 18, FIELD, f.isFocused() ? LINK : INPUT_BORDER);
 		}
 		context.disableScissor();
-		if (smartField != null && smartField.visible) {
-			roundedBorder(context, smartField.getX() - 5, smartField.getY() - 4, smartField.getWidth() + 10, 18, FIELD, smartField.isFocused() ? LINK : INPUT_BORDER);
-		}
 		if (page == Page.ROAM || page == Page.TOOLS) {
 			int max = Math.max(0, pageHeight - (pageBottom() - TOP));
 			scrollbar(context, contentX() + contentW() + 4, TOP, pageBottom(), pageHeight, pageScroll, max);
@@ -3722,7 +3891,8 @@ public class BaritoneScreen extends Screen {
 			x += textRenderer.getWidth("‹") + 10;
 		}
 		bold(context, "baritone", x, 9, NAV_TEXT);
-		context.fill(x + boldWidth("baritone") + 2, 15, x + boldWidth("baritone") + 4, 17, ORANGE);
+		// An orange underline under its first letters, like the main screen's "or".
+		context.fill(x, 19, x + boldWidth("bar"), 20, ORANGE);
 		// The search bar: rounded, a magnifier, the "/" key, an orange glow when it's typed in.
 		if (smartBox != null && smartField != null) {
 			int sx = smartBox[0], sy = smartBox[1], sw = smartBox[2];
@@ -3743,8 +3913,8 @@ public class BaritoneScreen extends Screen {
 		// Light / dark, as on the main screen.
 		float th = ease("theme", overlay == null && mouseX >= themeX && mouseX < themeX + 16 && mouseY >= 5 && mouseY < 21);
 		rounded(context, themeX, 5, 16, 16, blend(NAV_SOFT, NAV_SOFT_HOVER, th));
-		String glyph = dark ? "☀" : "☾";
-		context.drawText(textRenderer, glyph, themeX + (16 - textRenderer.getWidth(glyph)) / 2 + 1, 9, dark ? 0xFFFFD866 : 0xFFDDE3EA, false);
+		if (dark) sun(context, themeX + 8, 13, 0xFFFFD866);
+		else moon(context, themeX + 8, 13, 0xFFDDE3EA);
 		hits.add(new Hit(themeX, 5, themeX + 16, 21, this::toggleTheme, "theme", false, dark ? "Light theme (for Naughty or Nice too)" : "Dark theme (for Naughty or Nice too)"));
 		// The underline glides to the open page's tab.
 		for (var e : children()) {
@@ -3760,6 +3930,34 @@ public class BaritoneScreen extends Screen {
 				context.fill(ux - 1, HEADER + TABS - 4, ux + uw + 1, HEADER + TABS - 3, alphaOf(ORANGE, 0x50));
 			}
 		}
+	}
+
+	/** A little sun (switch to light), drawn so it reads at any size. */
+	private static void sun(DrawContext context, int cx, int cy, int color) {
+		for (int dx = -2; dx <= 2; dx++) for (int dy = -2; dy <= 2; dy++) if (dx * dx + dy * dy <= 5) context.fill(cx + dx, cy + dy, cx + dx + 1, cy + dy + 1, color);
+		for (int i = 0; i < 8; i++) {
+			double a = i * Math.PI / 4;
+			int rx = (int) Math.round(Math.cos(a) * 4.5), ry = (int) Math.round(Math.sin(a) * 4.5);
+			context.fill(cx + rx, cy + ry, cx + rx + 1, cy + ry + 1, color);
+		}
+	}
+
+	/** A crescent moon (switch to dark). */
+	private static void moon(DrawContext context, int cx, int cy, int color) {
+		for (int dx = -4; dx <= 4; dx++) {
+			for (int dy = -4; dy <= 4; dy++) {
+				boolean in = dx * dx + dy * dy <= 16;
+				boolean bite = (dx - 2) * (dx - 2) + (dy + 1) * (dy + 1) <= 9;
+				if (in && !bite) context.fill(cx + dx, cy + dy, cx + dx + 1, cy + dy + 1, color);
+			}
+		}
+	}
+
+	/** A small downward chevron (the font's ▾ is too small to read). */
+	private static void chevron(DrawContext context, int x, int y, int color) {
+		context.fill(x, y, x + 5, y + 1, color);
+		context.fill(x + 1, y + 1, x + 4, y + 2, color);
+		context.fill(x + 2, y + 2, x + 3, y + 3, color);
 	}
 
 	/** A small magnifying glass. */
@@ -3866,7 +4064,9 @@ public class BaritoneScreen extends Screen {
 		context.fill(x + 5, y + h / 2 - 2, x + 9, y + h / 2 + 2, blink ? tint(color, SUBNAV, 0.5f) : color);
 		context.drawText(textRenderer, state, x + 12, y + (h - 8) / 2, color, false);
 		int dx = x + sw + 6;
-		if (detail.isEmpty() && state.equals("Idle")) detail = "Pick something below, or press / and type it";
+		if (detail.isEmpty() && state.equals("Idle") && right - dx >= textRenderer.getWidth("Pick something below, or press / and type it")) {
+			detail = "Pick something below, or press / and type it";
+		}
 		if (!detail.isEmpty() && right - dx > 30) context.drawText(textRenderer, fit(detail, right - dx), dx, y + (h - 8) / 2, state.equals("Idle") ? NAV_DIM : NAV_MUTED, false);
 	}
 

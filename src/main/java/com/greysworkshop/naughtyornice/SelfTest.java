@@ -1933,6 +1933,8 @@ public final class SelfTest {
 	/** Where the Baritone button walk-through is (0 when it isn't running). */
 	private static int baritoneStep;
 	private static boolean baritoneOnly;
+	private static boolean themeWas;
+	private static int sizeWas;
 	/** What Baritone had said before the every-setting round trip. */
 	private static int settingsMark;
 	/** Where the nether highway walk began, and how far it ever got from the highway's middle. */
@@ -2510,16 +2512,19 @@ public final class SelfTest {
 				b.testSmart("");
 				b.setFocused(null);
 				// Light and dark, from here too (and back).
-				boolean was = NNConfig.INSTANCE.darkMode;
+				themeWas = NNConfig.INSTANCE.darkMode;
 				b.testRow("theme", false);
-				boolean flipped = NNConfig.INSTANCE.darkMode != was;
-				b.testRow("theme", false);
-				check("the ☀/☾ button switches the theme, for the main screen too", flipped && NNConfig.INSTANCE.darkMode == was);
+				check("the ☀/☾ button switches the theme, for the main screen too", NNConfig.INSTANCE.darkMode != themeWas);
 				check("which way a place is, from where you're facing, in words", BaritoneScreen.testRelative(0).equals("ahead")
 						&& BaritoneScreen.testRelative(Math.PI / 2).equals("to your right") && BaritoneScreen.testRelative(-Math.PI / 4).equals("ahead-left")
 						&& BaritoneScreen.testRelative(Math.PI).equals("behind"));
 			}
-			case 5 -> b.testSmart("diam");
+			case 5 -> {
+				screenshot(client, "65a_baritone_light");
+				b.testRow("theme", false);
+				check("...and back", NNConfig.INSTANCE.darkMode == themeWas);
+				b.testSmart("diam");
+			}
 			// ---- Go to…: save a spot, find it, go there, remove it ----
 			case 6 -> {
 				screenshot(client, "64a_baritone_search_bar");
@@ -2556,12 +2561,18 @@ public final class SelfTest {
 				check("...and Pin pins it", NNConfig.INSTANCE.pinnedPlaces.contains("NN test spot") && !b.testOverlay());
 				NNConfig.INSTANCE.pinnedPlaces.remove("NN test spot");
 				check("its row's Go (OW) sets off", b.testRow("NN test spot", false) && client.currentScreen == null);
+				baritonePressed = System.currentTimeMillis();
 			}
 			case 19 -> {
 				log("Goal: " + BaritoneBridge.goal());
 				check("...for the saved spot", BaritoneBridge.goal().contains("x=0,y=-60,z=0"));
 			}
 			case 40 -> {
+				// Eight seconds of walking, however fast the frames come.
+				if (System.currentTimeMillis() - baritonePressed < 8000) {
+					baritoneStep--;
+					return;
+				}
 				double left = Math.hypot(p.getX() - 0.5, p.getZ() - 0.5);
 				check("...and walks there (" + (int) left + " blocks left of 30)", left < 22);
 				SmartTravel.stop();
@@ -3100,6 +3111,33 @@ public final class SelfTest {
 				// world is flat with no nether, so it's built here and trips are routed here for the test. ----
 				IntegratedServer server = client.getServer();
 				server.execute(() -> server.getCommandManager().parseAndExecute(server.getCommandSource(), "forceload add -16 -16 432 16"));
+			}
+			case 183 -> {
+				// The biggest screen size: every page still fits.
+				sizeWas = NNConfig.INSTANCE.screenSize;
+				NNConfig.INSTANCE.screenSize = 2;
+				client.setScreen(new BaritoneScreen());
+				((BaritoneScreen) client.currentScreen).testPage(1);
+			}
+			case 184 -> {
+				// Something picked, so the bottom bar shows chips.
+				NNConfig.INSTANCE.mineBlocks.clear();
+				NNConfig.INSTANCE.mineBlocks.addAll(List.of("family:minecraft:diamond_ore", "family:minecraft:iron_ore", "oak_log"));
+				((BaritoneScreen) client.currentScreen).testPage(1);
+			}
+			case 185 -> {
+				screenshot(client, "65b_baritone_large_mine");
+				NNConfig.INSTANCE.mineBlocks.clear();
+				((BaritoneScreen) client.currentScreen).testPage(4);
+			}
+			case 186 -> {
+				screenshot(client, "65c_baritone_large_tools");
+				((BaritoneScreen) client.currentScreen).testPage(5);
+			}
+			case 187 -> {
+				screenshot(client, "65d_baritone_large_settings");
+				NNConfig.INSTANCE.screenSize = sizeWas;
+				client.setScreen(null);
 			}
 			case 188 -> {
 				IntegratedServer server = client.getServer();

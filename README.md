@@ -388,13 +388,20 @@ Naughty or Nice's own look, and sizes itself like the main screen (Settings → 
   goes there; a place's name goes to it; a block (`diamonds`, `oak log`) mines it or goes to the nearest; a player's
   name follows them; a mob (`cow`) follows the nearest; a setting's name (`sprint`) switches it; `stop`, `explore`,
   `farm`, `surface`, `tunnel` do just that. ↑ ↓ choose, Enter does it. Empty, it lists what you did lately.
-- Pointing at anything says what it does in the bar along the bottom. **1** to **7** switch pages, **Ctrl+F** jumps to
-  the page's search, Enter in any box does that box's job.
+- Pointing at anything shows a tooltip saying what it does. **1** to **7** switch pages, **Ctrl+F** jumps to the
+  page's search, **↑ ↓** move through any list while you type in its search and Enter picks, Enter in any box does that
+  box's job. Things that can't be undone (digging an area out, undoing all your settings, removing a saved spot) ask
+  **Sure?** first.
+- It looks like the main screen: the same header with the search bar in it, tabs with a gliding underline, and light
+  and dark (☀ / ☾ at the top, shared with the main screen). On a narrow window (Large screen size) pages rearrange
+  rather than squeeze: Mine puts the list first with a bar along the bottom, Settings puts its groups and presets in
+  menus.
 
 **Go**: every place the mod knows, in one list with distance and direction: your saved waypoints (type a name, **Save
 where I am**), your bases, chunk trails' far ends, places players gave away, where your list's players were last seen,
 lit end portals (strongholds), and coordinates on your clipboard. Search it, filter it by kind, sort it (Nearest,
-Newest, A–Z), pin favourites to the top with ☆, and press **Go**. **▾** on a place has the rest: go to its overworld or
+Newest, A–Z), pin favourites to the top with ☆, and press **Go**. An arrow on each place points the way it is from
+where you're facing, and says it in words ("NE · ahead-left"). **▾** on a place has the rest: go to its overworld or
 nether spot, set it as Baritone's goal without going, copy its coordinates, pin it, remove it. To go to coordinates,
 type x, y (optional) and z and press **Go there**; **Fill from ▾** fills them in from your position, the clipboard, the
 latest trail or place given away, or works out the other dimension's matching spot (÷8, ×8).
@@ -406,8 +413,10 @@ Nether, End, Plants & farming, Building, Everything. Or search ("diam", "oak log
 diamonds since 1.18). Click blocks to add them (as many kinds as you like), or **⛏ Mine** on a row to mine just that
 one at once. Then **How many**: All, 16, 32, 64, 128, 256 or any number. It counts what you've really picked up (diamonds
 from diamond ore, raw iron from iron ore) and stops by itself once you have that many. Switches for legit mining (only
-ores it can see), picking up drops, only exposed ores and exploring when none are known, and a Y range. While it mines,
-the card shows the time and every item you've got with its icon.
+ores it can see), picking up drops, only exposed ores and exploring when none are known, and a Y range; for an ore it
+knows where it's most common ("Diamonds are most common at Y -59") and **Mine there** sets the range for you. While it
+mines, the card shows the time, every item you've got with its icon, how many a minute, a bar towards your amount and
+about how long is left.
 
 **Follow**: everyone in view with their face, list mark and distance, and a **Follow** each (everyone online is listed
 too); **Follow every player**, **Follow anything**, and how close to follow and how far behind (− and +). On the
@@ -439,7 +448,7 @@ is here too (see below).
 **Settings**: all of Baritone's settings in plain words ("Break blocks in the way", not `allowBreak`), each with what it
 does (Baritone's own description), in groups: Moving, Breaking & placing, Safety, Mining, Follow, farm & explore,
 Elytra, Building, What it shows, Chat & messages, Pathfinding, Other, and **Changed** (green, with their defaults). Each
-has the right control: a switch, − and + with the number (click it to type one), the blocks or items themselves as
+has the right control: a switch, − and + with the number (click it to type one, right there in its row), the blocks or items themselves as
 icons with **Edit…** to pick them from the picker (blocks to avoid, what it may place to bridge...), a colour swatch.
 **Presets** set several at once: **Careful** (no parkour or long drops, stays away from mobs), **Fast**, **Legit-looking**
 (only mines what it can see, turns like a player), and **Undo all my changes**. Trip settings: pause when a stranger
