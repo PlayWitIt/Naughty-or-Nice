@@ -130,11 +130,40 @@ public final class BaritoneBridge {
 		}
 	}
 
-	/** One Baritone setting: its name, value and default (as Baritone writes them), and whether it's on/off. */
-	public record Setting(String name, String value, String defaultValue, boolean bool) {
+	/** What kind of value a setting holds, so the screen can give it the right control. */
+	public enum Kind { BOOL, WHOLE, DECIMAL, BLOCKS, ITEMS, BLOCK, ITEM, COLOR, TEXT }
+
+	/** One Baritone setting: its name, value and default (as Baritone writes them), whether it's on/off, and its kind. */
+	public record Setting(String name, String value, String defaultValue, boolean bool, Kind kind) {
+		public Setting(String name, String value, String defaultValue, boolean bool) {
+			this(name, value, defaultValue, bool, bool ? Kind.BOOL : Kind.TEXT);
+		}
+
 		public boolean changed() {
 			return !value.equals(defaultValue);
 		}
+	}
+
+	private static Kind kindOf(Object setting, Object value) {
+		if (value instanceof Boolean) return Kind.BOOL;
+		if (value instanceof Integer || value instanceof Long) return Kind.WHOLE;
+		if (value instanceof Double || value instanceof Float) return Kind.DECIMAL;
+		if (value instanceof java.awt.Color) return Kind.COLOR;
+		if (value instanceof net.minecraft.block.Block) return Kind.BLOCK;
+		if (value instanceof net.minecraft.item.Item) return Kind.ITEM;
+		if (value instanceof List<?>) {
+			try {
+				java.lang.reflect.Type t = (java.lang.reflect.Type) setting.getClass().getMethod("getType").invoke(setting);
+				if (t instanceof java.lang.reflect.ParameterizedType pt && pt.getActualTypeArguments().length == 1) {
+					String el = pt.getActualTypeArguments()[0].getTypeName();
+					if (el.endsWith(".Block")) return Kind.BLOCKS;
+					if (el.endsWith(".Item")) return Kind.ITEMS;
+				}
+			} catch (ReflectiveOperationException | RuntimeException e) {
+				// Read as text.
+			}
+		}
+		return Kind.TEXT;
 	}
 
 	/** Every Baritone setting you can set in game, by name. */
@@ -152,7 +181,7 @@ public final class BaritoneBridge {
 				if (Boolean.TRUE.equals(setting.getMethod("isJavaOnly").invoke(s))) continue;
 				Object value = setting.getField("value").get(s);
 				list.add(new Setting(String.valueOf(setting.getMethod("getName").invoke(s)), String.valueOf(valueOf.invoke(null, s)),
-						String.valueOf(defaultOf.invoke(null, s)), value instanceof Boolean));
+						String.valueOf(defaultOf.invoke(null, s)), value instanceof Boolean, kindOf(s, value)));
 			}
 		} catch (ReflectiveOperationException | LinkageError | RuntimeException e) {
 			NaughtyOrNiceClient.LOGGER.warn("Couldn't list Baritone's settings", e);
@@ -202,6 +231,51 @@ public final class BaritoneBridge {
 	public static void showGoal(boolean show) {
 		if (show) release("renderGoal");
 		else override("renderGoal", false);
+	}
+
+	/** Sets any setting to a value written as Baritone writes it (through its own "set", which also saves it). */
+	public static boolean set(String name, String value) {
+		return run("set " + name + " " + value);
+	}
+
+	/** Sets a list setting (of blocks or items) directly, even to nothing, and saves it to Baritone's file. */
+	public static boolean setList(String name, List<?> values) {
+		if (!present()) return false;
+		try {
+			Object s = setting(name);
+			Field f = s.getClass().getField("value");
+			if (!(f.get(s) instanceof List<?>)) return false;
+			f.set(s, new ArrayList<>(values));
+			saveSettings();
+			return true;
+		} catch (ReflectiveOperationException | LinkageError | RuntimeException e) {
+			NaughtyOrNiceClient.LOGGER.warn("Couldn't set Baritone's {}", name, e);
+			return false;
+		}
+	}
+
+	/** A list setting's blocks or items as they are now (empty if it isn't one). */
+	public static List<Object> list(String name) {
+		if (!present()) return List.of();
+		try {
+			Object s = setting(name);
+			Object v = s.getClass().getField("value").get(s);
+			return v instanceof List<?> l ? new ArrayList<>(l) : List.of();
+		} catch (ReflectiveOperationException | LinkageError | RuntimeException e) {
+			return List.of();
+		}
+	}
+
+	/** How many selections Baritone has (for clearing, filling and building in them), or 0. */
+	public static int selections() {
+		if (!present()) return 0;
+		try {
+			Object manager = Class.forName("baritone.api.IBaritone").getMethod("getSelectionManager").invoke(baritone());
+			Object[] sels = (Object[]) Class.forName("baritone.api.selection.ISelectionManager").getMethod("getSelections").invoke(manager);
+			return sels == null ? 0 : sels.length;
+		} catch (ReflectiveOperationException | LinkageError | RuntimeException e) {
+			return 0;
+		}
 	}
 
 	/** Puts a Baritone setting back to its default. */

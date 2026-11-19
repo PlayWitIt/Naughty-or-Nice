@@ -376,43 +376,93 @@ Who did something is only written when the server says so (the attacker of a hit
 whoever damaged a crystal). When it doesn't (who placed a crystal), the players close by are listed instead.
 
 ## Baritone, with buttons
-The Baritone screen has Naughty or Nice's own look, and sizes itself like the main screen (Settings → Screen size)
-whatever your GUI scale. A header on every page says what Baritone is doing right now (Idle, Moving, Mining,
-Roaming, Paused, Flying), where it's taking you, how far, how long and how fast, with **Pause**, **Resume** and
-**Stop** always there. Go to… shows each place as a card with chips to filter by kind (with how many of each);
-Do has players in view and common ores as one-click chips; Highway roam picks the highway on a compass (north up);
-Settings has real switches and a "Changed" filter. What happened shows in the bar along the bottom.
-If you have [Baritone](https://github.com/cabaletta/baritone) installed (on its own, or inside a client that has it),
-press **B** (or `/nn baritone`). Naughty or Nice drives it through Baritone's own API, so nothing goes through chat.
-- **Go to…**: every place the mod knows, in one list with distance and direction: your saved waypoints (type a name,
-  **Save where I am**), your bases, chunk trails' far ends, places players gave away, where your list's players were
-  last seen, lit end portals (strongholds), and coordinates on your clipboard. Search it, filter it, press **Go**.
+Everything Baritone can do is on a button, with pictures and plain words: you never need to type a command. If you have
+[Baritone](https://github.com/cabaletta/baritone) installed (on its own, or inside a client that has it), press **B**
+(or `/nn baritone`). Naughty or Nice drives it through Baritone's own API, so nothing goes through chat. The screen has
+Naughty or Nice's own look, and sizes itself like the main screen (Settings → Screen size) whatever your GUI scale.
+
+- **The header** is always there: what Baritone is doing right now (Idle, Moving, Mining, Following, Roaming, Paused,
+  Flying, Building...), where it's taking you, how far, how long and how fast, or what mining has got you so far, with
+  **Pause**, **Resume** and **Stop**. When it's idle, what you did lately sits there as chips: click one to do it again.
+- **The search bar** (top right, or press **/**) understands what you mean: type coordinates (`1200 -3400`) and Enter
+  goes there; a place's name goes to it; a block (`diamonds`, `oak log`) mines it or goes to the nearest; a player's
+  name follows them; a mob (`cow`) follows the nearest; a setting's name (`sprint`) switches it; `stop`, `explore`,
+  `farm`, `surface`, `tunnel` do just that. ↑ ↓ choose, Enter does it. Empty, it lists what you did lately.
+- Pointing at anything says what it does in the bar along the bottom. **1** to **7** switch pages, **Ctrl+F** jumps to
+  the page's search, Enter in any box does that box's job.
+
+**Go**: every place the mod knows, in one list with distance and direction: your saved waypoints (type a name, **Save
+where I am**), your bases, chunk trails' far ends, places players gave away, where your list's players were last seen,
+lit end portals (strongholds), and coordinates on your clipboard. Search it, filter it by kind, sort it (Nearest,
+Newest, A–Z), pin favourites to the top with ☆, and press **Go**. **▾** on a place has the rest: go to its overworld or
+nether spot, set it as Baritone's goal without going, copy its coordinates, pin it, remove it. To go to coordinates,
+type x, y (optional) and z and press **Go there**; **Fill from ▾** fills them in from your position, the clipboard, the
+latest trail or place given away, or works out the other dimension's matching spot (÷8, ×8).
+
+**Mine**: every block in the game (modded ones too), by picture and real name, in groups to browse: ★ Favourites,
+Recent, **Near you** (what's actually in the land loaded around you, with how many), Ores, Valuable, Wood, Stone & earth,
+Nether, End, Plants & farming, Building, Everything. Or search ("diam", "oak log", "chest"). Ores come as **families**:
+"Diamond (all ore)" mines stone and deepslate diamond ore together, so you don't miss the deepslate ones (most
+diamonds since 1.18). Click blocks to add them (as many kinds as you like), or **⛏ Mine** on a row to mine just that
+one at once. Then **How many**: All, 16, 32, 64, 128, 256 or any number. It counts what you've really picked up (diamonds
+from diamond ore, raw iron from iron ore) and stops by itself once you have that many. Switches for legit mining (only
+ores it can see), picking up drops, only exposed ores and exploring when none are known, and a Y range. While it mines,
+the card shows the time and every item you've got with its icon.
+
+**Follow**: everyone in view with their face, list mark and distance, and a **Follow** each (everyone online is listed
+too); **Follow every player**, **Follow anything**, and how close to follow and how far behind (− and +). On the
+right, every kind of mob by its spawn egg, grouped (In view, with how many; Hostile, Animals, Water, Other), one click to
+follow the nearest.
+
+**Roam**: highway roam (a distance, or **to coordinates**: type them, paste them, or take the latest trail's end; say if
+they're overworld ones, ÷8 in the nether; pick a highway on the compass, north up, or **Best**, the quickest, through
+spawn if need be). It rides the highway to its nearest point and then goes on to them, or stops there if you'd rather;
+the page says the way before you start. It walks the highway a short step at a time along its middle, so Baritone never
+cuts through the walls, and puts Baritone's own settings back when it ends. Walk or elytra, the highway's height.
+Damaged highways: break through filled-in parts, bridge gaps and missing floor with blocks you carry (or go round the
+side), parkour jumps, and walking on lava only if you have Fire Resistance. It stops and asks when a chunk trail turns
+up near the highway ([Follow it], [Keep going], [Download this area]) or when a stranger shows up. **Follow old chunks**
+is here too (see below).
+
+**Tools**:
+- **Go to a block**: pick any block from the picker (or one click for a chest, crafting table, ender chest, furnace,
+  spawner or end portal) and it walks to the nearest one it knows of.
+- **Get around**: up to the surface (out of caves and mines), come to your camera (freecam), go so many blocks the
+  way you're facing, go up or down to a Y level.
+- **Dig a tunnel** the way you're facing: height, width and length (a 1×2 goes on until you stop it).
+- **Explore** from here or from coordinates, **farm** nearby (with a range), **pick up** dropped items.
+- **An area**: mark two corners where you stand, then dig it all out, fill it, wall it or shell it with a block you
+  pick, replace one block with another, or copy it and paste it somewhere else.
+- **Build a schematic** from your schematics folder (.schem, .schematic, .litematic), with a button to open the folder.
+- **World download** (see below), **Force stop** when Stop doesn't take, and letting it try blocks it gave up on again.
+
+**Settings**: all of Baritone's settings in plain words ("Break blocks in the way", not `allowBreak`), each with what it
+does (Baritone's own description), in groups: Moving, Breaking & placing, Safety, Mining, Follow, farm & explore,
+Elytra, Building, What it shows, Chat & messages, Pathfinding, Other, and **Changed** (green, with their defaults). Each
+has the right control: a switch, − and + with the number (click it to type one), the blocks or items themselves as
+icons with **Edit…** to pick them from the picker (blocks to avoid, what it may place to bridge...), a colour swatch.
+**Presets** set several at once: **Careful** (no parkour or long drops, stays away from mobs), **Fast**, **Legit-looking**
+(only mines what it can see, turns like a player), and **Undo all my changes**. Trip settings: pause when a stranger
+shows up, stop at low health, ride the nether highways when quicker, the trip bar. Everything you set is saved and stays.
+
+**Commands**: every Baritone command, searched and run with Baritone's suggestions to click, for anything that isn't a
+button already.
+
 - **Smart Go** works out how: a place in the other dimension becomes the matching spot in yours (8 to 1); it flies by
   elytra only when that will work (in the nether, over 1,000 blocks, an elytra on and fireworks with you) and walks
   otherwise.
-- **Trip bar**: whenever Baritone takes you somewhere (a place, a highway roam, or anything from the Do page), a bar at
+- **Trip bar**: whenever Baritone takes you somewhere (a place, a highway roam, or a job from the screen), a bar at
   the top shows where to, how far is left (along the highways when the route is by them), about how long that is
   from the speed you're actually making, how fast you're going, and how. It's small, like the coordinates, with where
   to on its first row and the rest wrapped under it, so it never runs off the screen. Off in Settings (Trip bar).
 - Baritone's green goal box marks only where a trip ends: while it walks a highway in steps, the box is hidden, and
   your own setting for it comes back when the trip ends.
-- **Z stops everything**: the trip, a highway roam, and Baritone. (Change it in Controls.)
+- **Z stops everything**: the trip, a highway roam, mining, and Baritone. (Change it in Controls.)
 - **Safety on every trip**: it pauses and asks when someone who isn't a friend or on your Nice list shows up, and stops
   when your health gets low (Settings page).
-- **Do**: type coordinates, follow a player, mine a block, explore, farm, Stop / Pause / Resume.
-- **Highway roam**: a distance along a highway, or **to coordinates**: type them (or paste them, or take the latest
-  trail's end), say if they're overworld ones (÷8 in the nether), and pick a highway or **Best** (the quickest,
-  through spawn if need be). It rides the highway to its nearest point and then goes on to them, or stops there if
-  you'd rather; the page says the way before you start. It walks the highway a short step at a time along its
-  middle, so Baritone never cuts through the walls, and puts Baritone's own settings back when it ends. Walk or
-  elytra, the highway's height. Damaged highways:
-  break through filled-in parts, bridge gaps and missing floor with blocks you carry (or go round the side), parkour
-  jumps, and walking on lava only if you have Fire Resistance. It stops and asks when a chunk trail turns up near the
-  highway ([Follow it], [Keep going], [Download this area]) or when a stranger shows up.
-- **Settings**: every Baritone setting, searched and clicked, saved to Baritone's own file so they stay.
 
 ## Following old chunks
-**Follow old chunks** (Baritone screen → Do, `/nn trail follow`, or **[Follow the old chunks]** on a "chunk trail
+**Follow old chunks** (Baritone screen → Roam, `/nn trail follow`, or **[Follow the old chunks]** on a "chunk trail
 found" note) walks Baritone along the path someone left through new land, one old chunk at a time: each step is
 the old chunk a few chunks ahead that best keeps the way it's going and has more old land past it, so it keeps to
 the trail and turns where it bends. It never turns back along its own way.
@@ -425,7 +475,7 @@ the trail and turns where it bends. It never turns back along its own way.
 - `/nn trail follow`, `/nn trail follow facing`, `/nn trail stop`, `/nn trail resume`.
 
 ## Downloading the world (only when you say yes)
-Press **Download** (Baritone screen, or the button when a highway roam stops at a trail): from then until you stop,
+Press **Download** (Baritone screen → Tools, or the button when a highway roam stops at a trail): from then until you stop,
 every chunk you load in that dimension is saved into a singleplayer world named after the server, the dimension and the
 time. It saves blocks, biomes and the block data the server sends (signs, banners...). Chest contents aren't sent to
 players unless you open the chest, so they can't be saved. Each chunk is saved when it arrives and again when you leave
@@ -565,5 +615,5 @@ is also written to a text file a day in `config/naughtyornice/chatlogs/<server>/
 Requires JDK 21. Run `./gradlew build`; the jar goes to `build/libs/`.
 `./gradlew runPanelTest` tests PlayWit Hub with Base Insurance and Hoard Eye beside it (their jars in run-panel/mods).
 `./gradlew testIntel` checks the chat detectors (coordinates, topics, trash talk) against 146 lines in a few seconds.
-`./gradlew runSelfTest` runs a scripted in-game test (about 240 checks) that spawns a fake griefer and saves screenshots to
+`./gradlew runSelfTest` runs a scripted in-game test (about 270 checks; `NN_SELFTEST_ONLY=baritone` for just the Baritone screen) that spawns a fake griefer and saves screenshots to
 `run/screenshots/`.

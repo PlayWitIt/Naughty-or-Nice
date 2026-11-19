@@ -153,6 +153,26 @@ public final class NNConfig {
 	public boolean roamGoOn = true;
 	public boolean roamBreak = true, roamBridge = true, roamParkour = true, roamLava = false, roamStopTrails = true, roamStopStrangers = true;
 
+	// ---- The Baritone screen's picks: kept until you change them ----
+	/** Blocks (or ore families) starred in the block picker, by key. */
+	public java.util.List<String> baritoneFavourites = new java.util.ArrayList<>();
+	/** Blocks picked lately, newest first. */
+	public java.util.List<String> baritoneRecent = new java.util.ArrayList<>();
+	/** What the Mine page is set to mine, by key. */
+	public java.util.List<String> mineBlocks = new java.util.ArrayList<>();
+	/** How many to get before stopping (0: everything it can reach). */
+	public int mineAmount = 0;
+	/** Places pinned to the top of Go to…, by name. */
+	public java.util.List<String> pinnedPlaces = new java.util.ArrayList<>();
+	/** How Go to… is sorted: "NEAREST", "NEWEST" or "NAME". */
+	public String placesSort = "NEAREST";
+	/** Farm: how far from where you start (0: everywhere it finds crops). */
+	public int farmRange = 0;
+	/** Tunnel: height, width and how far (0: until you stop it). */
+	public int tunnelHeight = 2, tunnelWidth = 1, tunnelDepth = 0;
+	/** Go this way: how far in the way you're facing. */
+	public int thisWayDistance = 1000;
+
 	/** A note when new chunks (or, from new land, old ones) come up ahead as you travel. */
 	public boolean aheadAlerts = true;
 	/** Draw the chunks that have been read in the world, as coloured squares (X toggles it). */
@@ -266,6 +286,11 @@ public final class NNConfig {
 				if (loaded.topicPings == null) loaded.topicPings = new java.util.ArrayList<>();
 				if (loaded.dismissedSuggestions == null) loaded.dismissedSuggestions = new java.util.ArrayList<>();
 				if (loaded.mutedSounds == null) loaded.mutedSounds = new java.util.ArrayList<>();
+				if (loaded.baritoneFavourites == null) loaded.baritoneFavourites = new java.util.ArrayList<>();
+				if (loaded.baritoneRecent == null) loaded.baritoneRecent = new java.util.ArrayList<>();
+				if (loaded.mineBlocks == null) loaded.mineBlocks = new java.util.ArrayList<>();
+				if (loaded.pinnedPlaces == null) loaded.pinnedPlaces = new java.util.ArrayList<>();
+				if (loaded.placesSort == null) loaded.placesSort = "NEAREST";
 				if (loaded.circles != null) loaded.circles.removeIf(c -> c == null || c.id == null || c.id.isBlank() || c.name == null || c.name.isBlank());
 				if (loaded.circles == null || loaded.circles.isEmpty()) loaded.circles = Friends.defaultCircles();
 				if (loaded.skippedVersion == null) loaded.skippedVersion = "";

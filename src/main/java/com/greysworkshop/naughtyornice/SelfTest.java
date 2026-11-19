@@ -57,6 +57,8 @@ public final class SelfTest {
 			client.options.pauseOnLostFocus = false;
 			// No "move with WASD" pop-up over the screenshots.
 			client.getTutorialManager().setStep(net.minecraft.client.tutorial.TutorialStep.NONE);
+			// NN_SELFTEST_ONLY=baritone: just the Baritone screen's buttons, in the test world (quick, for working on it).
+			baritoneOnly = "baritone".equals(System.getenv("NN_SELFTEST_ONLY"));
 			// NN_SELFTEST_ONLY=accounts: just the account screen, from the menus (quick, for working on its looks).
 			if ("accounts".equals(System.getenv("NN_SELFTEST_ONLY"))) {
 				log("Only the account test");
@@ -138,6 +140,10 @@ public final class SelfTest {
 				mod.watcher.record(rick, Profile.Kind.HIT_PLAYER, "Helpful_Hana");
 				mod.watcher.record(rick, Profile.Kind.HIT_PLAYER, "Helpful_Hana");
 				ledger.getOrCreate(id("Steve_Builder"), "Steve_Builder").secondsNear = 300;
+				if (baritoneOnly) {
+					tick = 79;
+					return;
+				}
 				Profile toxic = ledger.getOrCreate(id("xX_Toxic_Xx"), "xX_Toxic_Xx");
 				for (int i = 0; i < 3; i++) mod.watcher.record(toxic, Profile.Kind.HIT_PLAYER, "Steve_Builder");
 				mod.watcher.record(toxic, Profile.Kind.KILLED_PLAYER, "Steve_Builder");
@@ -182,6 +188,13 @@ public final class SelfTest {
 				check("account types told apart", PlayerStats.accountType(UUID.fromString("00000000-0000-0000-0009-01f6d8e1a2b3")).startsWith("Bedrock")
 						&& PlayerStats.accountType(UUID.randomUUID()).startsWith("Java") && PlayerStats.accountType(id("Helpful_Hana")).startsWith("Offline"));
 				check("usual login time needs logins close together", usualTimes());
+			}
+			case 81 -> {
+				if (baritoneOnly) {
+					log("Only the Baritone screen");
+					BaritoneBridge.run("stop");
+					baritoneStep = 1;
+				}
 			}
 			case 80 -> {
 				log("Spawning the fake griefer in front of the player");
@@ -1787,11 +1800,11 @@ public final class SelfTest {
 				((BaritoneScreen) client.currentScreen).testPage(0);
 			}
 			case 1348 -> screenshot(client, "62_baritone_go");
-			case 1349 -> ((BaritoneScreen) client.currentScreen).testPage(2);
+			case 1349 -> ((BaritoneScreen) client.currentScreen).testPage(3);
 			case 1351 -> {
 				screenshot(client, "63_baritone_highway");
 				NNConfig.INSTANCE.roamToCoords = true;
-				((BaritoneScreen) client.currentScreen).testPage(2);
+				((BaritoneScreen) client.currentScreen).testPage(3);
 			}
 			case 1352 -> {
 				screenshot(client, "63b_baritone_highway_coords");
@@ -1799,8 +1812,8 @@ public final class SelfTest {
 				((BaritoneScreen) client.currentScreen).testPage(1);
 			}
 			case 1353 -> {
-				screenshot(client, "63c_baritone_do");
-				((BaritoneScreen) client.currentScreen).testPage(3);
+				screenshot(client, "63c_baritone_mine");
+				((BaritoneScreen) client.currentScreen).testPage(5);
 			}
 			case 1354 -> {
 				// A trip from the screen, no commands typed: fill in x y z and press Go.
@@ -1810,10 +1823,10 @@ public final class SelfTest {
 				// The griefer is still standing nearby; that pause is right, but here we want to see it walk.
 				NNConfig.INSTANCE.tripStopForStrangers = false;
 				BaritoneScreen screen = (BaritoneScreen) client.currentScreen;
-				screen.testPage(1);
+				screen.testPage(0);
 				boolean typed = screen.testType("x", String.valueOf(to.getX())) && screen.testType("y (optional)", String.valueOf(to.getY()))
 						&& screen.testType("z", String.valueOf(to.getZ()));
-				check("a trip is handed to Baritone from its screen", typed && screen.testPress("Go") && client.currentScreen == null);
+				check("a trip is handed to Baritone from its screen", typed && screen.testPress("Go there") && client.currentScreen == null);
 			}
 			case 1356 -> {
 				check("...without anything reaching the server's chat", serverHeard.isEmpty());
@@ -1919,6 +1932,7 @@ public final class SelfTest {
 	private static BlockPos tripFrom;
 	/** Where the Baritone button walk-through is (0 when it isn't running). */
 	private static int baritoneStep;
+	private static boolean baritoneOnly;
 	/** What Baritone had said before the every-setting round trip. */
 	private static int settingsMark;
 	/** Where the nether highway walk began, and how far it ever got from the highway's middle. */
@@ -2444,6 +2458,8 @@ public final class SelfTest {
 	private static void baritoneButtons(MinecraftClient client) {
 		int s = baritoneStep++;
 		BaritoneScreen b = client.currentScreen instanceof BaritoneScreen screen ? screen : null;
+		// No "recipe unlocked" pop-ups over the screenshots.
+		client.getToastManager().clear();
 		Ledger ledger = NaughtyOrNiceClient.INSTANCE.ledger;
 		var p = client.player;
 		switch (s) {
@@ -2454,14 +2470,52 @@ public final class SelfTest {
 				client.setScreen(new BaritoneScreen());
 			}
 			case 4 -> {
-				boolean ok = b.testPress("Do") && b.testPageShown() == 1;
-				ok &= b.testPress("Highway roam") && b.testPageShown() == 2;
-				ok &= b.testPress("Settings") && b.testPageShown() == 3;
-				ok &= b.testPress("Go to…") && b.testPageShown() == 0;
-				check("its four pages open from their buttons", ok);
+				boolean ok = b.testPress("Mine") && b.testPageShown() == 1;
+				ok &= b.testPress("Follow") && b.testPageShown() == 2;
+				ok &= b.testPress("Roam") && b.testPageShown() == 3;
+				ok &= b.testPress("Tools") && b.testPageShown() == 4;
+				ok &= b.testPress("Settings") && b.testPageShown() == 5;
+				ok &= b.testPress("Commands") && b.testPageShown() == 6;
+				ok &= b.testPress("Go") && b.testPageShown() == 0;
+				check("its seven pages open from their buttons", ok);
+				// Keys: 2 for Mine, / for the search bar.
+				b.keyPressed(new net.minecraft.client.input.KeyInput(org.lwjgl.glfw.GLFW.GLFW_KEY_2, 0, 0));
+				boolean keyed = b.testPageShown() == 1;
+				b.keyPressed(new net.minecraft.client.input.KeyInput(org.lwjgl.glfw.GLFW.GLFW_KEY_1, 0, 0));
+				check("...and from the number keys", keyed && b.testPageShown() == 0);
+				// The block catalogue: real names, families, groups.
+				List<BlockCatalog.Entry> dia = BlockCatalog.search("diamond", BlockCatalog.Group.ALL, java.util.Set.of());
+				log("Searching blocks for diamond: " + dia.stream().limit(4).map(BlockCatalog.Entry::name).toList());
+				check("searching blocks for \"diamond\" puts the ore family first, with the deepslate ore in it (" + (dia.isEmpty() ? "none" : dia.get(0).ids()) + ")",
+						!dia.isEmpty() && dia.get(0).family() && dia.get(0).ids().containsAll(List.of("diamond_ore", "deepslate_diamond_ore")));
+				check("...and every block has its real name and an icon", BlockCatalog.all().size() > 800
+						&& BlockCatalog.all().stream().allMatch(e -> !e.name().isBlank() && !e.icon().isEmpty()));
+				check("the groups sort blocks (Ores has iron, Wood has oak logs, Valuable has spawners)",
+						BlockCatalog.in(BlockCatalog.get("iron_ore"), BlockCatalog.Group.ORES) && BlockCatalog.in(BlockCatalog.get("oak_log"), BlockCatalog.Group.WOOD)
+								&& BlockCatalog.in(BlockCatalog.get("spawner"), BlockCatalog.Group.VALUABLE) && !BlockCatalog.in(BlockCatalog.get("oak_log"), BlockCatalog.Group.ORES));
+				check("bedrock is shown as unbreakable", BlockCatalog.cantMine(BlockCatalog.get("bedrock")) != null && BlockCatalog.cantMine(BlockCatalog.get("dirt")) == null);
+				check("what diamond ore gives is counted as diamonds", BlockCatalog.drops(BlockCatalog.get("diamond_ore").blocks()).contains(net.minecraft.item.Items.DIAMOND)
+						&& BlockCatalog.drops(BlockCatalog.get("iron_ore").blocks()).contains(net.minecraft.item.Items.RAW_IRON));
+				check("every mob to follow has a name, the cow among them", BlockCatalog.mobs().stream().anyMatch(m -> m.id().equals("cow") && !m.icon().isEmpty()));
+				// The search bar: coordinates, blocks, settings, pages.
+				List<String> forCoords = b.testSmart("120 -45");
+				List<String> forDiamonds = b.testSmart("diamonds");
+				List<String> forSprint = b.testSmart("sprint");
+				List<String> forPage = b.testSmart("sett");
+				log("Search bar: " + forCoords + " / " + forDiamonds + " / " + forSprint + " / " + forPage);
+				check("the search bar reads coordinates (" + forCoords.get(0) + ")", forCoords.get(0).equals("Go to 120, -45"));
+				check("...blocks to mine (" + forDiamonds.get(0) + ")", forDiamonds.stream().anyMatch(o -> o.startsWith("Mine Diamond")));
+				check("...settings to switch", forSprint.stream().anyMatch(o -> o.contains("Sprint") && o.startsWith("Turn ")));
+				check("...and pages", forPage.contains("Open Settings"));
+				b.testSmart("");
+				b.setFocused(null);
 			}
+			case 5 -> b.testSmart("diam");
 			// ---- Go to…: save a spot, find it, go there, remove it ----
 			case 6 -> {
+				screenshot(client, "64a_baritone_search_bar");
+				b.testSmart("");
+				b.setFocused(null);
 				b.testType("Name this spot, e.g. Home", "NN test spot");
 				b.testPress("Save where I am");
 				check("Save where I am saves a spot (" + b.testStatus() + ")",
@@ -2474,8 +2528,24 @@ public final class SelfTest {
 				b.testType("Search places", "NN test spot");
 				tp(client, "0.5 -60 30.5");
 			}
+			case 8 -> {
+				b.testType("Search places", "");
+				b.testRow("NN test spot ▾", false);
+			}
+			case 10 -> {
+				screenshot(client, "64b_baritone_go_menu");
+				b.keyPressed(new net.minecraft.client.input.KeyInput(org.lwjgl.glfw.GLFW.GLFW_KEY_ESCAPE, 0, 0));
+				b.testType("Search places", "NN test spot");
+			}
 			case 16 -> {
-				check("each place has a Go for its overworld and one for its nether coordinates", b.testHasRow("NN test spot") && b.testHasRow("NN test spot (nether)"));
+				check("each place has one Go, and ▾ for either dimension's spot and more", b.testHasRow("NN test spot") && b.testHasRow("NN test spot ▾")
+						&& b.testHasRow("NN test spot (nether)"));
+				b.testRow("NN test spot ▾", false);
+				check("...▾ opens its menu (go to either dimension, goal, copy, pin, remove)", b.testOverlay() && b.testHasRow("menu:Copy coordinates")
+						&& b.testHasRow("menu:Remove this spot"));
+				b.testRow("menu:Pin to the top", false);
+				check("...and Pin pins it", NNConfig.INSTANCE.pinnedPlaces.contains("NN test spot") && !b.testOverlay());
+				NNConfig.INSTANCE.pinnedPlaces.remove("NN test spot");
 				check("its row's Go (OW) sets off", b.testRow("NN test spot", false) && client.currentScreen == null);
 			}
 			case 19 -> {
@@ -2489,59 +2559,98 @@ public final class SelfTest {
 				client.setScreen(new BaritoneScreen());
 			}
 			case 43 -> {
-				b.testPress("Go to…");
+				b.testPress("Go");
 				b.testType("Search places", "NN test spot");
 			}
 			case 46 -> check("its × removes the spot", b.testRow("NN test spot", true)
 					&& Destinations.waypoints(ledger).stream().noneMatch(w -> w.name.equals("NN test spot")));
 			// ---- Do: filling in where to go ----
 			case 48 -> {
-				b.testPress("Do");
-				b.testPress("Use my position");
+				b.testPress("Go");
+				fillFrom(b, "My position");
 				check("Use my position fills in where you are", String.valueOf(p.getBlockX()).equals(b.testField("x"))
 						&& String.valueOf(p.getBlockY()).equals(b.testField("y (optional)")) && String.valueOf(p.getBlockZ()).equals(b.testField("z")));
 				client.keyboard.setClipboard("meet me at 120 -60 -45");
-				b.testPress("Paste coordinates");
+				fillFrom(b, "Paste coordinates");
 				check("Paste coordinates reads the clipboard", "120".equals(b.testField("x")) && "-60".equals(b.testField("y (optional)"))
 						&& "-45".equals(b.testField("z")));
-				b.testPress("Overworld → Nether");
+				fillFrom(b, "Overworld → Nether (÷8)");
 				check("the nether calculator divides by 8 (" + b.testStatus() + ")", "15".equals(b.testField("x")) && "-6".equals(b.testField("z"))
 						&& "-60".equals(b.testField("y (optional)")));
-				b.testPress("Nether → Overworld");
+				fillFrom(b, "Nether → Overworld (×8)");
 				check("...and multiplies back", "120".equals(b.testField("x")) && "-48".equals(b.testField("z")));
-				b.testPress("Latest place given away");
+				fillFrom(b, "Latest place given away");
 				String place = b.testStatus();
 				check("Latest place given away (" + place + ")", place.startsWith("Filled in") || place.startsWith("Nobody has"));
-				b.testPress("Latest trail's far end");
+				fillFrom(b, "Latest trail's far end");
 				String trail = b.testStatus();
 				check("Latest trail's far end (" + trail + ")", trail.startsWith("Filled in") || trail.startsWith("No chunk trails"));
 				b.testType("x", "abc");
 				String goal = BaritoneBridge.goal();
-				b.testPress("Go");
+				b.testPress("Go there");
 				check("Go with a bad number says so and goes nowhere", b.testStatus().startsWith("Type whole numbers") && client.currentScreen == b
 						&& BaritoneBridge.goal().equals(goal));
 			}
 			// ---- Do: follow, mine, explore, farm, pause, resume, stop ----
 			case 50 -> {
+				b.testPress("Follow");
 				b.testType("player name", GRIEFER);
 				b.testPress("Follow them");
 			}
+			case 54 -> screenshot(client, "64c_baritone_follow");
 			case 56 -> {
 				check("Follow them follows (" + b.testStatus() + ")", BaritoneBridge.processActive("getFollowProcess"));
 				b.testPress("Stop");
 			}
 			case 59 -> {
 				check("Stop stops following", !BaritoneBridge.processActive("getFollowProcess"));
-				b.testType("block, e.g. diamond_ore", "Dirt");
-				b.testPress("Mine it");
+				check("players in view are listed with a Follow each", b.testHasRow("follow:" + GRIEFER));
+				// ---- Mine: picked from the list, by name, with an amount ----
+				b.testPress("Mine");
+				NNConfig.INSTANCE.mineBlocks.clear();
+				b.testPress("Clear");
+				b.testType("Search every block: diamond, oak log, chest…", "dirt");
 			}
+			case 62 -> {
+				boolean added = b.testRow("pick:dirt", false);
+				check("a block is picked from the list by its name (" + NNConfig.INSTANCE.mineBlocks + ")", added && NNConfig.INSTANCE.mineBlocks.equals(List.of("dirt")));
+				b.testType("Search every block: diamond, oak log, chest…", "");
+				b.testType("other", "3");
+				screenshot(client, "63f_baritone_mine_picked");
+				minedBefore = countItem(client, net.minecraft.item.Items.DIRT);
+				b.testPress("Start mining");
+				baritonePressed = System.currentTimeMillis();
+			}
+			case 64 -> screenshot(client, "64d_baritone_mining");
 			case 65 -> {
-				check("Mine it mines (" + b.testStatus() + ")", BaritoneBridge.processActive("getMineProcess"));
+				check("Start mining mines (" + b.testStatus() + ")", BaritoneBridge.processActive("getMineProcess") && MineJob.active());
+				check("...and the header says what and how many", NNConfig.INSTANCE.mineAmount == 3 && MineJob.amount() == 3);
+			}
+			case 66 -> {
+				// Until it has 3 dirt (or 40 s).
+				if (MineJob.active() && System.currentTimeMillis() - baritonePressed < 40_000) {
+					baritoneStep--;
+					return;
+				}
+				int got = countItem(client, net.minecraft.item.Items.DIRT) - minedBefore;
+				log("Mining 3 dirt: " + MineJob.endedWith() + ", got " + got);
+				check("...and it stops by itself once you have the amount (" + MineJob.endedWith() + ")", !MineJob.active() && got >= 3
+						&& MineJob.endedWith() != null && MineJob.endedWith().startsWith("Got 3"));
+				check("...with Baritone stopped too", !BaritoneBridge.processActive("getMineProcess"));
+				NNConfig.INSTANCE.mineAmount = 0;
+				// ⛏ Mine on a row mines just that one, at once.
+				b.testType("Search every block: diamond, oak log, chest…", "grass block");
+			}
+			case 67 -> {
+				boolean acted = b.testRow("act:grass_block", false) || b.testRow("pick:grass_block", false) && b.testPress("Start mining");
+				check("⛏ Mine on a row mines just that block (" + b.testStatus() + ")", acted && NNConfig.INSTANCE.mineBlocks.equals(List.of("grass_block")));
 				b.testPress("Stop");
 			}
 			case 68 -> {
-				check("Stop stops mining", !BaritoneBridge.processActive("getMineProcess"));
-				b.testPress("Explore");
+				check("Stop stops mining", !BaritoneBridge.processActive("getMineProcess") && !MineJob.active());
+				b.testType("Search every block: diamond, oak log, chest…", "");
+				b.testPress("Tools");
+				b.testPress("Explore from here");
 			}
 			case 74 -> {
 				check("Explore explores (" + b.testStatus() + ")", BaritoneBridge.processActive("getExploreProcess"));
@@ -2632,16 +2741,29 @@ public final class SelfTest {
 			}
 			case 143 -> {
 				check("Stop stops farming", !BaritoneBridge.processActive("getFarmProcess"));
-				b.testType("x", "600");
-				b.testType("y (optional)", "");
-				b.testType("z", "600");
-				b.testPress("Fly there by elytra");
-				check("the elytra button says it only works in the nether (" + b.testStatus() + ")",
-						b.testStatus().startsWith("Elytra flying only works in the nether") && !BaritoneBridge.goal().contains("x=600"));
+				// ---- Tools: the block picker, and marking an area ----
+				b.testPress("Chest");
+				b.testPress("Stop");
+				BlockCatalog.Entry picked = BlockCatalog.get(BlockCatalog.get("chest") == null ? "dirt" : "chest");
+				check("Go to a block's button opens the block picker", b.testPress(picked.name() + "  ▾") && b.testOverlay());
+				b.testPickerType("crafting tab");
+			}
+			case 144 -> {
+				boolean chose = b.testRow("pick:crafting_table", false);
+				check("the block picker opens, finds by name, and one click picks", chose && !b.testOverlay() && b.testHas(BlockCatalog.get("crafting_table").name()));
+				screenshot(client, "63g_baritone_tools");
+				int before = BaritoneBridge.selections();
+				b.testPress("Corner 1 here");
+				b.testPress("Corner 2 here");
+				int marked = BaritoneBridge.selections();
+				b.testPress("Clear marks");
+				check("an area is marked with two corners and cleared (" + before + " → " + marked + " → " + BaritoneBridge.selections() + ")",
+						marked == before + 1 && BaritoneBridge.selections() == 0);
 			}
 			// ---- Highway roam ----
+			case 145 -> screenshot(client, "64f_baritone_tools");
 			case 146 -> {
-				b.testPress("Highway roam");
+				b.testPress("Roam");
 				NNConfig c0 = NNConfig.INSTANCE;
 				b.testPress("A distance along a highway");
 				check("a highway is picked with its button", b.testPress("+Z") && HighwayRoam.axis().name().equals("+Z"));
@@ -2714,7 +2836,10 @@ public final class SelfTest {
 				boolean healthChanged = NNConfig.INSTANCE.tripStopHealth != health;
 				for (int i = 0; i < 8 && NNConfig.INSTANCE.tripStopHealth != health; i++) b.testPress("Stop at");
 				check("the low-health button goes round its choices", healthChanged && NNConfig.INSTANCE.tripStopHealth == health);
-				b.testPress("On trips: pause when a stranger");
+			}
+			case 158 -> {
+				screenshot(client, "64e_baritone_settings");
+				b.testRow("trip:strangers", false);
 				check("the strangers switch switches", NNConfig.INSTANCE.tripStopForStrangers);
 				b.testType("Search Baritone's settings (all of them)", "allowSprint");
 			}
@@ -2763,8 +2888,22 @@ public final class SelfTest {
 				b.testPress("Reset");
 				BaritoneBridge.Setting after = BaritoneBridge.settings().stream().filter(st -> st.name().equals("followRadius")).findFirst().orElse(null);
 				check("...Set gives it the typed value (" + set + "), Reset puts it back", "7".equals(set) && after != null && !after.changed());
+				b.testRow("plus:followRadius", false);
+				String plus = BaritoneBridge.settings().stream().filter(st -> st.name().equals("followRadius")).findFirst().map(BaritoneBridge.Setting::value).orElse("?");
+				check("...and + steps a number up (" + plus + ")", "4".equals(plus));
+				check("settings have plain names and Baritone's own words for what they do", BaritoneSettingsGuide.plainName("allowBreak").equals("Break blocks in the way")
+						&& BaritoneSettingsGuide.plainName("minYLevelWhileMining").equals("Lowest Y to mine at")
+						&& BaritoneSettingsGuide.description("allowBreak").startsWith("Allow Baritone to break blocks")
+						&& BaritoneSettingsGuide.category("allowParkour") == BaritoneSettingsGuide.Category.MOVEMENT
+						&& BaritoneSettingsGuide.category("legitMine") == BaritoneSettingsGuide.Category.MINING);
+				check("block-list settings are known as such (blocksToAvoid)", BaritoneBridge.settings().stream()
+						.anyMatch(st -> st.name().equals("blocksToAvoid") && st.kind() == BaritoneBridge.Kind.BLOCKS));
+				b.testPress("Careful");
+				check("the Careful preset turns parkour off", Boolean.FALSE.equals(BaritoneBridge.bool("allowParkour")));
+				b.testPress("Undo all my changes");
+				check("...and Undo all puts every setting back", BaritoneBridge.settings().stream().noneMatch(BaritoneBridge.Setting::changed));
 				// ---- Every command ----
-				b.testPress("Every command");
+				b.testPress("Commands");
 				List<String> names = BaritoneBridge.commands().stream().flatMap(c -> c.names().stream()).toList();
 				check("Every command lists all of Baritone's (" + BaritoneBridge.commands().size() + ")", BaritoneBridge.commands().size() > 30
 						&& names.containsAll(List.of("goto", "mine", "tunnel", "sel", "come", "follow", "farm", "explore", "set", "stop")));
@@ -3011,9 +3150,22 @@ public final class SelfTest {
 				client.setScreen(null);
 				NNConfig.save();
 				baritoneStep = 0;
+				if (baritoneOnly) finish(client);
 			}
 			default -> {}
 		}
+	}
+
+	/** Picks from the Go page's "Fill from ▾" menu, as a click would. */
+	private static boolean fillFrom(BaritoneScreen b, String what) {
+		return b.testPress("Fill from ▾") && b.testRow("menu:" + what, false);
+	}
+
+	private static int countItem(MinecraftClient client, net.minecraft.item.Item item) {
+		int n = 0;
+		var inv = client.player.getInventory();
+		for (int i = 0; i < inv.size(); i++) if (inv.getStack(i).isOf(item)) n += inv.getStack(i).getCount();
+		return n;
 	}
 
 	/** Marks a chunk old for a test, forgetting it was one you generated (those always read as new). */

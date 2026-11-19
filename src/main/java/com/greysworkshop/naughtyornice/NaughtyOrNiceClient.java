@@ -439,6 +439,7 @@ public class NaughtyOrNiceClient implements ClientModInitializer {
 			HighwayRoam.tick(client);
 			SmartTravel.tick(client);
 			Safe.run("following old chunks", () -> TrailFollow.tick(client));
+			Safe.run("mining", () -> MineJob.tick(client));
 			if (NNConfig.on()) Safe.run("looking ahead for new chunks", () -> ChunkAhead.tick(client, ledger.chunkTrails));
 		}
 		// Off (the Mods panel's first switch): the keys above still work, nothing else runs.
