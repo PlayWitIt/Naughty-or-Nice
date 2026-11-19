@@ -1,11 +1,15 @@
-# Pushing a version tag (v1.22.0) builds that commit, makes the GitHub release with its jar (the notes come from
-# .github/release-notes.md), and publishes the same jar to Modrinth. A release made here by the workflow's own token
-# doesn't set off modrinth.yml, so Modrinth is done here too.
+# A new version in gradle.properties, pushed to main or a working branch, is released: this builds that commit, makes
+# the GitHub release v<version> with its jar (the notes come from .github/release-notes.md; the tag is made with it),
+# and publishes the same jar to Modrinth. A version that's already released is left alone, so later pushes don't
+# repeat it. (A release made by the workflow's own token doesn't set off modrinth.yml, so Modrinth is done here.)
 name: Release
 
 on:
   push:
+    branches: [main, 'ccr-*']
+    paths: [gradle.properties]
     tags: ['v*']
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -15,31 +19,47 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Which version, and is it out already?
+        id: version
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          v=$(grep '^mod_version=' gradle.properties | cut -d= -f2 | tr -d '[:space:]')
+          echo "VERSION=$v" >> "$GITHUB_ENV"
+          echo "NAME=Naughty or Nice $v" >> "$GITHUB_ENV"
+          if gh release view "v$v" -R "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
+            echo "v$v is already released"
+            echo "new=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "new=true" >> "$GITHUB_OUTPUT"
+          fi
       - uses: actions/setup-java@v4
+        if: steps.version.outputs.new == 'true'
         with:
           distribution: temurin
           java-version: 21
       - name: Build
-        run: chmod +x gradlew && ./gradlew build
-      - name: The release's name and jar
-        run: |
-          v="${GITHUB_REF_NAME#v}"
-          echo "NAME=Naughty or Nice $v" >> "$GITHUB_ENV"
-          echo "VERSION=$v" >> "$GITHUB_ENV"
-          ls build/libs
+        if: steps.version.outputs.new == 'true'
+        run: chmod +x gradlew && ./gradlew build && ls build/libs
       - name: GitHub release
+        if: steps.version.outputs.new == 'true'
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: v${{ env.VERSION }}
+          target_commitish: ${{ github.sha }}
           name: ${{ env.NAME }}
           body_path: .github/release-notes.md
           files: build/libs/naughty-or-nice-${{ env.VERSION }}+1.21.11.jar
+          fail_on_unmatched_files: true
       - name: Modrinth
+        if: steps.version.outputs.new == 'true'
         uses: Kir-Antipov/mc-publish@v3.3
         with:
           modrinth-id: pp4L2nZU
           modrinth-token: ${{ secrets.MODRINTH_TOKEN }}
-          files: build/libs/!(*-@(dev|sources|javadoc)).jar
+          files: build/libs/naughty-or-nice-${{ env.VERSION }}+1.21.11.jar
           name: ${{ env.NAME }}
+          version: ${{ env.VERSION }}+1.21.11
           changelog-file: .github/release-notes.md
           loaders: fabric
           game-versions: 1.21.11
