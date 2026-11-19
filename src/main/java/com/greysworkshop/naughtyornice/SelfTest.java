@@ -2509,6 +2509,15 @@ public final class SelfTest {
 				check("...and pages", forPage.contains("Open Settings"));
 				b.testSmart("");
 				b.setFocused(null);
+				// Light and dark, from here too (and back).
+				boolean was = NNConfig.INSTANCE.darkMode;
+				b.testRow("theme", false);
+				boolean flipped = NNConfig.INSTANCE.darkMode != was;
+				b.testRow("theme", false);
+				check("the ☀/☾ button switches the theme, for the main screen too", flipped && NNConfig.INSTANCE.darkMode == was);
+				check("which way a place is, from where you're facing, in words", BaritoneScreen.testRelative(0).equals("ahead")
+						&& BaritoneScreen.testRelative(Math.PI / 2).equals("to your right") && BaritoneScreen.testRelative(-Math.PI / 4).equals("ahead-left")
+						&& BaritoneScreen.testRelative(Math.PI).equals("behind"));
 			}
 			case 5 -> b.testSmart("diam");
 			// ---- Go to…: save a spot, find it, go there, remove it ----
@@ -2562,7 +2571,12 @@ public final class SelfTest {
 				b.testPress("Go");
 				b.testType("Search places", "NN test spot");
 			}
-			case 46 -> check("its × removes the spot", b.testRow("NN test spot", true)
+			case 45 -> {
+				b.testRow("NN test spot", true);
+				check("× asks first (Sure?) and keeps the spot till you click again", Destinations.waypoints(ledger).stream().anyMatch(w -> w.name.equals("NN test spot"))
+						&& b.testStatus().startsWith("Click again"));
+			}
+			case 46 -> check("...and the second click removes it", b.testRow("NN test spot", true)
 					&& Destinations.waypoints(ledger).stream().noneMatch(w -> w.name.equals("NN test spot")));
 			// ---- Do: filling in where to go ----
 			case 48 -> {
@@ -2609,6 +2623,17 @@ public final class SelfTest {
 				b.testPress("Mine");
 				NNConfig.INSTANCE.mineBlocks.clear();
 				b.testPress("Clear");
+				b.testType("Search every block: diamond, oak log, chest…", "dirt");
+			}
+			case 61 -> {
+				// ↑ ↓ and Enter in the list: down one and back, then Enter picks the top one (Dirt).
+				b.testFocus("Search every block: diamond, oak log, chest…");
+				b.keyPressed(new net.minecraft.client.input.KeyInput(org.lwjgl.glfw.GLFW.GLFW_KEY_DOWN, 0, 0));
+				b.keyPressed(new net.minecraft.client.input.KeyInput(org.lwjgl.glfw.GLFW.GLFW_KEY_UP, 0, 0));
+				b.keyPressed(new net.minecraft.client.input.KeyInput(org.lwjgl.glfw.GLFW.GLFW_KEY_ENTER, 0, 0));
+				check("arrow keys and Enter pick from the list (" + NNConfig.INSTANCE.mineBlocks + ")", NNConfig.INSTANCE.mineBlocks.equals(List.of("dirt")));
+				NNConfig.INSTANCE.mineBlocks.clear();
+				b.testPage(1);
 				b.testType("Search every block: diamond, oak log, chest…", "dirt");
 			}
 			case 62 -> {
@@ -2883,9 +2908,9 @@ public final class SelfTest {
 			}
 			case 163 -> {
 				b.testType("followRadius", "7");
-				b.testPress("Set");
+				b.testRow("set:followRadius", false);
 				String set = BaritoneBridge.settings().stream().filter(st -> st.name().equals("followRadius")).findFirst().map(BaritoneBridge.Setting::value).orElse("?");
-				b.testPress("Reset");
+				b.testRow("reset:followRadius", false);
 				BaritoneBridge.Setting after = BaritoneBridge.settings().stream().filter(st -> st.name().equals("followRadius")).findFirst().orElse(null);
 				check("...Set gives it the typed value (" + set + "), Reset puts it back", "7".equals(set) && after != null && !after.changed());
 				b.testRow("plus:followRadius", false);
@@ -2901,6 +2926,9 @@ public final class SelfTest {
 				b.testPress("Careful");
 				check("the Careful preset turns parkour off", Boolean.FALSE.equals(BaritoneBridge.bool("allowParkour")));
 				b.testPress("Undo all my changes");
+				boolean asked = BaritoneBridge.settings().stream().anyMatch(BaritoneBridge.Setting::changed) && b.testHas("Sure?");
+				b.testPress("Sure?");
+				check("Undo all asks first", asked);
 				check("...and Undo all puts every setting back", BaritoneBridge.settings().stream().noneMatch(BaritoneBridge.Setting::changed));
 				// ---- Every command ----
 				b.testPress("Commands");

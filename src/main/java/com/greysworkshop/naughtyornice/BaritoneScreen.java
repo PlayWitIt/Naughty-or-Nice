@@ -64,16 +64,66 @@ public class BaritoneScreen extends Screen {
 		}
 	}
 
-	// Naughty or Nice's dark theme.
-	private static final int NAV = 0xFF0A0D11, SUBNAV = 0xFF161D26, PAGE_BG = 0xFF0F1318, CARD = 0xFF1A2129, FIELD = 0xFF0F141A, BORDER = 0xFF2D3742,
-			TEXT = 0xFFE7E9EC, MUTED = 0xFF9AA5B1, DIM = 0xFF6B7682, LINK = 0xFF5CC8E0, SOFT = 0xFF25303B, SOFT_HOVER = 0xFF2E3A46,
-			HOVER_BG = 0xFF222B35, HOVER_BORDER = 0xFF4A5663, INPUT_BORDER = 0xFF4A5663, YELLOW = 0xFFFFD814, YELLOW_EDGE = 0xFFFCD200,
-			BUTTON_TEXT = 0xFF0F1111, GOOD = 0xFF4CD39B, BAD = 0xFFFF7A66, AMBER = 0xFFFFC14D, BLUE = 0xFF5BA8FF, PURPLE = 0xFFB388FF,
-			PICKED_BG = 0xFF243E50, GOLD = 0xFFFFC83D;
+	// Naughty or Nice's look, light or dark as the main screen is set (☀ / ☾ in either).
+	private static int NAV, SUBNAV, PAGE_BG, CARD, FIELD, BORDER, TEXT, MUTED, DIM, LINK, SOFT, SOFT_HOVER, HOVER_BG, HOVER_BORDER, INPUT_BORDER, GOOD, BAD,
+			AMBER, BLUE, PURPLE, PICKED_BG, PICKED_HOVER, GOLD, MENU_BG, SHADOW, DANGER_BG, DANGER_HOVER, DANGER_EDGE;
+	/** The header, tabs and bottom bar stay dark in both themes, as on the main screen. */
+	private static final int NAV_TEXT = 0xFFE7E9EC, NAV_MUTED = 0xFFA7B1BC, NAV_DIM = 0xFF7D8894, NAV_SOFT = 0xFF2A3644, NAV_SOFT_HOVER = 0xFF364557,
+			NAV_BORDER = 0xFF3A4654, YELLOW = 0xFFFFD814, YELLOW_HOVER = 0xFFF7CA00, YELLOW_EDGE = 0xFFFCD200, BUTTON_TEXT = 0xFF0F1111, ORANGE = 0xFFFFA41C;
+	private static boolean dark;
+
+	static {
+		applyTheme(NNConfig.INSTANCE.darkMode);
+	}
+
+	private static void applyTheme(boolean isDark) {
+		dark = isDark;
+		NAV = isDark ? 0xFF0A0D11 : 0xFF131921;
+		SUBNAV = isDark ? 0xFF161D26 : 0xFF232F3E;
+		PAGE_BG = isDark ? 0xFF0F1318 : 0xFFEAEDED;
+		CARD = isDark ? 0xFF1A2129 : 0xFFFFFFFF;
+		FIELD = isDark ? 0xFF0F141A : 0xFFFFFFFF;
+		BORDER = isDark ? 0xFF2D3742 : 0xFFD5D9D9;
+		TEXT = isDark ? 0xFFE7E9EC : 0xFF0F1111;
+		MUTED = isDark ? 0xFF9AA5B1 : 0xFF565959;
+		DIM = isDark ? 0xFF7D8894 : 0xFF767B7B;
+		LINK = isDark ? 0xFF5CC8E0 : 0xFF007185;
+		SOFT = isDark ? 0xFF25303B : 0xFFF0F2F2;
+		SOFT_HOVER = isDark ? 0xFF2E3A46 : 0xFFE3E6E6;
+		HOVER_BG = isDark ? 0xFF222B35 : 0xFFF7FAFA;
+		HOVER_BORDER = isDark ? 0xFF4A5663 : 0xFFA0A6A6;
+		INPUT_BORDER = isDark ? 0xFF4A5663 : 0xFF888C8C;
+		GOOD = isDark ? 0xFF4CD39B : 0xFF067D62;
+		BAD = isDark ? 0xFFFF7A66 : 0xFFB12704;
+		AMBER = isDark ? 0xFFFFC14D : 0xFFB06A00;
+		BLUE = isDark ? 0xFF5BA8FF : 0xFF2457C5;
+		PURPLE = isDark ? 0xFFB388FF : 0xFF6A1B9A;
+		PICKED_BG = isDark ? 0xFF243E50 : 0xFFE3F4F7;
+		PICKED_HOVER = isDark ? 0xFF2C4A5E : 0xFFD3EDF2;
+		GOLD = isDark ? 0xFFFFC83D : 0xFFB07A00;
+		MENU_BG = isDark ? 0xFF121820 : 0xFFFFFFFF;
+		SHADOW = isDark ? 0x70000000 : 0x40000000;
+		DANGER_BG = isDark ? 0xFF8F2B2B : 0xFFC7332B;
+		DANGER_HOVER = isDark ? 0xFFC0453F : 0xFFDC4A41;
+		DANGER_EDGE = isDark ? 0xFFB03A35 : 0xFFA82822;
+	}
+
+	/** A bright colour (a kind's, a list's) made readable on the page: darker on the light theme. */
+	private static int ink(int color) {
+		return dark ? color : tint(color, 0xFF000000, 0.42f);
+	}
+
+	private void toggleTheme() {
+		NNConfig.INSTANCE.darkMode = !NNConfig.INSTANCE.darkMode;
+		NNConfig.save();
+		applyTheme(NNConfig.INSTANCE.darkMode);
+		ShopScreen.applyTheme(NNConfig.INSTANCE.darkMode);
+		relayout();
+	}
 	/** Status colours: done, error, warning, plain. */
 	private static final int OK = 0xFF7CE0A0, ERROR = 0xFFFF8A80, WARN = 0xFFFFC14D, PLAIN = 0xFFDDDDDD;
 
-	private static final int HEADER = 34, TABS = 26, TOP = HEADER + TABS + 8, STATUS_H = 18;
+	private static final int HEADER = 26, TABS = 20, TOP = HEADER + TABS + 8, STATUS_H = 18;
 
 	private static Page page = Page.GO;
 	/** Go: which kind of place is shown (null: all). */
@@ -186,7 +236,7 @@ public class BaritoneScreen extends Screen {
 	// ---- Widgets in the mod's look ----
 
 	/** How a pill looks: the main action, a quiet one, picked, or one that stops things. */
-	private enum Look { PRIMARY, SOFT, PICKED, DANGER, OVERWORLD, NETHER }
+	private enum Look { PRIMARY, SOFT, PICKED, DANGER, OVERWORLD, NETHER, NAV }
 
 	/** A rounded button. Its message is its label (what the self-test presses it by); a badge can go after it. */
 	private final class Pill extends ClickableWidget {
@@ -223,41 +273,23 @@ public class BaritoneScreen extends Screen {
 			return this;
 		}
 
+		/** The compass's arrow, as an angle (radians, 0 = north/up), or NaN for none. */
+		double arrow = Double.NaN;
+
 		@Override
 		protected void renderWidget(DrawContext context, int mouseX, int mouseY, float delta) {
-			boolean hover = isHovered() && active;
-			int fill, edge, text;
-			switch (look) {
-				case PRIMARY -> {
-					fill = !active ? tint(YELLOW, NAV, 0.35f) : hover ? 0xFFF7CA00 : YELLOW;
-					edge = !active ? tint(YELLOW_EDGE, NAV, 0.35f) : YELLOW_EDGE;
-					text = BUTTON_TEXT;
-				}
-				case PICKED -> {
-					fill = hover ? 0xFF2C4A5E : PICKED_BG;
-					edge = LINK;
-					text = TEXT;
-				}
-				case DANGER, NETHER -> {
-					fill = hover ? 0xFFC0453F : 0xFF8F2B2B;
-					edge = hover ? 0xFFE0605A : 0xFFB03A35;
-					text = 0xFFFFFFFF;
-				}
-				case OVERWORLD -> {
-					fill = hover ? 0xFF4CA0FF : 0xFF2E6BBF;
-					edge = hover ? 0xFF7CBCFF : 0xFF3F80D6;
-					text = 0xFFFFFFFF;
-				}
-				default -> {
-					fill = !active ? tint(SOFT, NAV, 0.45f) : hover ? SOFT_HOVER : SOFT;
-					edge = !active ? tint(BORDER, NAV, 0.45f) : hover ? HOVER_BORDER : BORDER;
-					text = active ? TEXT : DIM;
-				}
+			float t = ease("pill:" + getMessage().getString() + ":" + getX() + ":" + getY(), isHovered() && active);
+			int text = paintButton(context, getX(), getY(), width, height, look, t, active);
+			if (!Double.isNaN(arrow)) {
+				int sub = look == Look.PRIMARY ? 0xFF5A4A00 : look == Look.SOFT ? MUTED : text;
+				drawArrow(context, getX() + width / 2.0, getY() + 8.5, arrow, 5, sub);
+				String label = getMessage().getString();
+				context.drawText(textRenderer, label, getX() + (width - textRenderer.getWidth(label)) / 2, getY() + 15, text, false);
+				return;
 			}
-			roundedBorder(context, getX(), getY(), width, height, fill, edge);
 			String label = getMessage().getString();
 			if (icon != null && height >= 24) {
-				// Tall: the icon above the label (the compass).
+				// Tall: the icon above the label.
 				int sub = look == Look.PRIMARY ? 0xFF5A4A00 : MUTED;
 				context.drawText(textRenderer, icon, getX() + (width - textRenderer.getWidth(icon)) / 2, getY() + 4, sub, false);
 				context.drawText(textRenderer, label, getX() + (width - textRenderer.getWidth(label)) / 2, getY() + 14, text, false);
@@ -307,7 +339,7 @@ public class BaritoneScreen extends Screen {
 		protected void renderWidget(DrawContext context, int mouseX, int mouseY, float delta) {
 			boolean on = get.getAsBoolean();
 			drawSwitch(context, getX(), getY() + 2, on, isHovered());
-			context.drawText(textRenderer, fit(getMessage().getString(), width - 26), getX() + 24, getY() + 3, isHovered() ? 0xFFFFFFFF : TEXT, false);
+			context.drawText(textRenderer, fit(getMessage().getString(), width - 26), getX() + 24, getY() + 3, isHovered() ? LINK : TEXT, false);
 		}
 
 		@Override
@@ -493,11 +525,11 @@ public class BaritoneScreen extends Screen {
 		browserArea = picksArea = playersArea = mobsArea = mineProgressArea = null;
 		fields.clear();
 
-		// Header: Pause, Resume and Stop, always.
-		int right = width - 10;
-		Pill stop = pill(right - 70, 9, 70, 16, "Stop", Look.DANGER, this::stopEverything);
+		// Header, right to left: Stop, Resume, Pause (always), and light/dark.
+		int right = width - 8;
+		Pill stop = pill(right - 58, 5, 58, 16, "Stop", Look.DANGER, this::stopEverything);
 		stop.icon("■").hint("Stops whatever Baritone is doing (" + NaughtyOrNiceClient.INSTANCE.stopKeyName() + " does too, anywhere in the game)");
-		resumeButton = pill(right - 70 - 4 - 62, 9, 62, 16, "Resume", Look.SOFT, () -> {
+		resumeButton = pill(right - 58 - 4 - 64, 5, 64, 16, "Resume", Look.NAV, () -> {
 			// A roam paused for a stranger or a trail knows it's paused; anything else, Baritone resumes itself.
 			if (HighwayRoam.active() && HighwayRoam.paused()) {
 				HighwayRoam.resume();
@@ -509,26 +541,38 @@ public class BaritoneScreen extends Screen {
 				run("resume", "Going again");
 			}
 		}).icon("▶").hint("Carries on with what was paused");
-		pauseButton = pill(right - 70 - 4 - 62 - 4 - 58, 9, 58, 16, "Pause", Look.SOFT, () -> run("pause", "Paused")).hint("Holds Baritone where it is; Resume carries on");
+		pauseButton = pill(right - 58 - 4 - 64 - 4 - 52, 5, 52, 16, "Pause", Look.NAV, () -> run("pause", "Paused")).hint("Holds Baritone where it is; Resume carries on");
+		themeX = right - 58 - 4 - 64 - 4 - 52 - 6 - 16;
 		updateHeaderButtons();
 
-		// The pages, then the search bar that does anything.
-		int tx = contentX();
+		// The pages, as tabs with their pictures.
+		int tx = 6;
+		boolean roomy = tabsWidth(true) + 220 < width;
 		for (Page p : Page.values()) {
-			String label = p.label;
-			Pill tab = pill(tx, HEADER + 5, textRenderer.getWidth(label) + 18, 16, label, p == page ? Look.PRIMARY : Look.SOFT, () -> showPage(p));
-			tab.hint(pageHint(p) + " (key " + (p.ordinal() + 1) + ")");
-			tx += tab.getWidth() + 4;
+			TabButton tab = new TabButton(tx, HEADER, p, roomy);
+			addDrawableChild(tab);
+			tx += tab.getWidth() + 2;
 		}
+		tabsEnd = tx;
 		layingPage = false;
+		smartField = null;
 		if (!BaritoneBridge.present() || ModsPanel.streamSafe()) return;
-		int smartX = tx + 8, smartW = contentX() + contentW() - smartX;
-		if (smartW >= 120) {
-			smartField = field(smartX, HEADER + 4, smartW, "Type anything: a place, x z, a block, a player…  (/)", smartField, "");
+		// The search bar that does anything, in the header, as on the main screen.
+		int left = logoEnd() + 12;
+		int sw = Math.min(460, themeX - 10 - left);
+		if (sw >= 120) {
+			int sx = left + Math.max(0, (themeX - 10 - left - sw) / 2);
+			smartBox = new int[] {sx, 5, sw, 16};
+			Field before = smartFieldKeep;
+			smartField = new Field(sx + 18, 9, sw - 40, smartHint(sw));
+			smartField.setMaxLength(200);
+			smartField.setText(before != null ? before.getText() : "");
 			smartField.setChangedListener(t -> smartPick = 0);
 			smartField.onEnter(this::runSmart);
+			addDrawableChild(smartField);
+			smartFieldKeep = smartField;
 		} else {
-			smartField = null;
+			smartBox = null;
 		}
 
 		int x = contentX(), y = TOP - pageScroll;
@@ -544,6 +588,85 @@ public class BaritoneScreen extends Screen {
 		}
 		layingPage = false;
 		if (overlay instanceof Picker p) p.attach();
+	}
+
+	/** Where the search bar is (x, y, w, h), and the box itself kept across layouts. */
+	private int[] smartBox;
+	private Field smartFieldKeep;
+	private int themeX, tabsEnd;
+	/** The tabs' underline, gliding to the open one. */
+	private float underlineX, underlineW;
+
+	private String smartHint(int w) {
+		String full = "Search or type anything: diamonds, home, 1200 -3400, a player, sprint…";
+		return textRenderer.getWidth(full) <= w - 44 ? full : "Search or type anything…";
+	}
+
+	/** Where the name at the top left ends (and the back link, when opened from Naughty or Nice). */
+	private int logoEnd() {
+		int x = 8;
+		if (parent != null) x += textRenderer.getWidth("‹") + 10;
+		return x + boldWidth("baritone");
+	}
+
+	private static ItemStack pageIcon(Page p) {
+		return new ItemStack(switch (p) {
+			case GO -> net.minecraft.item.Items.COMPASS;
+			case MINE -> net.minecraft.item.Items.DIAMOND_PICKAXE;
+			case FOLLOW -> net.minecraft.item.Items.LEAD;
+			case ROAM -> net.minecraft.item.Items.RAIL;
+			case TOOLS -> net.minecraft.item.Items.CRAFTING_TABLE;
+			case SETTINGS -> net.minecraft.item.Items.COMPARATOR;
+			case COMMANDS -> net.minecraft.item.Items.COMMAND_BLOCK;
+		});
+	}
+
+	private int tabsWidth(boolean icons) {
+		int w = 6;
+		for (Page p : Page.values()) w += textRenderer.getWidth(p.label) + (icons ? 26 : 14) + 2;
+		return w;
+	}
+
+	/** A page's tab: its picture and name on the dark bar; the open one bright, with the orange underline under it. */
+	private final class TabButton extends ClickableWidget {
+		final Page p;
+		final boolean icon;
+
+		TabButton(int x, int y, Page p, boolean icon) {
+			super(x, y, textRenderer.getWidth(p.label) + (icon ? 26 : 14), TABS, Text.literal(p.label));
+			this.p = p;
+			this.icon = icon;
+		}
+
+		@Override
+		protected void renderWidget(DrawContext context, int mouseX, int mouseY, float delta) {
+			boolean open = p == page;
+			float t = ease("tab:" + p, isHovered() || open);
+			if (!open && t > 0) rounded(context, getX() + 1, getY() + 2, width - 2, height - 4, alphaOf(0xFFFFFFFF, (int) (0x14 * t)));
+			int x = getX() + 7;
+			if (icon) {
+				var m = context.getMatrices();
+				m.pushMatrix();
+				m.translate(x, getY() + (height - 12) / 2f);
+				m.scale(0.75f, 0.75f);
+				drawIcon(context, pageIcon(p), 0, 0);
+				m.popMatrix();
+				x += 14;
+			}
+			int color = open ? NAV_TEXT : blend(NAV_MUTED, NAV_TEXT, t);
+			if (open) bold(context, p.label, x, getY() + (height - 8) / 2, color);
+			else context.drawText(textRenderer, p.label, x, getY() + (height - 8) / 2, color, false);
+		}
+
+		@Override
+		public void onClick(Click click, boolean doubled) {
+			showPage(p);
+		}
+
+		@Override
+		protected void appendClickableNarrations(NarrationMessageBuilder builder) {
+			appendDefaultNarrations(builder);
+		}
 	}
 
 	private static String pageHint(Page p) {
@@ -600,6 +723,7 @@ public class BaritoneScreen extends Screen {
 		ranAt = System.currentTimeMillis();
 		boolean ok = BaritoneBridge.run(command);
 		say(ok ? said : "Baritone didn't take that (see its message in chat)", ok ? OK : ERROR);
+		if (ok && !command.matches("(stop|pause|resume|cancel|forcecancel|set .*|sel .*|blacklist.*)")) jobLabel = said;
 		return ok;
 	}
 
@@ -621,6 +745,27 @@ public class BaritoneScreen extends Screen {
 		relayout();
 	}
 
+	/** Something waiting for a second click to be sure ("undo-all", "remove:Home"), and since when. */
+	private String confirmKey;
+	private long confirmAt;
+
+	/** True on the second click within 4 seconds; on the first, asks (in the status) and the button says "Sure?". */
+	private boolean confirmed(String key, String ask) {
+		if (asking(key)) {
+			confirmKey = null;
+			return true;
+		}
+		confirmKey = key;
+		confirmAt = System.currentTimeMillis();
+		say(ask, WARN);
+		relayout();
+		return false;
+	}
+
+	private boolean asking(String key) {
+		return key.equals(confirmKey) && System.currentTimeMillis() - confirmAt < 4000;
+	}
+
 	private void say(String text, int color) {
 		status = text;
 		statusColor = color;
@@ -637,7 +782,8 @@ public class BaritoneScreen extends Screen {
 		int rx = two ? x + colW + 10 : x, rw = two ? w - colW - 10 : w;
 
 		// Go to coordinates: x, y, z, Go, and where to fill them in from.
-		card(x, y, colW, 50, "Go to coordinates", "Walks, or flies when it can");
+		card(x, y, colW, 50, "Go to coordinates", p == null ? "Walks, or flies when it can"
+				: String.format(Locale.ROOT, "You're at %,d  %,d  %,d", p.getBlockX(), p.getBlockY(), p.getBlockZ()));
 		int fy = y + 26, inner = colW - 20;
 		int fillW = textRenderer.getWidth("Fill from ▾") + 16;
 		int fw = (inner - 3 * 6 - 56 - 6 - fillW) / 3;
@@ -872,11 +1018,25 @@ public class BaritoneScreen extends Screen {
 		};
 		all.sort(Comparator.comparing((Destinations.Destination d) -> pinned.contains(d.name()) ? 0 : 1).thenComparing(order));
 		if (all.isEmpty()) {
-			roundedBorder(context, x, top, w, 46, CARD, BORDER);
-			context.drawText(textRenderer, q.isEmpty() && kindFilter == null ? "No places yet" : "Nothing matches", x + 12, top + 10, TEXT, false);
-			context.drawText(textRenderer, fit(q.isEmpty() && kindFilter == null
-					? "Save a spot above, or play a while: trails, places players give away and where your list's players were seen all show up here."
-					: "Try another word, or All.", w - 24), x + 12, top + 24, MUTED, false);
+			boolean none = q.isEmpty() && kindFilter == null;
+			roundedBorder(context, x, top, w, none ? 70 : 46, CARD, BORDER);
+			drawIcon(context, new ItemStack(net.minecraft.item.Items.COMPASS), x + 12, top + 9);
+			bold(context, none ? "No places yet" : "Nothing matches", x + 34, top + 10, TEXT);
+			context.drawText(textRenderer, fit(none
+					? "Save spots here; chunk trails, places players give away and where your list's players were seen show up by themselves."
+					: "Try another word, or All.", w - 46), x + 34, top + 24, MUTED, false);
+			if (none) {
+				int bx2 = x + 34;
+				handButton(context, mouseX, mouseY, bx2, top + 42, 120, 18, "Save where I am", Look.PRIMARY, () -> {
+					if (waypointField != null) {
+						setFocused(waypointField);
+						waypointField.setFocused(true);
+						say("Name this spot, then Enter", PLAIN);
+					}
+				}, "empty:save", top, top + 70, "Name the spot you're standing on, and keep it");
+				handButton(context, mouseX, mouseY, bx2 + 126, top + 42, 140, 18, "Paste coordinates", Look.SOFT, () -> fillOptions().get(1).run().run(),
+						"empty:paste", top, top + 70, "Fills the boxes above from your clipboard");
+			}
 			return;
 		}
 		int maxScroll = Math.max(0, all.size() * rowH - (bottom - top));
@@ -897,7 +1057,7 @@ public class BaritoneScreen extends Screen {
 		int h = rowH - 4;
 		boolean hover = mouseX >= x && mouseX < x + w && mouseY >= Math.max(y, top) && mouseY < Math.min(y + h, bottom) && overlay == null;
 		roundedBorder(context, x, y, w, h, hover ? HOVER_BG : CARD, hover ? HOVER_BORDER : BORDER);
-		int kc = kindColor(d.kind());
+		int kc = ink(kindColor(d.kind()));
 		context.fill(x + 1, y + 3, x + 4, y + h - 3, kc);
 		boolean end = d.dimension().endsWith("the_end"), inNether = d.dimension().endsWith("the_nether");
 		int ox = inNether ? d.x() * 8 : d.x(), oz = inNether ? d.z() * 8 : d.z();
@@ -934,8 +1094,12 @@ public class BaritoneScreen extends Screen {
 				String here = client.world.getRegistryKey().getValue().toString();
 				boolean hereNether = here.endsWith("the_nether");
 				double dx = (end ? d.x() : hereNether ? nx : ox) - client.player.getX(), dz = (end ? d.z() : hereNether ? nz : oz) - client.player.getZ();
-				far = String.format(Locale.ROOT, "%,d", (int) dist);
-				way = "blocks " + ChunkTrails.compass(dx, dz);
+				far = String.format(Locale.ROOT, "%,d blocks", (int) dist);
+				// Which way from where you're facing: an arrow, and in words.
+				double target = Math.atan2(dx, -dz), facing = Math.toRadians(client.player.getYaw() + 180);
+				double rel = Math.atan2(Math.sin(target - facing), Math.cos(target - facing));
+				way = ChunkTrails.compass(dx, dz) + " · " + relative(rel);
+				drawArrow(context, bx - 8 - Math.max(textRenderer.getWidth(far), textRenderer.getWidth(way)) - 12, y + 13.5, rel, 5, dist < 32 ? GOOD : LINK);
 			} else {
 				far = ShopScreen.dimensionName(d.dimension());
 				way = "";
@@ -970,10 +1134,32 @@ public class BaritoneScreen extends Screen {
 		hits.add(new Hit(-100, -100, -99, -99, () -> go(nether), d.name() + " (nether)", false, null));
 		if (waypoint) {
 			int rx = x + w - 20;
+			boolean sure = asking("remove:" + d.name());
 			boolean over = mouseX >= rx && mouseX < rx + 14 && mouseY >= y + 6 && mouseY < y + 22 && overlay == null;
-			context.drawText(textRenderer, "×", rx + 4, y + 10, over ? BAD : DIM, false);
-			hits.add(new Hit(rx, Math.max(y + 6, top), rx + 14, Math.min(y + 22, bottom), () -> removeWaypoint(d.name()), d.name(), true, "Remove this saved spot"));
+			if (sure) {
+				String q2 = "Sure?";
+				int qw = textRenderer.getWidth(q2) + 8;
+				roundedBorder(context, x + w - 6 - qw, y + 7, qw, 16, DANGER_BG, DANGER_EDGE);
+				context.drawText(textRenderer, q2, x + w - 2 - qw, y + 11, 0xFFFFFFFF, false);
+			} else {
+				context.drawText(textRenderer, "×", rx + 4, y + 10, over ? BAD : DIM, false);
+			}
+			hits.add(new Hit(sure ? x + w - 40 : rx, Math.max(y + 6, top), x + w - 2, Math.min(y + 22, bottom), () -> {
+				if (confirmed("remove:" + d.name(), "Click again to remove \"" + d.name() + "\"")) removeWaypoint(d.name());
+			}, d.name(), true, "Remove this saved spot"));
 		}
+	}
+
+	/** "ahead", "ahead-left", "to your right", "behind"... for an angle from where you're facing. */
+	private static String relative(double rel) {
+		double d = Math.toDegrees(rel);
+		double a = Math.abs(d);
+		String side = d < 0 ? "left" : "right";
+		if (a <= 22.5) return "ahead";
+		if (a <= 67.5) return "ahead-" + side;
+		if (a <= 112.5) return "to your " + side;
+		if (a <= 157.5) return "behind-" + side;
+		return "behind";
 	}
 
 	private void togglePin(String name) {
@@ -991,30 +1177,7 @@ public class BaritoneScreen extends Screen {
 	private void handButton(DrawContext context, int mouseX, int mouseY, int gx, int gy, int gw, int gh, String label, Look look, Runnable run, String key,
 			int top, int bottom, String hint) {
 		boolean over = overlay == null && mouseX >= gx && mouseX < gx + gw && mouseY >= gy && mouseY < gy + gh && mouseY >= top && mouseY < bottom;
-		int fill, edge, text;
-		switch (look) {
-			case PRIMARY -> {
-				fill = over ? 0xFFF7CA00 : YELLOW;
-				edge = YELLOW_EDGE;
-				text = BUTTON_TEXT;
-			}
-			case PICKED -> {
-				fill = over ? 0xFF2C4A5E : PICKED_BG;
-				edge = LINK;
-				text = TEXT;
-			}
-			case DANGER -> {
-				fill = over ? 0xFFC0453F : 0xFF8F2B2B;
-				edge = over ? 0xFFE0605A : 0xFFB03A35;
-				text = 0xFFFFFFFF;
-			}
-			default -> {
-				fill = over ? SOFT_HOVER : SOFT;
-				edge = over ? HOVER_BORDER : BORDER;
-				text = TEXT;
-			}
-		}
-		roundedBorder(context, gx, gy, gw, gh, fill, edge);
+		int text = paintButton(context, gx, gy, gw, gh, look, ease("hand:" + key, over), true);
 		context.drawText(textRenderer, label, gx + gw / 2 - textRenderer.getWidth(label) / 2, gy + (gh - 8) / 2, text, false);
 		hits.add(new Hit(gx, Math.max(gy, top), gx + gw, Math.min(gy + gh, bottom), run, key, false, hint));
 	}
@@ -1023,8 +1186,8 @@ public class BaritoneScreen extends Screen {
 		if (maxScroll <= 0) return;
 		int bar = Math.max(14, (bottom - top) * (bottom - top) / Math.max(1, total));
 		int by = top + (int) ((bottom - top - bar) * (scroll / maxScroll));
-		context.fill(x, top, x + 3, bottom, 0x30FFFFFF);
-		context.fill(x, by, x + 3, by + bar, 0xFF6B7682);
+		context.fill(x, top, x + 3, bottom, dark ? 0x30FFFFFF : 0x18000000);
+		context.fill(x, by, x + 3, by + bar, HOVER_BORDER);
 	}
 
 	private void scrollbar(DrawContext context, int x, int top, int bottom, int total, int maxScroll) {
@@ -1056,8 +1219,30 @@ public class BaritoneScreen extends Screen {
 		java.util.function.Function<BlockCatalog.Entry, String> right;
 		/** Show the ★ to favourite (blocks). */
 		boolean stars;
-		/** The list as last drawn, for the keyboard (Enter picks the first). */
+		/** The list as last drawn, for the keyboard, and the row the arrows are on (Enter picks it). */
 		List<BlockCatalog.Entry> shown = List.of();
+		int cursor;
+
+		void move(int by) {
+			if (shown.isEmpty()) return;
+			cursor = Math.max(0, Math.min(shown.size() - 1, cursor + by));
+			// Keep it in view.
+			double rowTop = cursor * 20.0;
+			if (rowTop < scroll) scroll = rowTop;
+			if (rowTop + 20 > scroll + lastHeight) scroll = rowTop + 20 - lastHeight;
+		}
+
+		void enter() {
+			if (shown.isEmpty()) return;
+			BlockCatalog.Entry e = shown.get(Math.max(0, Math.min(shown.size() - 1, cursor)));
+			if (!e.blocks().isEmpty() && BlockCatalog.cantMine(e) != null) {
+				say(BlockCatalog.cantMine(e), WARN);
+				return;
+			}
+			click.accept(e);
+		}
+
+		int lastHeight = 100;
 
 		List<BlockCatalog.Entry> filtered() {
 			String q = search == null ? "" : search.getText();
@@ -1104,7 +1289,11 @@ public class BaritoneScreen extends Screen {
 		void drawList(DrawContext context, int mouseX, int mouseY, int x, int top, int w, int bottom, List<Hit> into) {
 			int rowH = 20;
 			List<BlockCatalog.Entry> list = filtered();
+			if (!list.equals(shown)) cursor = Math.min(cursor, Math.max(0, list.size() - 1));
 			shown = list;
+			lastHeight = bottom - top;
+			boolean keyed = search != null && search.isFocused();
+			int index = 0;
 			Set<String> picks = picked.get();
 			int maxScroll = Math.max(0, list.size() * rowH - (bottom - top));
 			scroll = Math.max(0, Math.min(scroll, maxScroll));
@@ -1118,8 +1307,11 @@ public class BaritoneScreen extends Screen {
 				if (y + rowH >= top && y <= bottom) {
 					boolean on = picks.contains(e.key());
 					boolean over = overlayFree(into) && mouseX >= x && mouseX < x + w && mouseY >= Math.max(y, top) && mouseY < Math.min(y + rowH - 2, bottom);
+					boolean at = keyed && index == cursor;
 					String cant = e.blocks().isEmpty() ? null : BlockCatalog.cantMine(e);
-					roundedBorder(context, x, y, w, rowH - 2, on ? PICKED_BG : over ? HOVER_BG : CARD, on ? LINK : over ? HOVER_BORDER : BORDER);
+					float t = ease("row:" + e.key() + System.identityHashCode(this), over || at);
+					roundedBorder(context, x, y, w, rowH - 2, on ? blend(PICKED_BG, PICKED_HOVER, t) : blend(CARD, HOVER_BG, t),
+							on ? LINK : at ? ORANGE : blend(BORDER, HOVER_BORDER, t));
 					drawIcon(context, e.icon(), x + 3, y + 1);
 					int tx = x + (e.icon().isEmpty() ? 8 : 24);
 					int rightEdge = x + w - 6;
@@ -1147,7 +1339,7 @@ public class BaritoneScreen extends Screen {
 						int aw = textRenderer.getWidth(action) + 12;
 						int ax = rightEdge - aw;
 						boolean overAct = mouseX >= ax && mouseX < ax + aw;
-						roundedBorder(context, ax, y + 2, aw, rowH - 6, overAct ? 0xFFF7CA00 : YELLOW, YELLOW_EDGE);
+						roundedBorder(context, ax, y + 2, aw, rowH - 6, overAct ? YELLOW_HOVER : YELLOW, YELLOW_EDGE);
 						context.drawText(textRenderer, action, ax + 6, y + 5, BUTTON_TEXT, false);
 						rightEdge = ax - 6;
 					} else if (right != null) {
@@ -1175,6 +1367,7 @@ public class BaritoneScreen extends Screen {
 					}, "pick:" + e.key(), false, cant != null ? cant : e.family() ? "All of these: " + String.join(", ", e.ids()) : e.key()));
 				}
 				y += rowH;
+				index++;
 			}
 			if (scroll < maxScroll) context.fillGradient(x, bottom - 12, x + w, bottom, PAGE_BG & 0x00FFFFFF, PAGE_BG);
 			context.disableScissor();
@@ -1210,6 +1403,28 @@ public class BaritoneScreen extends Screen {
 		return (n >= 10_000 ? String.format(Locale.ROOT, "%.0fk", n / 1000.0) : String.format(Locale.ROOT, "%,d", n)) + " near";
 	}
 
+	/** Where an ore is most common (1.18+): the best Y, and the range worth mining in. */
+	private record BestY(String what, int y, int low, int high, boolean nether) {}
+
+	private static BestY bestY(BlockCatalog.Entry e) {
+		String k = e.family() ? e.key().substring(e.key().indexOf(':', 7) + 1) : e.key();
+		k = k.replaceFirst("^deepslate_", "").replaceFirst("_ore$", "");
+		return switch (k) {
+			case "diamond" -> new BestY("Diamonds", -59, -64, -48, false);
+			case "redstone" -> new BestY("Redstone", -59, -64, -32, false);
+			case "lapis" -> new BestY("Lapis", 0, -32, 32, false);
+			case "gold" -> new BestY("Gold", -16, -64, 32, false);
+			case "iron" -> new BestY("Iron", 16, -24, 56, false);
+			case "copper" -> new BestY("Copper", 48, 0, 96, false);
+			case "coal" -> new BestY("Coal", 96, 0, 192, false);
+			case "emerald" -> new BestY("Emeralds (in mountains)", 232, 100, 256, false);
+			case "ancient_debris" -> new BestY("Ancient debris", 15, 8, 22, true);
+			case "nether_quartz" -> new BestY("Nether quartz", 15, 10, 117, true);
+			case "nether_gold" -> new BestY("Nether gold", 15, 10, 117, true);
+			default -> null;
+		};
+	}
+
 	private List<BlockCatalog.Entry> minePicks() {
 		List<BlockCatalog.Entry> out = new ArrayList<>();
 		for (String k : NNConfig.INSTANCE.mineBlocks) {
@@ -1243,6 +1458,20 @@ public class BaritoneScreen extends Screen {
 		int chipsH = picksHeight(picks, rw - 20);
 		picksArea = new int[] {rx + 10, chipsY, rw - 20, chipsH};
 		int ay = chipsY + chipsH + 8;
+		// Where the first ore picked is most common, with a click to mine there.
+		BestY best = picks.isEmpty() ? null : bestY(picks.get(0));
+		if (best != null) {
+			String line = best.what() + " are most common at Y " + best.y() + (best.nether() ? " (nether)" : "");
+			label("§r" + line, rx + 10, ay + 4);
+			int uw = textRenderer.getWidth("Mine there") + 14;
+			pill(rx + rw - 10 - uw, ay, uw, 15, "Mine there", Look.SOFT, () -> {
+				if (minYField != null) minYField.setText(String.valueOf(best.low()));
+				if (maxYField != null) maxYField.setText(String.valueOf(best.high()));
+				if (BaritoneBridge.bool("legitMine") != null) BaritoneBridge.set("legitMineYLevel", String.valueOf(best.y()));
+				say("Y range set to " + best.low() + " to " + best.high() + " (legit mining digs at Y " + best.y() + ")", OK);
+			}).hint("Sets the Y range to " + best.low() + "–" + best.high() + ", and legit mining's level to " + best.y());
+			ay += 20;
+		}
 		label("How many", rx + 10, ay);
 		int px = rx + 10;
 		ay += 11;
@@ -1304,17 +1533,18 @@ public class BaritoneScreen extends Screen {
 		}).hint("Takes everything off the list").active = !picks.isEmpty();
 		ay += 30;
 		mineProgressArea = new int[] {rx + 10, ay, tw, 0};
-		int cardH = ay + (active || MineJob.endedWith() != null ? 46 : 4) - cy;
+		int cardH = ay + (active || MineJob.endedWith() != null ? 40 : 4) - cy;
 		card(rx, cy, rw, cardH, picks.isEmpty() ? "What to mine" : "Mining " + picks.size() + (picks.size() == 1 ? " kind" : " kinds"), active ? "going" : "click blocks on the " + (two ? "left" : "list"));
 
 		// The left (or below): the picker.
 		int ly = two ? y : cy + cardH + 10;
 		Field before = mineBrowser.search;
 		mineBrowser.search = field(x, ly, leftW, "Search every block: diamond, oak log, chest…", before, "");
-		mineBrowser.search.setChangedListener(t -> mineBrowser.scroll = 0);
-		mineBrowser.search.onEnter(() -> {
-			if (!mineBrowser.shown.isEmpty()) toggleMinePick(mineBrowser.shown.get(0));
+		mineBrowser.search.setChangedListener(t -> {
+			mineBrowser.scroll = 0;
+			mineBrowser.cursor = 0;
 		});
+		mineBrowser.search.onEnter(mineBrowser::enter);
 		mineBrowser.source = BlockCatalog.all();
 		mineBrowser.tabs = blockTabs();
 		mineBrowser.tab = () -> mineTab;
@@ -1397,8 +1627,22 @@ public class BaritoneScreen extends Screen {
 		if (MineJob.active()) {
 			long secs = (System.currentTimeMillis() - MineJob.startedAt()) / 1000;
 			int got = MineJob.got(client);
+			double perMin = got / Math.max(secs / 60.0, 0.25);
+			String left = "";
+			if (MineJob.amount() > 0 && got > 0 && got < MineJob.amount() && secs >= 20) {
+				long eta = Math.round((MineJob.amount() - got) / perMin);
+				left = eta < 1 ? " · under a minute left" : " · about " + eta + " min left";
+			}
 			String head = "Mining " + MineJob.what() + " · " + String.format(Locale.ROOT, "%d:%02d", secs / 60, secs % 60)
-					+ (MineJob.amount() > 0 ? " · got " + got + " of " + MineJob.amount() : got > 0 ? " · got " + got : "");
+					+ (MineJob.amount() > 0 ? " · got " + got + " of " + MineJob.amount() : got > 0 ? " · got " + got : "")
+					+ (got > 0 && secs >= 20 ? String.format(Locale.ROOT, " · %.0f a minute", perMin) : "") + left;
+			// A bar for how far towards the amount.
+			if (MineJob.amount() > 0) {
+				int bw = w;
+				rounded(context, x, y + 30, bw, 4, SOFT);
+				int fw = (int) (bw * Math.min(1.0, got / (double) MineJob.amount()));
+				if (fw > 0) rounded(context, x, y + 30, Math.max(4, fw), 4, GOOD);
+			}
 			context.drawText(textRenderer, fit(head, w), x, y, GOOD, false);
 			int ix = x, iy = y + 12;
 			for (var e : MineJob.gained(client).entrySet()) {
@@ -1511,10 +1755,11 @@ public class BaritoneScreen extends Screen {
 		}
 		Field before = mobBrowser.search;
 		mobBrowser.search = field(rx, my, rw, "Search mobs: cow, skeleton, villager…", before, "");
-		mobBrowser.search.setChangedListener(t -> mobBrowser.scroll = 0);
-		mobBrowser.search.onEnter(() -> {
-			if (!mobBrowser.shown.isEmpty()) followMob(mobBrowser.shown.get(0));
+		mobBrowser.search.setChangedListener(t -> {
+			mobBrowser.scroll = 0;
+			mobBrowser.cursor = 0;
 		});
+		mobBrowser.search.onEnter(mobBrowser::enter);
 		mobBrowser.source = mobEntries();
 		mobBrowser.tabs = mobTabs();
 		mobBrowser.tab = () -> mobTab;
@@ -1787,7 +2032,7 @@ public class BaritoneScreen extends Screen {
 				pill(gx, gy, cell, ch, name, a == HighwayRoam.axis() ? Look.PRIMARY : Look.SOFT, () -> {
 					HighwayRoam.pick(a);
 					relayout();
-				}).icon(arrow(name)).hint("The " + name + " highway");
+				}).hint("The " + name + " highway").arrow = compassAngle(name);
 			}
 		}
 		// Beside the compass: how far, or the coordinates.
@@ -1963,6 +2208,20 @@ public class BaritoneScreen extends Screen {
 		}
 	}
 
+	/** Which way a highway runs on the compass, clockwise from north (up). */
+	private static double compassAngle(String name) {
+		return switch (name) {
+			case "-Z" -> 0;
+			case "+X-Z" -> Math.PI / 4;
+			case "+X" -> Math.PI / 2;
+			case "+X+Z" -> 3 * Math.PI / 4;
+			case "+Z" -> Math.PI;
+			case "-X+Z" -> -3 * Math.PI / 4;
+			case "-X" -> -Math.PI / 2;
+			default -> -Math.PI / 4;
+		};
+	}
+
 	/** The arrow for a highway on the compass. */
 	private static String arrow(String name) {
 		return switch (name) {
@@ -2114,7 +2373,9 @@ public class BaritoneScreen extends Screen {
 			ax += 66;
 		}
 		ay += 24;
-		pill(rx + 10, ay, inner, 18, "Dig the whole area out (clear it)", Look.SOFT, () -> {
+		pill(rx + 10, ay, inner, 18, asking("clear-area") ? "Sure? Click again to dig it all out" : "Dig the whole area out (clear it)",
+				asking("clear-area") ? Look.DANGER : Look.SOFT, () -> {
+			if (!confirmed("clear-area", "Click again to break every block in the marked area")) return;
 			if (run("sel cleararea", "Clearing the area")) remember("Clear the area", new ItemStack(net.minecraft.item.Items.IRON_SHOVEL), null, () -> BaritoneBridge.run("sel cleararea"));
 		}).item(new ItemStack(net.minecraft.item.Items.IRON_SHOVEL)).hint("Breaks every block in the marked area").active = sels > 0;
 		ay += 24;
@@ -2321,7 +2582,9 @@ public class BaritoneScreen extends Screen {
 			b.hint(p.why() + " Sets: " + String.join(", ", p.values().keySet()));
 			px += b.getWidth() + 3;
 		}
-		Pill undo = fitPill(px, y, "Undo all my changes", Look.SOFT, this::resetAll);
+		Pill undo = fitPill(px, y, asking("undo-all") ? "Sure? Click again" : "Undo all my changes", asking("undo-all") ? Look.DANGER : Look.SOFT, () -> {
+			if (confirmed("undo-all", "Click again to put every Baritone setting back to Baritone's own default")) resetAll();
+		});
 		undo.hint("Puts every Baritone setting back to Baritone's own default");
 		int sy = y + 24;
 		settingSearch = field(x, sy, Math.min(260, w / 2), "Search Baritone's settings (all of them)", settingSearch, "");
@@ -2354,19 +2617,19 @@ public class BaritoneScreen extends Screen {
 		// A picked setting that's typed in: its box, Set, and Reset.
 		BaritoneBridge.Setting picked = setting(pickedSetting);
 		if (picked != null && !picked.bool()) {
-			int by = height - STATUS_H - 30;
-			valueField = field(x + 10, by, w - 20 - 150, picked.name(),
+			// Its box goes in its own row, moved there as the list is drawn.
+			valueField = field(x + 10, -100, w - 20 - 150, picked.name(),
 					valueField != null && picked.name().equals(valueField.getMessage().getString()) ? valueField : null, picked.value());
 			valueField.setMaxLength(2000);
 			valueField.onEnter(() -> setTyped(picked));
-			pill(x + w - 10 - 140, by, 68, 18, "Set", Look.PRIMARY, () -> setTyped(picked));
-			pill(x + w - 10 - 68, by, 68, 18, "Reset", Look.SOFT, () -> {
-				BaritoneBridge.reset(picked.name());
-				BaritoneBridge.saveSettings();
-				say(BaritoneSettingsGuide.plainName(picked.name()) + " back to " + picked.defaultValue(), PLAIN);
-				settingsReadAt = 0;
-				valueField.setText(picked.defaultValue());
-			});
+			// Drawn and framed in its row, not with the page's boxes.
+			fields.remove(valueField);
+			valueField.visible = true;
+			valueField.active = true;
+			setFocused(valueField);
+			valueField.setFocused(true);
+		} else {
+			valueField = null;
 		}
 	}
 
@@ -2424,8 +2687,7 @@ public class BaritoneScreen extends Screen {
 	private void renderSettings(DrawContext context, int mouseX, int mouseY) {
 		int x = contentX(), w = contentW(), top = settingsTop;
 		BaritoneBridge.Setting picked = setting(pickedSetting);
-		boolean editing = picked != null && !picked.bool();
-		int bottom = editing ? height - STATUS_H - 52 : pageBottom();
+		int bottom = pageBottom();
 		String q = settingSearch == null ? "" : settingSearch.getText().strip().toLowerCase(Locale.ROOT);
 		List<SettingRow> rows = new ArrayList<>();
 		int changed = 0;
@@ -2443,32 +2705,57 @@ public class BaritoneScreen extends Screen {
 			}
 		}
 		context.drawText(textRenderer, rows.size() + " shown · " + changed + " changed from Baritone's own · green: changed", x, top - 11, DIM, false);
-		int rowH = 30;
-		int maxScroll = Math.max(0, rows.size() * rowH - (bottom - top));
+		// The picked one is taller: its box to type in, Set and Reset, right in its row.
+		int total = 0;
+		for (SettingRow r : rows) total += rowHeight(r);
+		int maxScroll = Math.max(0, total - (bottom - top));
 		listScroll = Math.max(0, Math.min(listScroll, maxScroll));
+		if (valueField != null) valueField.visible = false;
 		context.enableScissor(x, top, x + w, bottom);
 		int y = top - (int) listScroll;
 		for (SettingRow r : rows) {
-			if (y + rowH >= top && y <= bottom) drawSettingRow(context, mouseX, mouseY, r, x, y, w, rowH - 3, top, bottom);
-			y += rowH;
+			int rh = rowHeight(r);
+			if (y + rh >= top && y <= bottom) drawSettingRow(context, mouseX, mouseY, r, x, y, w, rh - 3, top, bottom);
+			y += rh;
 		}
 		context.disableScissor();
-		scrollbar(context, x + w + 4, top, bottom, rows.size() * rowH, maxScroll);
-		if (editing) {
-			int by = height - STATUS_H - 46;
-			roundedBorder(context, x, by - 2, w, 42, CARD, LINK);
-			String title = BaritoneSettingsGuide.plainName(picked.name());
-			bold(context, title, x + 10, by + 3, TEXT);
-			context.drawText(textRenderer, fit(picked.name() + " · default " + picked.defaultValue() + " · type a value, then Set (or Enter)", w - 30 - boldWidth(title)),
-					x + 16 + boldWidth(title), by + 3, MUTED, false);
-		}
+		scrollbar(context, x + w + 4, top, bottom, total, maxScroll);
 	}
 
-	private void drawSettingRow(DrawContext context, int mouseX, int mouseY, SettingRow r, int x, int y, int w, int h, int top, int bottom) {
+	private int rowHeight(SettingRow r) {
+		return r.setting() != null && !r.setting().bool() && r.setting().name().equals(pickedSetting) ? 54 : 30;
+	}
+
+	private void drawSettingRow(DrawContext context, int mouseX, int mouseY, SettingRow r, int x, int y, int w, int fullH, int top, int bottom) {
 		BaritoneBridge.Setting s = r.setting();
-		boolean over = overlay == null && mouseX >= x && mouseX < x + w && mouseY >= Math.max(y, top) && mouseY < Math.min(y + h, bottom);
 		boolean picked = s != null && s.name().equals(pickedSetting);
-		roundedBorder(context, x, y, w, h, picked ? PICKED_BG : over ? HOVER_BG : CARD, picked ? LINK : over ? HOVER_BORDER : BORDER);
+		boolean editing = picked && !s.bool();
+		int h = editing ? 27 : fullH;
+		boolean over = overlay == null && mouseX >= x && mouseX < x + w && mouseY >= Math.max(y, top) && mouseY < Math.min(y + fullH, bottom);
+		float t = ease("set:" + r.key(), over);
+		roundedBorder(context, x, y, w, fullH, picked ? PICKED_BG : blend(CARD, HOVER_BG, t), picked ? LINK : blend(BORDER, HOVER_BORDER, t));
+		if (editing && valueField != null) {
+			// The box, where it belongs, and Set and Reset beside it.
+			int fy = y + 31;
+			boolean inView = fy - 4 >= top && fy + 14 <= bottom;
+			valueField.setX(x + 15);
+			valueField.setY(fy + 4);
+			valueField.setWidth(w - 20 - 150 - 10);
+			valueField.visible = inView;
+			valueField.active = inView;
+			if (inView) {
+				roundedBorder(context, x + 10, fy, w - 20 - 150, 18, FIELD, valueField.isFocused() ? LINK : INPUT_BORDER);
+				handButton(context, mouseX, mouseY, x + w - 10 - 140, fy, 68, 18, "Set", Look.PRIMARY, () -> setTyped(s), "set:" + s.name(), top, bottom,
+						"Sets it to what's typed (Enter does too)");
+				handButton(context, mouseX, mouseY, x + w - 10 - 68, fy, 68, 18, "Reset", Look.SOFT, () -> {
+					BaritoneBridge.reset(s.name());
+					BaritoneBridge.saveSettings();
+					say(BaritoneSettingsGuide.plainName(s.name()) + " back to " + s.defaultValue(), PLAIN);
+					settingsReadAt = 0;
+					valueField.setText(s.defaultValue());
+				}, "reset:" + s.name(), top, bottom, "Back to Baritone's default: " + s.defaultValue());
+			}
+		}
 		int right = x + w - 10;
 		Runnable click = null;
 		String hint = r.about();
@@ -2587,7 +2874,8 @@ public class BaritoneScreen extends Screen {
 	}
 
 	private void pickSetting(BaritoneBridge.Setting s) {
-		pickedSetting = s.name();
+		// A second click on the one open closes it.
+		pickedSetting = s.name().equals(pickedSetting) ? null : s.name();
 		valueField = null;
 		relayout();
 	}
@@ -2738,7 +3026,7 @@ public class BaritoneScreen extends Screen {
 				if (cy > height - STATUS_H - 44) break;
 			}
 			boolean hover = overlay == null && mouseX >= cx && mouseX < cx + sw && mouseY >= cy && mouseY < cy + 12;
-			roundedBorder(context, cx, cy, sw, 12, hover ? 0xFF2C4A5E : SOFT, hover ? LINK : BORDER);
+			roundedBorder(context, cx, cy, sw, 12, hover ? PICKED_HOVER : SOFT, hover ? LINK : BORDER);
 			context.drawText(textRenderer, s, cx + 5, cy + 2, TEXT, false);
 			String pick = s;
 			hits.add(new Hit(cx, cy, cx + sw, cy + 12, () -> addSuggestion(pick), "suggest:" + s, false, null));
@@ -2934,12 +3222,12 @@ public class BaritoneScreen extends Screen {
 		smartHits.clear();
 		if (!smartOpen()) return;
 		List<Option> r = smartResults();
-		int x = smartField.getX() - 5, w = Math.max(smartField.getWidth() + 10, 300), y = smartField.getY() + 14;
-		if (x + w > contentX() + contentW()) x = contentX() + contentW() - w;
+		int x = smartBox[0], w = Math.max(smartBox[2], 320), y = smartBox[1] + 18;
+		if (x + w > width - 6) x = width - 6 - w;
 		int rowH = 18, h = r.size() * rowH + 8 + 12;
 		context.getMatrices().pushMatrix();
-		context.fill(x + 2, y + 3, x + w + 2, y + h + 3, 0x60000000);
-		roundedBorder(context, x, y, w, h, 0xFF121820, LINK);
+		context.fill(x + 2, y + 3, x + w + 2, y + h + 3, SHADOW);
+		roundedBorder(context, x, y, w, h, MENU_BG, ORANGE);
 		context.drawText(textRenderer, smartField.getText().isBlank() ? "Lately" : "Enter does the first · ↑ ↓ to choose · Esc to close", x + 8, y + 5, DIM, false);
 		int ry = y + 16;
 		for (int i = 0; i < r.size(); i++) {
@@ -2951,7 +3239,7 @@ public class BaritoneScreen extends Screen {
 			if (!o.icon().isEmpty()) drawIcon(context, o.icon(), x + 6, ry);
 			else context.drawText(textRenderer, o.glyph() == null ? "•" : o.glyph(), x + 10, ry + 5, on ? LINK : MUTED, false);
 			String label = fit(o.label(), w - 32);
-			context.drawText(textRenderer, label, x + 26, ry + 5, on ? 0xFFFFFFFF : TEXT, false);
+			context.drawText(textRenderer, label, x + 26, ry + 5, on ? LINK : TEXT, false);
 			if (o.hint() != null) {
 				int hx = x + 26 + textRenderer.getWidth(label) + 8;
 				if (hx < x + w - 40) context.drawText(textRenderer, fit(o.hint(), x + w - 8 - hx), hx, ry + 5, DIM, false);
@@ -2977,6 +3265,7 @@ public class BaritoneScreen extends Screen {
 		boolean click(double x, double y) {
 			for (Hit h : List.copyOf(overlayHits)) {
 				if (h.has(x, y)) {
+					BaritoneScreen.this.click();
 					h.run().run();
 					return true;
 				}
@@ -3022,7 +3311,7 @@ public class BaritoneScreen extends Screen {
 					if (over) roundedBorder(context, x + 3, ry, w - 6, 17, PICKED_BG, PICKED_BG);
 					if (!o.icon().isEmpty()) drawIcon(context, o.icon(), x + 5, ry);
 					else context.drawText(textRenderer, o.glyph() == null ? "•" : o.glyph(), x + 9, ry + 5, over ? LINK : MUTED, false);
-					context.drawText(textRenderer, fit(o.label(), w - 32), x + 24, ry + 5, over ? 0xFFFFFFFF : TEXT, false);
+					context.drawText(textRenderer, fit(o.label(), w - 32), x + 24, ry + 5, over ? LINK : TEXT, false);
 				}
 				overlayHits.add(new Hit(x, ry, x + w, ry + 18, () -> {
 					overlay = null;
@@ -3036,8 +3325,8 @@ public class BaritoneScreen extends Screen {
 		@Override
 		void render(DrawContext context, int mouseX, int mouseY) {
 			int h = options.size() * 18 + 6;
-			context.fill(x + 2, y + 3, x + w + 2, y + h + 3, 0x60000000);
-			roundedBorder(context, x, y, w, h, 0xFF121820, LINK);
+			context.fill(x + 2, y + 3, x + w + 2, y + h + 3, SHADOW);
+			roundedBorder(context, x, y, w, h, MENU_BG, LINK);
 			layout(mouseX, mouseY, context);
 		}
 	}
@@ -3094,10 +3383,11 @@ public class BaritoneScreen extends Screen {
 			Field f = new Field(px + 15, py + 32, pw - 30, "Search by name…");
 			f.setMaxLength(100);
 			if (old != null) f.setText(old.getText());
-			f.setChangedListener(t -> browser.scroll = 0);
-			f.onEnter(() -> {
-				if (!browser.shown.isEmpty()) browser.click.accept(browser.shown.get(0));
+			f.setChangedListener(t -> {
+				browser.scroll = 0;
+				browser.cursor = 0;
 			});
+			f.onEnter(browser::enter);
 			browser.search = f;
 			addSelectableChild(f);
 			if (old != null && old.isFocused()) {
@@ -3124,7 +3414,7 @@ public class BaritoneScreen extends Screen {
 		void render(DrawContext context, int mouseX, int mouseY) {
 			overlayHits.clear();
 			context.fill(0, 0, BaritoneScreen.this.width, BaritoneScreen.this.height, 0xA0000000);
-			roundedBorder(context, px, py, pw, ph, 0xFF141A22, LINK);
+			roundedBorder(context, px, py, pw, ph, MENU_BG, LINK);
 			bold(context, fit(title, pw - 140), px + 12, py + 10, TEXT);
 			context.drawText(textRenderer, many ? picked.size() + " picked · click to add or take off" : "Click one", px + 12, py + 20, DIM, false);
 			// The search box, drawn on top of the window.
@@ -3171,18 +3461,134 @@ public class BaritoneScreen extends Screen {
 
 	private void handButtonOn(DrawContext context, int mouseX, int mouseY, int gx, int gy, int gw, int gh, String label, Look look, Runnable run, List<Hit> into) {
 		boolean over = mouseX >= gx && mouseX < gx + gw && mouseY >= gy && mouseY < gy + gh;
-		int fill = look == Look.PRIMARY ? over ? 0xFFF7CA00 : YELLOW : over ? SOFT_HOVER : SOFT;
-		int edge = look == Look.PRIMARY ? YELLOW_EDGE : over ? HOVER_BORDER : BORDER;
-		roundedBorder(context, gx, gy, gw, gh, fill, edge);
-		context.drawText(textRenderer, label, gx + gw / 2 - textRenderer.getWidth(label) / 2, gy + (gh - 8) / 2, look == Look.PRIMARY ? BUTTON_TEXT : TEXT, false);
+		int text = paintButton(context, gx, gy, gw, gh, look, ease("on:" + label + gx, over), true);
+		context.drawText(textRenderer, label, gx + gw / 2 - textRenderer.getWidth(label) / 2, gy + (gh - 8) / 2, text, false);
 		into.add(new Hit(gx, gy, gx + gw, gy + gh, run, label, false, null));
 	}
 
 	// ---- Drawing ----
 
+	/** Hover and picking, eased (0 to 1) per thing, so they fade instead of snapping. */
+	private final Map<String, Float> anim = new HashMap<>();
+	private long lastAnimNanos;
+	private float animStep = 1;
+
+	private float ease(String key, boolean on) {
+		float v = anim.getOrDefault(key, on ? 1f : 0f);
+		v += ((on ? 1f : 0f) - v) * animStep;
+		if (Math.abs(v - (on ? 1f : 0f)) < 0.01f) v = on ? 1f : 0f;
+		anim.put(key, v);
+		return v;
+	}
+
+	private static int blend(int from, int to, float t) {
+		return t <= 0 ? from : t >= 1 ? to : tint(to, from, t);
+	}
+
+	/** A button's face in its look, {@code t} of the way to hovered; returns the colour for its label. */
+	private int paintButton(DrawContext context, int x, int y, int w, int h, Look look, float t, boolean active) {
+		int fill, edge, text;
+		switch (look) {
+			case PRIMARY -> {
+				fill = active ? blend(YELLOW, YELLOW_HOVER, t) : tint(YELLOW, PAGE_BG, 0.45f);
+				edge = active ? YELLOW_EDGE : tint(YELLOW_EDGE, PAGE_BG, 0.45f);
+				text = active ? BUTTON_TEXT : tint(BUTTON_TEXT, PAGE_BG, 0.5f);
+			}
+			case PICKED -> {
+				fill = blend(PICKED_BG, PICKED_HOVER, t);
+				edge = LINK;
+				text = TEXT;
+			}
+			case DANGER, NETHER -> {
+				fill = blend(DANGER_BG, DANGER_HOVER, t);
+				edge = DANGER_EDGE;
+				text = 0xFFFFFFFF;
+			}
+			case OVERWORLD -> {
+				fill = blend(0xFF2E6BBF, 0xFF4CA0FF, t);
+				edge = 0xFF3F80D6;
+				text = 0xFFFFFFFF;
+			}
+			case NAV -> {
+				fill = active ? blend(NAV_SOFT, NAV_SOFT_HOVER, t) : tint(NAV_SOFT, NAV, 0.5f);
+				edge = active ? blend(NAV_BORDER, 0xFF55657A, t) : tint(NAV_BORDER, NAV, 0.5f);
+				text = active ? NAV_TEXT : NAV_DIM;
+			}
+			default -> {
+				fill = !active ? tint(SOFT, PAGE_BG, 0.5f) : blend(SOFT, SOFT_HOVER, t);
+				edge = !active ? tint(BORDER, PAGE_BG, 0.5f) : blend(BORDER, HOVER_BORDER, t);
+				text = active ? TEXT : DIM;
+			}
+		}
+		roundedBorder(context, x, y, w, h, fill, edge);
+		// A soft lift on the main action.
+		if (look == Look.PRIMARY && active) context.fill(x + 2, y + 1, x + w - 2, y + 2, 0x30FFFFFF);
+		return text;
+	}
+
+	/** An arrow pointing {@code angle} radians clockwise from up, centred at (cx, cy), {@code r} long each way. */
+	private static void drawArrow(DrawContext context, double cx, double cy, double angle, int r, int color) {
+		double dx = Math.sin(angle), dy = -Math.cos(angle);
+		// The shaft, back to front, as little squares.
+		for (double d = -r; d <= r; d += 0.5) dot(context, cx + dx * d, cy + dy * d, color);
+		// The head: two strokes back from the tip.
+		for (double side : new double[] {-1, 1}) {
+			double a = angle + Math.PI + side * 0.6;
+			double hx = Math.sin(a), hy = -Math.cos(a);
+			for (double d = 0; d <= r * 0.75; d += 0.5) dot(context, cx + dx * r + hx * d, cy + dy * r + hy * d, color);
+		}
+	}
+
+	private static void dot(DrawContext context, double x, double y, int color) {
+		int ix = (int) Math.floor(x), iy = (int) Math.floor(y);
+		context.fill(ix, iy, ix + 1, iy + 1, color);
+	}
+
+	/** The tooltip waiting by the mouse: what it says, since when the mouse has been on it. */
+	private String tipText;
+	private long tipSince;
+
+	private void drawTooltip(DrawContext context, int mouseX, int mouseY) {
+		String hint = hoverHint;
+		if (hint == null || hint.isBlank()) {
+			tipText = null;
+			return;
+		}
+		if (!hint.equals(tipText)) {
+			tipText = hint;
+			tipSince = System.currentTimeMillis();
+		}
+		long shown = System.currentTimeMillis() - tipSince;
+		if (shown < 420) return;
+		int a = (int) Math.min(255, (shown - 420) * 255 / 120);
+		var lines = textRenderer.wrapLines(Text.literal(hint), 230);
+		int w = 0;
+		for (var l : lines) w = Math.max(w, textRenderer.getWidth(l));
+		int h = lines.size() * 10 + 6;
+		int x = mouseX + 10, y = mouseY + 14;
+		if (x + w + 10 > width - 4) x = Math.max(4, mouseX - w - 14);
+		if (y + h > height - STATUS_H - 2) y = Math.max(4, mouseY - h - 6);
+		context.fill(x + 1, y + 2, x + w + 11, y + h + 2, (a * 0x50 / 255) << 24);
+		roundedBorder(context, x, y, w + 10, h, alphaOf(MENU_BG, a), alphaOf(dark ? 0xFF4A5663 : 0xFFB8BFC4, a));
+		int ly = y + 4;
+		for (var l : lines) {
+			context.drawText(textRenderer, l, x + 5, ly, alphaOf(TEXT, a), false);
+			ly += 10;
+		}
+	}
+
+	private static int alphaOf(int color, int a) {
+		return Math.max(0, Math.min(255, a)) << 24 | (color & 0xFFFFFF);
+	}
+
+	/** The game's own button click, for things drawn by hand too. */
+	private void click() {
+		client.getSoundManager().play(net.minecraft.client.sound.PositionedSoundInstance.ui(net.minecraft.sound.SoundEvents.UI_BUTTON_CLICK, 1f));
+	}
+
 	/** An on/off switch: a track with a knob, green when on. */
 	private void drawSwitch(DrawContext context, int x, int y, boolean on, boolean hover) {
-		int track = on ? (hover ? 0xFF5FE0AC : GOOD) : (hover ? 0xFF4A5663 : 0xFF3A4450);
+		int track = on ? (hover ? tint(GOOD, 0xFFFFFFFF, 0.2f) : GOOD) : (hover ? HOVER_BORDER : dark ? 0xFF3A4450 : 0xFFC4C9CC);
 		rounded(context, x, y, 18, 10, track);
 		int kx = on ? x + 9 : x + 1;
 		rounded(context, kx, y + 1, 8, 8, 0xFFFFFFFF);
@@ -3227,12 +3633,9 @@ public class BaritoneScreen extends Screen {
 	/** Everything behind the buttons and boxes: the header and its live status, the cards, the lists. */
 	private void drawPage(DrawContext context, int mouseX, int mouseY) {
 		context.fill(0, 0, width, height, PAGE_BG);
-		context.fill(0, 0, width, HEADER, NAV);
-		context.fill(0, HEADER, width, HEADER + TABS, SUBNAV);
-		int x = contentX();
-		bold(context, "Baritone", x, 8, TEXT);
-		context.drawText(textRenderer, "in Naughty or Nice", x, 20, DIM, false);
 		hits.clear();
+		drawHeader(context, mouseX, mouseY);
+		int x = contentX();
 		if (ModsPanel.streamSafe()) {
 			// Its fields and places are all coordinates.
 			int cy = height / 2 - 20;
@@ -3249,7 +3652,7 @@ public class BaritoneScreen extends Screen {
 			context.drawText(textRenderer, "(or use a client that has it built in), then open this again.", x + 12, cy + 36, MUTED, false);
 			return;
 		}
-		drawStatusChip(context, x + 112, mouseX, mouseY);
+		drawStatusChip(context, tabsEnd + 10, mouseX, mouseY);
 
 		// Cards first, then what's written on them, then the boxes' frames: all kept to the page, under the tabs.
 		context.enableScissor(0, HEADER + TABS, width, height - STATUS_H);
@@ -3305,6 +3708,77 @@ public class BaritoneScreen extends Screen {
 		}
 	}
 
+	/** The dark bar on top (name, search bar, light/dark), and the tabs' bar with its gliding underline. */
+	private void drawHeader(DrawContext context, int mouseX, int mouseY) {
+		// The same two-tone gradient as the main screen's header.
+		for (int i = 0; i < HEADER; i += 2) context.fill(0, i, width, Math.min(HEADER, i + 2), tint(0xFF1C2633, NAV, Math.min(1f, i / (float) HEADER * 1.4f)));
+		context.fill(0, HEADER, width, HEADER + TABS, SUBNAV);
+		context.fill(0, HEADER + TABS - 1, width, HEADER + TABS, 0x40000000);
+		int x = 8;
+		if (parent != null) {
+			boolean over = overlay == null && mouseX >= 4 && mouseX < x + 10 && mouseY >= 4 && mouseY < 22;
+			context.drawText(textRenderer, "‹", x, 9, over ? ORANGE : NAV_MUTED, false);
+			hits.add(new Hit(2, 3, x + 10, 23, this::close, "back", false, "Back to Naughty or Nice (Esc)"));
+			x += textRenderer.getWidth("‹") + 10;
+		}
+		bold(context, "baritone", x, 9, NAV_TEXT);
+		context.fill(x + boldWidth("baritone") + 2, 15, x + boldWidth("baritone") + 4, 17, ORANGE);
+		// The search bar: rounded, a magnifier, the "/" key, an orange glow when it's typed in.
+		if (smartBox != null && smartField != null) {
+			int sx = smartBox[0], sy = smartBox[1], sw = smartBox[2];
+			boolean focused = smartField.isFocused();
+			float glow = ease("smart-glow", focused);
+			boolean over = mouseX >= sx && mouseX < sx + sw && mouseY >= sy && mouseY < sy + 16;
+			if (glow > 0) rounded(context, sx - 1, sy - 1, sw + 2, 18, alphaOf(ORANGE, (int) (0x70 * glow)));
+			rounded(context, sx, sy, sw, 16, focused ? ORANGE : over ? 0xFF55657A : NAV_BORDER);
+			rounded(context, sx + 1, sy + 1, sw - 2, 14, FIELD);
+			magnifier(context, sx + 6, sy + 4, focused ? ORANGE : MUTED);
+			if (!focused && smartField.getText().isEmpty()) {
+				int kx = sx + sw - 16;
+				roundedBorder(context, kx, sy + 3, 11, 10, SOFT, BORDER);
+				context.drawText(textRenderer, "/", kx + 4, sy + 4, MUTED, false);
+			}
+			hits.add(new Hit(sx, sy, sx + 18, sy + 16, () -> focusSmart(), "smart", false, null));
+		}
+		// Light / dark, as on the main screen.
+		float th = ease("theme", overlay == null && mouseX >= themeX && mouseX < themeX + 16 && mouseY >= 5 && mouseY < 21);
+		rounded(context, themeX, 5, 16, 16, blend(NAV_SOFT, NAV_SOFT_HOVER, th));
+		String glyph = dark ? "☀" : "☾";
+		context.drawText(textRenderer, glyph, themeX + (16 - textRenderer.getWidth(glyph)) / 2 + 1, 9, dark ? 0xFFFFD866 : 0xFFDDE3EA, false);
+		hits.add(new Hit(themeX, 5, themeX + 16, 21, this::toggleTheme, "theme", false, dark ? "Light theme (for Naughty or Nice too)" : "Dark theme (for Naughty or Nice too)"));
+		// The underline glides to the open page's tab.
+		for (var e : children()) {
+			if (e instanceof TabButton t && t.p == page) {
+				if (underlineW == 0) {
+					underlineX = t.getX();
+					underlineW = t.getWidth();
+				}
+				underlineX += (t.getX() - underlineX) * Math.min(1f, animStep * 1.2f);
+				underlineW += (t.getWidth() - underlineW) * Math.min(1f, animStep * 1.2f);
+				int ux = Math.round(underlineX) + 4, uw = Math.max(4, Math.round(underlineW) - 8);
+				context.fill(ux, HEADER + TABS - 3, ux + uw, HEADER + TABS - 1, ORANGE);
+				context.fill(ux - 1, HEADER + TABS - 4, ux + uw + 1, HEADER + TABS - 3, alphaOf(ORANGE, 0x50));
+			}
+		}
+	}
+
+	/** A small magnifying glass. */
+	private static void magnifier(DrawContext context, int x, int y, int color) {
+		context.fill(x + 1, y, x + 5, y + 1, color);
+		context.fill(x, y + 1, x + 1, y + 5, color);
+		context.fill(x + 5, y + 1, x + 6, y + 5, color);
+		context.fill(x + 1, y + 5, x + 5, y + 6, color);
+		context.fill(x + 5, y + 6, x + 6, y + 7, color);
+		context.fill(x + 6, y + 7, x + 8, y + 8, color);
+	}
+
+	private void focusSmart() {
+		if (smartField == null) return;
+		setFocused(smartField);
+		smartField.setFocused(true);
+		smartFor = null;
+	}
+
 	/** Pause only while something is going, Resume only while something is paused. */
 	private void updateHeaderButtons() {
 		if (pauseButton == null) return;
@@ -3315,32 +3789,36 @@ public class BaritoneScreen extends Screen {
 		pauseButton.active = going && !resumeButton.active;
 	}
 
-	/** What Baritone is doing right now, at the top of every page: a coloured state, then where to, how far, how fast. */
+	/** What the last job handed over here was, in words ("Following Griefer_Gary"), for the status. */
+	private static String jobLabel;
+
+	/** What Baritone is doing right now, on the tabs' bar: a coloured state, then what, where, how far, how fast. */
 	private void drawStatusChip(DrawContext context, int x, int mouseX, int mouseY) {
 		String state;
 		int color;
 		String detail = "";
-		TripBar.Where where = TripBar.where(client);
+		boolean trip = SmartTravel.active() || HighwayRoam.active() || TrailFollow.active();
+		TripBar.Where where = trip ? TripBar.where(client) : null;
 		boolean pathing = BaritoneBridge.isPathing();
 		String process = process();
 		if (HighwayRoam.active() && HighwayRoam.paused() || TrailFollow.active() && TrailFollow.paused() || BaritoneBridge.paused()) {
 			state = "Paused";
-			color = AMBER;
+			color = 0xFFFFC14D;
 		} else if (TrailFollow.active() && !TrailFollow.flying()) {
 			state = "Following";
-			color = GOOD;
-		} else if (where != null && (where.flying())) {
+			color = 0xFF4CD39B;
+		} else if (where != null && where.flying() || "Flying".equals(process)) {
 			state = "Flying";
-			color = PURPLE;
+			color = 0xFFB388FF;
 		} else if (HighwayRoam.active()) {
 			state = "Roaming";
-			color = BLUE;
+			color = 0xFF5BA8FF;
 		} else if (pathing || process != null) {
 			state = process != null ? process : "Moving";
-			color = GOOD;
+			color = 0xFF4CD39B;
 		} else {
 			state = "Idle";
-			color = DIM;
+			color = NAV_DIM;
 		}
 		if (MineJob.active() && "Mining".equals(process)) {
 			int got = MineJob.got(client);
@@ -3353,53 +3831,43 @@ public class BaritoneScreen extends Screen {
 			int cut = line.lastIndexOf(" · ");
 			if (cut > 0) line = line.substring(0, cut);
 			detail = line;
-		} else if (process != null) {
-			String goal = BaritoneBridge.goal();
-			int[] at = TripBar.goalXZ(goal);
-			if (at != null && client.player != null && !ModsPanel.streamSafe()) {
-				detail = String.format(Locale.ROOT, "%,d blocks away", (int) Math.hypot(at[0] - client.player.getX(), at[1] - client.player.getZ()));
-			}
+		} else if (process != null || pathing) {
+			// What it was asked to do here, and how far its goal is.
+			String what = jobLabel == null ? "" : jobLabel.replaceFirst("^(Following|Mining|Farming|Exploring|Building|Finding|Going to|Heading|Digging|Picking up|Coming to) ?", "");
+			int[] at = TripBar.goalXZ(BaritoneBridge.goal());
+			String far = at != null && client.player != null && !ModsPanel.streamSafe()
+					? String.format(Locale.ROOT, "%,d blocks away", (int) Math.hypot(at[0] - client.player.getX(), at[1] - client.player.getZ())) : "";
+			detail = what.isBlank() ? far : far.isEmpty() ? what : what + " · " + far;
 		}
-		int sw = textRenderer.getWidth(state) + 20;
-		roundedBorder(context, x, 9, sw, 16, tint(color, NAV, 0.16f), tint(color, NAV, 0.55f));
+		int y = HEADER + 3, h = TABS - 6;
+		int right = width - 8;
+		// Idle with things done lately: "Again ▾" on the right, for a menu of them.
+		if (state.equals("Idle") && !recent.isEmpty()) {
+			String again = "↻ Again ▾";
+			int aw = textRenderer.getWidth(again) + 12;
+			int ax = right - aw;
+			boolean over = overlay == null && mouseX >= ax && mouseX < right && mouseY >= y && mouseY < y + h;
+			int text = paintButton(context, ax, y, aw, h, Look.NAV, ease("again", over), true);
+			context.drawText(textRenderer, again, ax + 6, y + (h - 8) / 2, text, false);
+			hits.add(new Hit(ax, y, right, y + h, () -> {
+				List<Option> o = new ArrayList<>();
+				for (Recent r : recent) o.add(new Option(r.label(), r.icon(), r.glyph(), () -> {
+					r.run().run();
+					say("Again: " + r.label(), OK);
+				}, null));
+				openMenu(width - 8 - 240, HEADER + TABS, 240, o);
+			}, "again", false, "Do something you did lately again"));
+			right = ax - 8;
+		}
+		if (right - x < 50) return;
+		int sw = textRenderer.getWidth(state) + 18;
 		boolean blink = !state.equals("Idle") && (System.currentTimeMillis() / 500) % 2 == 0;
-		context.fill(x + 6, 15, x + 10, 19, blink ? tint(color, NAV, 0.5f) : color);
-		context.drawText(textRenderer, state, x + 14, 13, color, false);
-		int dx = x + sw + 8;
-		int maxX = width - 10 - 70 - 4 - 62 - 4 - 58 - 10;
-		if (!detail.isEmpty()) {
-			if (maxX - dx > 30) context.drawText(textRenderer, fit(detail, maxX - dx), dx, 13, MUTED, false);
-			return;
-		}
-		if (!state.equals("Idle")) return;
-		// Idle: what you did lately, to do again.
-		if (recent.isEmpty()) {
-			if (maxX - dx > 30) context.drawText(textRenderer, fit("Pick something to do below, or press / and type it.", maxX - dx), dx, 13, MUTED, false);
-			return;
-		}
-		context.drawText(textRenderer, "Again:", dx, 13, DIM, false);
-		int cx = dx + textRenderer.getWidth("Again:") + 5;
-		for (Recent r : recent) {
-			int iw = r.icon().isEmpty() ? 0 : 14;
-			String l = r.label();
-			int cw = Math.min(150, textRenderer.getWidth(l) + 12 + iw);
-			if (cx + cw > maxX) break;
-			boolean over = overlay == null && mouseX >= cx && mouseX < cx + cw && mouseY >= 9 && mouseY < 25;
-			roundedBorder(context, cx, 9, cw, 16, over ? SOFT_HOVER : SOFT, over ? HOVER_BORDER : BORDER);
-			if (iw > 0) {
-				context.getMatrices().pushMatrix();
-				context.getMatrices().translate(cx + 3, 10);
-				context.getMatrices().scale(0.85f, 0.85f);
-				drawIcon(context, r.icon(), 0, 0);
-				context.getMatrices().popMatrix();
-			}
-			context.drawText(textRenderer, fit(l, cw - 10 - iw), cx + 6 + iw, 13, TEXT, false);
-			hits.add(new Hit(cx, 9, cx + cw, 25, () -> {
-				r.run().run();
-				say("Again: " + r.label(), OK);
-			}, "again:" + l, false, "Do it again: " + l));
-			cx += cw + 3;
-		}
+		roundedBorder(context, x, y, sw, h, tint(color, SUBNAV, 0.16f), tint(color, SUBNAV, 0.55f));
+		context.fill(x + 5, y + h / 2 - 2, x + 9, y + h / 2 + 2, blink ? tint(color, SUBNAV, 0.5f) : color);
+		context.drawText(textRenderer, state, x + 12, y + (h - 8) / 2, color, false);
+		int dx = x + sw + 6;
+		if (detail.isEmpty() && state.equals("Idle")) detail = "Pick something below, or press / and type it";
+		if (!detail.isEmpty() && right - dx > 30) context.drawText(textRenderer, fit(detail, right - dx), dx, y + (h - 8) / 2, state.equals("Idle") ? NAV_DIM : NAV_MUTED, false);
 	}
 
 	/** Which of Baritone's jobs is running, in a word, or null. */
@@ -3437,6 +3905,10 @@ public class BaritoneScreen extends Screen {
 
 	@Override
 	public void render(DrawContext context, int realMouseX, int realMouseY, float delta) {
+		long now = System.nanoTime();
+		float dt = lastAnimNanos == 0 ? 0.016f : Math.min(0.1f, (now - lastAnimNanos) / 1e9f);
+		lastAnimNanos = now;
+		animStep = 1 - (float) Math.exp(-dt * 14);
 		int mouseX = (int) Math.floor(scaled(realMouseX)), mouseY = (int) Math.floor(scaled(realMouseY));
 		var m = context.getMatrices();
 		m.pushMatrix();
@@ -3466,11 +3938,17 @@ public class BaritoneScreen extends Screen {
 		}
 		updateStatus();
 		drawStatusBar(context);
+		drawTooltip(context, mouseX, mouseY);
 		m.popMatrix();
 	}
 
 	@Override
 	public void tick() {
+		// An unanswered "Sure?" goes back to what it was.
+		if (confirmKey != null && System.currentTimeMillis() - confirmAt >= 4000) {
+			confirmKey = null;
+			relayout();
+		}
 		if (page == Page.MINE) BlockCatalog.countNear(client);
 	}
 
@@ -3503,22 +3981,24 @@ public class BaritoneScreen extends Screen {
 		int y = height - STATUS_H;
 		context.fill(0, y, width, height, NAV);
 		int x = contentX();
-		boolean fresh = !status.isEmpty() && System.currentTimeMillis() - statusAt < 4000;
-		if (hoverHint != null && !hoverHint.isEmpty() && !fresh) {
-			context.drawText(textRenderer, "›", x + 2, y + 5, LINK, false);
-			context.drawText(textRenderer, fit(hoverHint, contentW() - 14), x + 12, y + 5, MUTED, false);
-			return;
-		}
-		if (status.isEmpty()) {
-			context.drawText(textRenderer, fit("Esc goes back · / types anything · 1–7 switch pages · " + NaughtyOrNiceClient.INSTANCE.stopKeyName()
-					+ " stops Baritone from anywhere in the game", contentW()), x, y + 5, DIM, false);
-			return;
-		}
+		long age = System.currentTimeMillis() - statusAt;
+		// The keys, on the right, always; what just happened on the left (fading back after a while).
+		String keys = "Esc back · / search · 1–7 pages · " + NaughtyOrNiceClient.INSTANCE.stopKeyName() + " stops anywhere";
+		int kw = textRenderer.getWidth(keys);
+		boolean showKeys = status.isEmpty() || contentW() - kw > 220;
+		if (showKeys) context.drawText(textRenderer, keys, x + contentW() - kw, y + 5, NAV_DIM, false);
+		if (status.isEmpty()) return;
+		int room = contentW() - (showKeys ? kw + 16 : 0) - 14;
 		String mark = statusColor == ERROR ? "✖" : statusColor == OK ? "✔" : statusColor == WARN ? "!" : "•";
+		int color = age < 10_000 || statusColor == ERROR ? statusColor : NAV_MUTED;
 		// Fresh news stands out for a moment.
-		if (System.currentTimeMillis() - statusAt < 1500) context.fill(0, y, width, y + 1, statusColor);
-		context.drawText(textRenderer, mark, x, y + 5, statusColor, false);
-		context.drawText(textRenderer, fit(status, contentW() - 14), x + 12, y + 5, statusColor, false);
+		if (age < 1500) {
+			int a = (int) (0xFF * (1 - age / 1500.0));
+			context.fill(0, y, width, y + 1, alphaOf(statusColor, a));
+			context.fill(0, y + 1, width, height, alphaOf(statusColor, a / 10));
+		}
+		context.drawText(textRenderer, mark, x, y + 5, color, false);
+		context.drawText(textRenderer, fit(status, room), x + 12, y + 5, color, false);
 	}
 
 	// ---- Input ----
@@ -3529,6 +4009,7 @@ public class BaritoneScreen extends Screen {
 		if (smartOpen()) {
 			for (Hit h : List.copyOf(smartHits)) {
 				if (h.has(click.x(), click.y())) {
+					click();
 					h.run().run();
 					return true;
 				}
@@ -3550,6 +4031,7 @@ public class BaritoneScreen extends Screen {
 		if (super.mouseClicked(click, doubled)) return true;
 		for (Hit hit : List.copyOf(hits)) {
 			if (hit.has(click.x(), click.y())) {
+				click();
 				hit.run().run();
 				return true;
 			}
@@ -3627,6 +4109,14 @@ public class BaritoneScreen extends Screen {
 					return true;
 				}
 				default -> {}
+			}
+		}
+		// ↑ ↓ through a list while typing in its search.
+		if ((key == GLFW.GLFW_KEY_DOWN || key == GLFW.GLFW_KEY_UP) && getFocused() instanceof Field f) {
+			Browser b = overlay instanceof Picker pk && pk.browser.search == f ? pk.browser : mineBrowser.search == f ? mineBrowser : mobBrowser.search == f ? mobBrowser : null;
+			if (b != null) {
+				b.move(key == GLFW.GLFW_KEY_DOWN ? 1 : -1);
+				return true;
 			}
 		}
 		// Enter in a box does what it's for (Go, Follow, Mine, Set...).
@@ -3812,6 +4302,23 @@ public class BaritoneScreen extends Screen {
 	public void testSmartEnter() {
 		smartPick = 0;
 		runSmart();
+	}
+
+	/** "ahead", "to your right"... for an angle from where you're facing. */
+	public static String testRelative(double rel) {
+		return relative(rel);
+	}
+
+	/** Puts the typing cursor in the box whose hint is {@code hint}. */
+	public boolean testFocus(String hint) {
+		for (var e : children()) {
+			if (e instanceof TextFieldWidget f && f.getMessage().getString().equals(hint)) {
+				setFocused(f);
+				f.setFocused(true);
+				return true;
+			}
+		}
+		return false;
 	}
 
 	/** Whether a menu or picker is open over the page. */

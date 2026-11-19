@@ -110,7 +110,7 @@ public class ShopScreen extends Screen {
 		applyTheme(NNConfig.INSTANCE.darkMode);
 	}
 
-	private static void applyTheme(boolean dark) {
+	static void applyTheme(boolean dark) {
 		NAV = dark ? 0xFF0A0D11 : 0xFF131921;
 		SUBNAV = dark ? 0xFF161D26 : 0xFF232F3E;
 		PAGE = dark ? 0xFF0F1318 : 0xFFEAEDED;
