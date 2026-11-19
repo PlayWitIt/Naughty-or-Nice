@@ -1792,6 +1792,19 @@ public final class SelfTest {
 						&& CoordGuard.allowCommand("nn help"));
 				serverHeard.clear();
 				check("...and [Send] sends it", CoordGuard.allowChat("hello there") == false && CoordGuard.sendHeld());
+				check("...Enter twice on the same message sends it", !CoordGuard.allowChat("see you soon") && CoordGuard.allowChat("see you soon")
+						&& !CoordGuard.allowChat("see you soon"));
+				check("...Enter twice sends coordinates too, but an edited one is held again", !CoordGuard.allowChat("base at 1200 -3400")
+						&& !CoordGuard.allowChat("base at 1300 -3400") && CoordGuard.allowChat("base at 1300 -3400"));
+				// Typed in the chat box and Enter pressed: held, the box closes (as the game does), and opens again holding it.
+				client.setScreen(new net.minecraft.client.gui.screen.ChatScreen("", false));
+				check("...a held message typed in chat", !CoordGuard.allowChat("typed in chat"));
+				client.setScreen(null);
+			}
+			case 1345 -> {
+				check("...stays in the chat box, ready for Enter again", client.currentScreen instanceof net.minecraft.client.gui.screen.ChatScreen chat
+						&& "typed in chat".equals(chat.chatField.getText()));
+				check("...and Enter again sends it", CoordGuard.allowChat("typed in chat"));
 				NNConfig.INSTANCE.askBeforeSending = false;
 				client.setScreen(new BaritoneScreen());
 			}

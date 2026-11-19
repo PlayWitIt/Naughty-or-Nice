@@ -1,6 +1,7 @@
 package com.greysworkshop.naughtyornice;
 
 import net.minecraft.client.MinecraftClient;
+import net.minecraft.client.gui.screen.ChatScreen;
 import net.minecraft.text.ClickEvent;
 import net.minecraft.text.Text;
 import net.minecraft.util.Formatting;
@@ -16,7 +17,8 @@ import java.util.regex.Pattern;
  * Stops you giving your own location away by accident. Before a chat message or a whisper leaves, it's read the same
  * strict way other players' chat is: coordinates in it, the name of one of your bases, or a number that's your own
  * current x or z. If any are there, it's held back, with [Send anyway] and [Edit]. With "ask before sending" on, every
- * message is held that way, with [Send] and [Edit].
+ * message is held that way, with [Send] and [Edit]. Either way the chat box stays open with the message in it, and
+ * pressing Enter again (within 15 seconds) sends it.
  */
 public final class CoordGuard {
 	/** Commands that send what you type to other players. */
@@ -28,6 +30,9 @@ public final class CoordGuard {
 	private static String held;
 	/** Let this exact one through once (you pressed Send anyway). */
 	private static String allowOnce;
+	/** When the held message was held: Enter on the very same message within this long sends it. */
+	private static long heldAt;
+	static final long ENTER_AGAIN_MS = 15_000;
 
 	private CoordGuard() {}
 
@@ -51,17 +56,35 @@ public final class CoordGuard {
 			allowOnce = null;
 			return true;
 		}
+		// Enter again on the same message (the chat stays open with it after the first): you mean it, so it goes.
+		if (whole.equals(held) && System.currentTimeMillis() - heldAt <= ENTER_AGAIN_MS) {
+			held = null;
+			return true;
+		}
 		List<String> why = NNConfig.INSTANCE.guardMyCoords ? reasons(said) : List.of();
 		if (why.isEmpty() && !ask) return true;
 		held = whole;
+		heldAt = System.currentTimeMillis();
+		keepChatOpen(whole);
 		String note = why.isEmpty() ? "Send this? \"" + whole + "\" " : "Held your message: it gives away " + String.join(" and ", why) + ". ";
 		Alerts.chat(Text.literal(note).formatted(Formatting.GOLD)
+				.append(Text.literal("Enter again to send, or ").formatted(Formatting.GRAY))
 				.append(Text.literal(why.isEmpty() ? "[Send]" : "[Send anyway]").styled(s -> s.withColor(why.isEmpty() ? Formatting.GREEN : Formatting.RED).withUnderline(true)
 						.withClickEvent(new ClickEvent.RunCommand("/nn sendanyway"))))
 				.append(Text.literal(" "))
 				.append(Text.literal("[Edit]").styled(s -> s.withColor(Formatting.AQUA).withUnderline(true)
 						.withClickEvent(new ClickEvent.SuggestCommand(whole)))));
 		return false;
+	}
+
+	/** Typed in the chat box: open it again with the message still in it, so a second Enter sends it. */
+	private static void keepChatOpen(String whole) {
+		MinecraftClient client = MinecraftClient.getInstance();
+		if (!(client.currentScreen instanceof ChatScreen)) return;
+		// Queued (execute would run it right now, before the game closes the chat box after Enter).
+		client.send(() -> {
+			if (client.currentScreen == null && client.player != null) client.setScreen(new ChatScreen(whole, false));
+		});
 	}
 
 	/** What a message would give away; empty if nothing. */
