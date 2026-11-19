@@ -7,7 +7,7 @@ name: Release
 on:
   push:
     branches: [main, 'ccr-*']
-    paths: [gradle.properties]
+    paths: [gradle.properties, .github/workflows/release.yml, .github/release-notes.md]
     tags: ['v*']
   workflow_dispatch:
 
