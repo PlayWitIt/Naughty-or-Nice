@@ -1520,7 +1520,7 @@ public class ShopScreen extends Screen {
 		Tab[] sections = sections();
 		// Tighter when the window is narrow, so every section stays on screen; pictures only when there's room for them.
 		int roomy = 0;
-		for (Tab t : sections) roomy += textRenderer.getWidth(t == Tab.ALL ? "Players" : t.label + (t == Tab.CHAT || t == Tab.MESSAGES ? " •" : "")) + 14;
+		for (Tab t : sections) roomy += textRenderer.getWidth(t == Tab.ALL ? "Players" : t.label) + 14 + (t == Tab.CHAT || t == Tab.MESSAGES ? 6 : 0);
 		tabPad = roomy + 6 > width - 6 ? 6 : 12;
 		// Room the All / Near / Online / Offline switch takes on the right (measured as it's drawn below).
 		int viewsRoom = 0;
@@ -1529,7 +1529,7 @@ public class ShopScreen extends Screen {
 			for (Tab t : new Tab[] {Tab.ALL, Tab.NEARBY, Tab.ONLINE, Tab.OFFLINE}) viewsRoom += textRenderer.getWidth(viewLabel(t)) + 12;
 			if (tab == Tab.FRIENDS || tab == Tab.NICE || tab == Tab.LOOK || tab == Tab.NAUGHTY) viewsRoom += textRenderer.getWidth(tab.label + " ✕") + 18;
 		}
-		tabIcons = tx + roomy + sections.length * 14 + 6 + viewsRoom <= width - 6;
+		tabIcons = tx + roomy + sections.length * TAB_ICON + 6 + viewsRoom <= width - 6;
 		int activeX = -1, activeW = 0;
 		for (int i = 0; i < sections.length; i++) {
 			Tab t = sections[i];
@@ -1537,7 +1537,7 @@ public class ShopScreen extends Screen {
 			boolean active = t == Tab.ALL ? playersTab(tab) : t == tab;
 			boolean unread = t == Tab.CHAT ? !active && mod.chatLogger.feedVersion() != chatSeen && !mod.chatLogger.feed().isEmpty()
 					: t == Tab.MESSAGES && !active && mod.dms.unread() > 0;
-			int w = textRenderer.getWidth(label) + tabPad + (unread ? 6 : 0) + (tabIcons ? 14 : 0);
+			int w = textRenderer.getWidth(label) + tabPad + (unread ? 6 : 0) + (tabIcons ? TAB_ICON : 0);
 			if (active) {
 				activeX = tx;
 				activeW = w;
@@ -1631,6 +1631,8 @@ public class ShopScreen extends Screen {
 	}
 
 	private float underlineX, underlineW, segmentX, segmentW;
+	/** Room a section tab's picture takes: 12 wide (an item at three quarters), and a gap. */
+	private static final int TAB_ICON = 13;
 
 	/** A thin line along the bottom of the header that glows in the middle and fades out to both sides. */
 	private static void hGlow(DrawContext context, int x, int y, int w, int color) {
@@ -1664,7 +1666,7 @@ public class ShopScreen extends Screen {
 		if (a > 0) rounded(context, x, y + 1, w, h - 3, alpha(WHITE, (int) (0x1C * a)));
 		Text t = Text.literal(label).styled(s -> s.withBold(active));
 		int tw = textRenderer.getWidth(t);
-		int lx = x + (w - tw - (unread ? 6 : 0) - (icon != null ? 14 : 0)) / 2;
+		int lx = x + (w - tw - (unread ? 6 : 0) - (icon != null ? TAB_ICON : 0)) / 2;
 		if (icon != null) {
 			var m = context.getMatrices();
 			m.pushMatrix();
@@ -1672,7 +1674,7 @@ public class ShopScreen extends Screen {
 			m.scale(0.75f, 0.75f);
 			context.drawItem(icon, 0, 0);
 			m.popMatrix();
-			lx += 14;
+			lx += TAB_ICON;
 		}
 		context.drawText(textRenderer, t, lx, y + (h - 8) / 2, active ? WHITE : tint(WHITE, 0xFF9AA8B8, 0.15f + 0.6f * a), false);
 		if (unread) rounded(context, x + w - tabPad / 2 - 4, y + 3, 4, 4, ORANGE);
