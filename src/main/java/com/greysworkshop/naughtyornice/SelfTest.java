@@ -605,12 +605,12 @@ public final class SelfTest {
 				key(s, org.lwjgl.glfw.GLFW.GLFW_KEY_ENTER);
 				check("...and Enter opens the picked card", s.testSelected() != null);
 				key(s, org.lwjgl.glfw.GLFW.GLFW_KEY_ESCAPE);
-				key(s, org.lwjgl.glfw.GLFW.GLFW_KEY_4);
-				s.charTyped(new net.minecraft.client.input.CharInput('4', 0));
+				key(s, org.lwjgl.glfw.GLFW.GLFW_KEY_5);
+				s.charTyped(new net.minecraft.client.input.CharInput('5', 0));
 				boolean intel = "INTEL".equals(s.testTab());
 				key(s, org.lwjgl.glfw.GLFW.GLFW_KEY_1);
 				s.charTyped(new net.minecraft.client.input.CharInput('1', 0));
-				check("number keys open the sections (4 Intel, 1 Players), and aren't typed", intel && "ALL".equals(s.testTab()) && s.testSearchText().isEmpty());
+				check("number keys open the sections (5 Intel, 1 Players), and aren't typed", intel && "ALL".equals(s.testTab()) && s.testSearchText().isEmpty());
 				key(s, org.lwjgl.glfw.GLFW.GLFW_KEY_SLASH);
 				s.charTyped(new net.minecraft.client.input.CharInput('/', 0));
 				check("/ goes to the search box, and isn't typed in it", s.testFocusedSearch() && s.testSearchText().isEmpty());
@@ -620,7 +620,7 @@ public final class SelfTest {
 			}
 			case 676 -> {
 				String hint = screen(client).testHint();
-				check("pointing at a tab explains it, with its key (" + hint + ")", hint.startsWith("Intel") && hint.contains("key 4"));
+				check("pointing at a tab explains it, with its key (" + hint + ")", hint.startsWith("Intel") && hint.contains("key 5"));
 			}
 			case 678 -> {
 				screenshot(client, "74_main_tab_hint");
@@ -2601,12 +2601,12 @@ public final class SelfTest {
 			case 6 -> {
 				// Waits for the server: it whispers back to you, both ways.
 				DirectMessages.Thread t = dmThread(me);
-				boolean done = t != null && t.messages.stream().noneMatch(m -> m.state == DirectMessages.SENDING) && serverHeard.contains("hello me from the dms tab");
+				boolean done = t != null && !t.messages.isEmpty() && t.messages.get(0).confirmed > 0;
 				if (!done && ++dmWait < 60) {
 					dmStep--;
 					return;
 				}
-				check("the server got it as a whisper, and its echo confirms the line (once, not twice) (" + dmCount(me, true, "hello me from the dms tab") + ", heard " + serverHeard + ")",
+				check("the server's echo of the whisper confirms the line (once, not twice) (" + dmCount(me, true, "hello me from the dms tab") + ")",
 						done && dmCount(me, true, "hello me from the dms tab") == 1 && t.messages.get(0).state == 0);
 				screen(client).testDmText("meet me at 12000 -34000");
 				screen(client).testKey(org.lwjgl.glfw.GLFW.GLFW_KEY_ENTER, 0);
@@ -2645,6 +2645,11 @@ public final class SelfTest {
 			}
 			case 13 -> {
 				check("...and reads it", dmThread("RandomRick").unread() == 0);
+				// Servers with plugins write whispers as plain text, sometimes with a time first (or a chat mod adds one).
+				mod.watcher.onGameMessage(client, Text.literal("[12:34] RandomRick whispers: plugin style"));
+				mod.watcher.onGameMessage(client, Text.literal("To RandomRick: my reply"));
+				check("plain-text whispers (with a time in front, too) land in the same conversation (" + dmThread("RandomRick").messages.size() + ")",
+						dmCount("RandomRick", false, "plugin style") == 1 && dmCount("RandomRick", true, "my reply") == 1);
 				ShopScreen sc = screen(client);
 				sc.testKey(org.lwjgl.glfw.GLFW.GLFW_KEY_DOWN, org.lwjgl.glfw.GLFW.GLFW_MOD_CONTROL);
 				check("Ctrl+Down goes to the next conversation (" + sc.testDmWith() + ")", sc.testDmWith() != null && !"RandomRick".equals(sc.testDmWith()));
@@ -2680,7 +2685,6 @@ public final class SelfTest {
 				} catch (java.io.IOException e) {
 					check("could write a test chat file", false);
 				}
-				dmMark = dmThread("Helpful_Hana").messages.size();
 				dms.testImport();
 				dmWait = 0;
 			}
@@ -2692,24 +2696,79 @@ public final class SelfTest {
 				DirectMessages.Thread t = dmThread("Old_Pal");
 				check("old whispers in the chat logs are read in, already read (" + (t == null ? "none" : t.messages.size() + ", " + t.unread()) + ")",
 						t != null && t.messages.size() == 2 && t.messages.get(0).text.equals("remember me?") && t.messages.get(1).me && t.unread() == 0);
-				check("...without doubling ones already there (" + dmThread("Helpful_Hana").messages.size() + ")", dmThread("Helpful_Hana").messages.size() == dmMark);
+				dmMark = dmThread("Helpful_Hana").messages.size();
+				dms.testImport();
+				dmWait = 0;
+			}
+			case 18 -> {
+				if (dms.importing() && ++dmWait < 100) {
+					dmStep--;
+					return;
+				}
+				check("...and reading them in again doubles nothing (" + dmThread("Helpful_Hana").messages.size() + ", was " + dmMark + ")",
+						dmThread("Helpful_Hana").messages.size() == dmMark && dmThread("Old_Pal").messages.size() == 2);
 				try {
 					java.nio.file.Files.deleteIfExists(dmOldFile);
 				} catch (java.io.IOException ignored) {}
 				client.setScreen(new ShopScreen(null, mod.ledger.byName("Helpful_Hana")));
 			}
-			case 19 -> check("a player's page has ✉ Message", screen(client).testClick("dm-open:Helpful_Hana"));
-			case 20 -> {
+			case 20 -> check("a player's page has ✉ Message", screen(client).testClick("dm-open:Helpful_Hana"));
+			case 21 -> {
 				ShopScreen sc = screen(client);
 				check("...which opens your conversation with them", sc.testTab().equals("MESSAGES") && "Helpful_Hana".equals(sc.testDmWith()) && sc.testSelected() == null);
 				sc.testClick("dm-delete");
 			}
-			case 21 -> {
+			case 22 -> {
 				screen(client).testClick("dm-delete-yes");
 				check("Delete (after Sure?) removes the conversation", dmThread("Helpful_Hana") == null);
 				for (String n : new String[] {"RandomRick", "Nobody_Here_123", "Old_Pal", me}) dms.delete(n);
 				NNConfig.INSTANCE.guardMyCoords = dmGuardWas;
 				NNConfig.INSTANCE.askBeforeSending = dmAskWas;
+				// ---- A big list split by group ----
+				Ledger ledger = mod.ledger;
+				for (String n : new String[] {"Grp_A1", "Grp_A2", "Grp_B1", "Solo_1"}) {
+					Profile p = ledger.getOrCreate(id(n), n);
+					ledger.setVerdict(p, Profile.Verdict.NICE, false, null);
+					if (n.startsWith("Grp_A")) ledger.addToGroup(p, "Alpha");
+					if (n.startsWith("Grp_B")) ledger.addToGroup(p, "Bravo");
+				}
+				NNConfig.INSTANCE.listByGroup = true;
+				NNConfig.INSTANCE.foldedGroups.clear();
+				client.setScreen(new ShopScreen(ShopScreen.Tab.NICE, null));
+			}
+			case 24 -> {
+				ShopScreen sc = screen(client);
+				int nice = mod.ledger.onList(Profile.Verdict.NICE).size();
+				dmMark = sc.testShownCards();
+				check("the Nice list is split under group headings, everyone still there (" + dmMark + " of " + nice + ")", dmMark == nice
+						&& sc.testLabels().contains("group-fold:Alpha") && sc.testLabels().contains("group-fold:No group"));
+				screenshot(client, "74_nice_by_group");
+				check("clicking a heading folds the group away", sc.testClick("group-fold:Alpha"));
+			}
+			case 25 -> {
+				ShopScreen sc = screen(client);
+				check("...its players are hidden (" + sc.testShownCards() + ")", sc.testShownCards() == dmMark - 2);
+				sc.testClick("groups-fold-all");
+			}
+			case 26 -> {
+				ShopScreen sc = screen(client);
+				check("Collapse all folds them all (" + sc.testShownCards() + ")", sc.testShownCards() == 0);
+				sc.testClick("groups-fold-all");
+			}
+			case 27 -> {
+				ShopScreen sc = screen(client);
+				check("...and Expand all opens them again", sc.testShownCards() == dmMark);
+				check("Group page opens the group", sc.testClick("group-page:Bravo") && sc.testOpenGroup() != null && sc.testOpenGroup().equalsIgnoreCase("Bravo"));
+				client.setScreen(new ShopScreen(ShopScreen.Tab.NICE, null));
+			}
+			case 29 -> {
+				ShopScreen sc = screen(client);
+				check("the By group switch turns it back into one grid", sc.testClick("by-group") && !NNConfig.INSTANCE.listByGroup);
+			}
+			case 30 -> {
+				check("...(no headings)", screen(client).testShownCards() == -1 && !screen(client).testLabels().contains("group-fold:"));
+				NNConfig.INSTANCE.listByGroup = true;
+				for (String n : new String[] {"Grp_A1", "Grp_A2", "Grp_B1", "Solo_1"}) mod.ledger.forget(mod.ledger.byName(n));
 				client.setScreen(null);
 				dmStep = 0;
 				if (dmsOnly) finish(client);

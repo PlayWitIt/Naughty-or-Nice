@@ -295,6 +295,7 @@ public final class Watcher {
 	private static final Pattern ANGLED = Pattern.compile("^" + TAGS + "<(?:[^>]*\\s)?" + NAME + "> (.+)$");
 	/** "name: hi", "[VIP] name » hi", "Rank name > hi". */
 	private static final Pattern SEPARATED = Pattern.compile("^" + TAGS + "(?:[^\\s:»>|\\[\\]]{1,16}\\s)?" + NAME + "\\s?(?::|»|>>|->|\\|)\\s(.+)$");
+	private static final Pattern LEADING_TIME = Pattern.compile("^[\\[(]\\d{1,2}:\\d{2}(?::\\d{2})?(?:\\s?[AaPp][Mm])?[\\])]\\s*");
 	private static final Pattern[] WHISPER_IN = {
 			Pattern.compile("^" + NAME + " whispers(?: to you)?: (.+)$"),
 			Pattern.compile("^[\\[(]" + NAME + " (?:->|→) (?:me|you)[\\])]:? (.+)$"),
@@ -419,7 +420,8 @@ public final class Watcher {
 			}
 		}
 
-		String line = raw;
+		// A time some chat mods and servers put first ("[12:34] ", "[12:34:56] ") isn't part of what was said.
+		String line = LEADING_TIME.matcher(raw).replaceFirst("");
 		String me = client.player.getGameProfile().name();
 		for (Pattern p : WHISPER_OUT) {
 			Matcher m = p.matcher(line);

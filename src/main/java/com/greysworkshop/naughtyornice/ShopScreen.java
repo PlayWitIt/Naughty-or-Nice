@@ -1751,6 +1751,7 @@ public class ShopScreen extends Screen {
 	private void renderList(DrawContext context, int mouseX, int mouseY) {
 		List<Profile> results = results();
 		boolean sidebar = width >= 380;
+		boolean grouped = groupedView(results);
 		int left = sidebar ? 8 + SIDEBAR + 8 : 8;
 		int right = width - 8;
 
@@ -1778,6 +1779,20 @@ public class ShopScreen extends Screen {
 		int shw = textRenderer.getWidth(shareLabel) + 12;
 		pill(context, mouseX, mouseY, right - sw - aw - shw - 12, barY + 2, shw, 12, shareLabel, SOFT, BORDER, TEXT, "open-share",
 				() -> openShare(ShareView.SEND));
+		if (listTab(tab)) {
+			// Big lists read better split by group; this switches it.
+			String byLabel = (NNConfig.INSTANCE.listByGroup ? "✔ " : "") + "By group";
+			int bw = textRenderer.getWidth(byLabel) + 12;
+			int bx = right - sw - aw - shw - bw - 18;
+			if (bx > 8 + textRenderer.getWidth(summary + (query.isEmpty() ? "" : "\"" + query + "\"")) + 6) {
+				pill(context, mouseX, mouseY, bx, barY + 2, bw, 12, byLabel, NNConfig.INSTANCE.listByGroup ? tint(LINK, CARD, 0.3f) : SOFT, BORDER, TEXT, "by-group", () -> {
+					NNConfig.INSTANCE.listByGroup = !NNConfig.INSTANCE.listByGroup;
+					NNConfig.save();
+					pick = -1;
+				});
+				hint(mouseX, mouseY, bx, barY + 2, bw, 12, "By group", "Split the list under each group's name; click a group's name to fold it away");
+			}
+		}
 
 		int top = barY + 17;
 		context.enableScissor(0, top, width, height);
@@ -1809,6 +1824,14 @@ public class ShopScreen extends Screen {
 			y += 60;
 		}
 		gridCols = cols;
+		if (grouped) {
+			y = renderGroupedCards(context, mouseX, mouseY, results, left, y, gridW, cols, cardW, top);
+			context.disableScissor();
+			contentHeight = Math.max(y - startY + 12, sidebar ? sidebarHeight : 0);
+			scrollbar(context, top);
+			return;
+		}
+		shownCards = null;
 		if (pick >= results.size()) pick = results.size() - 1;
 		// The card picked with the arrow keys is scrolled into view.
 		if (pick >= 0 && pickScroll) {
@@ -4695,6 +4718,135 @@ public class ShopScreen extends Screen {
 		chatField.setCursorToEnd(false);
 	}
 
+
+	// ---- A list split by group ----
+
+	/** The cards in the order they're on screen when the list is split by group (null when it isn't), for the arrow keys. */
+	private List<Profile> shownCards;
+	private static final int GROUP_HEAD = 18;
+
+	private static boolean listTab(Tab t) {
+		return t == Tab.FRIENDS || t == Tab.NICE || t == Tab.LOOK || t == Tab.NAUGHTY;
+	}
+
+	/** Split by group: a list tab, switched on, and someone on it is in a group. */
+	private boolean groupedView(List<Profile> results) {
+		if (!listTab(tab) || !NNConfig.INSTANCE.listByGroup) return false;
+		for (Profile p : results) if (!p.groups.isEmpty()) return true;
+		return false;
+	}
+
+	private List<Profile> pickList() {
+		return shownCards != null && groupedView(results()) ? shownCards : results();
+	}
+
+	private static boolean folded(String group) {
+		return NNConfig.INSTANCE.foldedGroups.stream().anyMatch(group::equalsIgnoreCase);
+	}
+
+	private static void fold(String group, boolean fold) {
+		NNConfig.INSTANCE.foldedGroups.removeIf(group::equalsIgnoreCase);
+		if (fold) NNConfig.INSTANCE.foldedGroups.add(group);
+		NNConfig.save();
+	}
+
+	/**
+	 * The cards under a heading per group (a player goes under their first group), the groups with the most people
+	 * online first, "No group" last. A heading folds its group away. Returns the y below the last.
+	 */
+	private int renderGroupedCards(DrawContext context, int mouseX, int mouseY, List<Profile> results, int left, int y, int gridW, int cols, int cardW, int top) {
+		Map<String, List<Profile>> sections = new LinkedHashMap<>();
+		List<Profile> none = new ArrayList<>();
+		for (Profile p : results) {
+			if (p.groups.isEmpty()) none.add(p);
+			else sections.computeIfAbsent(p.groups.get(0), k -> new ArrayList<>()).add(p);
+		}
+		Map<String, Integer> online = new HashMap<>();
+		for (Map.Entry<String, List<Profile>> e : sections.entrySet()) online.put(e.getKey(), (int) e.getValue().stream().filter(this::isOnline).count());
+		List<String> order = new ArrayList<>(sections.keySet());
+		order.sort(Comparator.comparing((String g) -> -online.get(g)).thenComparing(g -> -sections.get(g).size()).thenComparing(g -> g.toLowerCase(Locale.ROOT)));
+		if (!none.isEmpty()) {
+			order.add("");
+			sections.put("", none);
+			online.put("", (int) none.stream().filter(this::isOnline).count());
+		}
+
+		// Fold or open them all.
+		boolean allFolded = order.stream().allMatch(ShopScreen::folded);
+		String all = allFolded ? "Expand all" : "Collapse all";
+		String count = order.size() - (none.isEmpty() ? 0 : 1) + (order.size() - (none.isEmpty() ? 0 : 1) == 1 ? " group" : " groups");
+		text(context, count, left + 2, y + 1, MUTED);
+		link(context, mouseX, mouseY, left + gridW - textRenderer.getWidth(all) - 2, y + 1, all, "groups-fold-all", () -> {
+			for (String g : order) fold(g, !allFolded);
+		});
+		y += 14;
+
+		List<Profile> shown = new ArrayList<>();
+		int pickY = Integer.MIN_VALUE;
+		for (String g : order) {
+			List<Profile> members = sections.get(g);
+			boolean isFolded = folded(g);
+			int color = g.isEmpty() ? MUTED : groupColor(g);
+			// The heading: the group's colour down its edge, name, how many and how many online.
+			boolean hover = over(mouseX, mouseY, left, y, gridW, GROUP_HEAD) && mouseY >= top;
+			rounded(context, left, y, gridW, GROUP_HEAD, hover ? HOVER_BG : CARD);
+			context.fill(left, y + 2, left + 3, y + GROUP_HEAD - 2, color);
+			text(context, isFolded ? "▸" : "▾", left + 7, y + 5, MUTED);
+			String name = g.isEmpty() ? "No group" : g;
+			context.drawText(textRenderer, Text.literal(name).styled(s -> s.withBold(true)), left + 17, y + 5, g.isEmpty() ? TEXT : color, false);
+			int nx = left + 17 + textRenderer.getWidth(Text.literal(name).styled(s -> s.withBold(true))) + 8;
+			int on = online.get(g);
+			String info = members.size() + (members.size() == 1 ? " player" : " players");
+			text(context, info, nx, y + 5, MUTED);
+			if (on > 0) {
+				int ox = nx + textRenderer.getWidth(info) + 6;
+				context.fill(ox, y + 7, ox + 4, y + 11, 0xFF2EB82E);
+				text(context, on + " online", ox + 7, y + 5, 0xFF2EB82E);
+			}
+			int linkRight = left + gridW - 6;
+			if (!g.isEmpty()) {
+				String openLabel = "Group page ›";
+				linkRight -= textRenderer.getWidth(openLabel);
+				link(context, mouseX, mouseY, linkRight, y + 5, openLabel, "group-page:" + g, () -> showGroup(g));
+				linkRight -= 6;
+			}
+			hit(left, y, linkRight - left, GROUP_HEAD, "group-fold:" + name, () -> fold(g, !isFolded));
+			y += GROUP_HEAD + 4;
+			if (isFolded) continue;
+			for (int i = 0; i < members.size(); i++) {
+				int col = i % cols;
+				int cy = y + (i / cols) * (CARD_H + GAP);
+				int index = shown.size();
+				shown.add(members.get(i));
+				if (index == pick) pickY = cy;
+				if (cy > height || cy + CARD_H < top) continue;
+				int cx = left + col * (cardW + GAP);
+				card(context, mouseX, mouseY, members.get(i), cx, cy, cardW);
+				if (index == pick) {
+					int c = alpha(ORANGE, (int) (0xFF * ease("pick", true)));
+					context.fill(cx - 1, cy - 1, cx + cardW + 1, cy, c);
+					context.fill(cx - 1, cy + CARD_H, cx + cardW + 1, cy + CARD_H + 1, c);
+					context.fill(cx - 1, cy, cx, cy + CARD_H, c);
+					context.fill(cx + cardW, cy, cx + cardW + 1, cy + CARD_H, c);
+				}
+			}
+			y += ((members.size() + cols - 1) / cols) * (CARD_H + GAP) + 4;
+		}
+		shownCards = shown;
+		if (pick >= shown.size()) pick = shown.size() - 1;
+		// The card picked with the arrow keys is scrolled into view.
+		if (pickScroll && pickY != Integer.MIN_VALUE) {
+			if (pickY < top + 4) scroll = Math.max(0, scroll - (top + 4 - pickY));
+			else if (pickY + CARD_H > height - 4) scroll += pickY + CARD_H - (height - 4);
+			pickScroll = false;
+		}
+		return y;
+	}
+
+	public int testShownCards() {
+		return shownCards == null ? -1 : shownCards.size();
+	}
+
 	// ---- DMs: private messages, one player at a time ----
 
 	/** Wide enough to show the conversations and the open one side by side. */
@@ -5131,7 +5283,8 @@ public class ShopScreen extends Screen {
 				mod.dms.unsend(t.name, m);
 				sendDmText(t.name, m.text);
 			}, LINK);
-			textTrim(context, "✖ Not sent: " + (m.error == null ? "the server said no" : m.error), left + 40, by + bh + 1, rx - left - 46, NAUGHTY);
+			String why = fit("✖ Not sent: " + (m.error == null ? "the server said no" : m.error), rx - left - 46);
+			text(context, why, rx - 8 - textRenderer.getWidth(why), by + bh + 1, NAUGHTY);
 		}
 		// Click a bubble to copy what it says.
 		if (hover) hits.add(new Hit(bx, Math.max(by, viewTop), bx + r.w, Math.min(by + bh, viewBottom), "dm-line:" + m.time, () -> {
@@ -7736,7 +7889,7 @@ public class ShopScreen extends Screen {
 			}
 			// Arrow keys move along the cards; Enter opens the picked one.
 			if (playersTab(tab) && selected == null) {
-				List<Profile> results = results();
+				List<Profile> results = pickList();
 				int n = results.size();
 				int step = switch (key) {
 					case GLFW.GLFW_KEY_RIGHT -> 1;

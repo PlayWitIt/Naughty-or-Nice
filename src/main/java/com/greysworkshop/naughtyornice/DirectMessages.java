@@ -290,7 +290,8 @@ public final class DirectMessages {
 			}
 		}
 		Message m = new Message();
-		m.time = now;
+		// Later than anything read, so a reply in the same instant as yours still shows as new.
+		m.time = me ? now : Math.max(now, t.readUpTo + 1);
 		m.me = me;
 		m.text = text;
 		if (me) m.confirmed = now;

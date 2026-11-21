@@ -129,6 +129,10 @@ public final class NNConfig {
 	public boolean trailAlerts = true;
 	/** The lists' sort, and whether Intel shows as a map: as you last left them. */
 	public String listSort = "RECENT";
+	/** Friends, Nice, Look Into and Naughty split under each group's name. */
+	public boolean listByGroup = true;
+	/** Groups folded away in those lists. */
+	public java.util.List<String> foldedGroups = new java.util.ArrayList<>();
 	public boolean intelMap = false;
 
 	/** The bar at the top while Baritone takes you somewhere: where to, how far, how long, how fast. */
@@ -297,6 +301,7 @@ public final class NNConfig {
 				if (loaded.mineBlocks == null) loaded.mineBlocks = new java.util.ArrayList<>();
 				if (loaded.pinnedPlaces == null) loaded.pinnedPlaces = new java.util.ArrayList<>();
 				if (loaded.placesSort == null) loaded.placesSort = "NEAREST";
+				if (loaded.foldedGroups == null) loaded.foldedGroups = new java.util.ArrayList<>();
 				if (loaded.circles != null) loaded.circles.removeIf(c -> c == null || c.id == null || c.id.isBlank() || c.name == null || c.name.isBlank());
 				if (loaded.circles == null || loaded.circles.isEmpty()) loaded.circles = Friends.defaultCircles();
 				if (loaded.skippedVersion == null) loaded.skippedVersion = "";
