@@ -155,6 +155,22 @@ player's page (**+ Add to a group**), the **Groups** tab (**+ New group**), the 
 - A player's groups show as coloured tags on their card, on their page (with who they're grouped with and how many of
   those are on your Naughty list), on nametags and in the tab list (`[SCG]`), and in the Chat tab.
 - Groups travel with shared lists.
+- **Big lists split by group:** Friends, Nice, Look Into and Naughty show players under each group's heading (busiest
+  groups first, "No group" last), with how many are online. Click a heading to fold it away; **Collapse all / Expand
+  all**; **Group page ›** opens the group; **By group** in the bar switches back to one grid.
+
+## DMs: private messages, one player at a time
+Every whisper you get or send lands in a conversation with that player, kept between sessions (per server). The first
+time, whispers already in your chat logs are read in.
+- Pick someone on the left (or type a name in **+ New**), type, press Enter: it's whispered to them for you (`/w name …`;
+  change the command with `/nn whispercmd <command>`). Long messages are split to fit.
+- Whispers sent any other way (`/w`, `/r`, other mods, plain-text plugin formats) land in the same conversation.
+- A line shows as *sending…* until the server echoes it; if the server says they aren't there it's marked **Not sent**
+  with a **Retry**.
+- **Their chat** shows their public chat too, between your whispers.
+- **Y** (in game) opens the newest unread conversation, ready to type; when someone whispers you the action bar says
+  *Y to reply*. Also: ✉ Message on player pages, click a whisper in the Chat tab, Alt/Ctrl + Up/Down to change
+  conversation, Copy, Delete. `/nn dm [name]`.
 
 ## Chat tab
 A chat window where everyone is marked so you can tell who's who at a glance: a badge for their list (★ Friend,

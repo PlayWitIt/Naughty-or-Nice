@@ -1,9 +1,18 @@
-**Settings and Intel, redone to match the rest.**
+**DMs: private messages, one player at a time. And big lists split by group.**
 
-**Settings in parts.** No more one long wall: a sidebar on the left (like the Baritone screen and the player lists) picks one part at a time — General, On screen, Alerts, Chat, Watching, Chunk trails, Friend circles, Your data, Troubleshooting and Commands. Each opens with its title and what it's for.
-- **Every switch is a row:** its name, what it does, and a sliding on/off switch on the right. Click anywhere on the row.
-- **Troubleshooting** (the chat check and disconnects) shows a badge when something needs a look.
-- Number settings sit in their own card; words to watch for sit with the Alerts; where your files are kept has buttons to open the folders; the commands are a tidy table.
-- PlayWit Hub is a button at the bottom of the sidebar.
+**DMs tab.** Every whisper you get or send lands in a conversation with that player, like DMs in any chat app. No more typing `/w name` each time.
+- **Just type and press Enter.** It's whispered to them for you (as `/w name …`). Long messages are split into as many whispers as it takes.
+- **Your conversations on the left**, newest first, with their face, an online dot, the last line and an unread count. **+ New** starts one: type a name and pick it.
+- **Kept between sessions**, per server. The first time, whispers already in your chat logs are read in, so older conversations are there too.
+- **Sent any way, it still counts.** `/w`, `/r`, `/msg`, other mods, servers that write whispers as plain text, chat with a time in front: it all lands in the same conversation.
+- **Sending… / not sent.** Your line shows at once. If the server says the player isn't there, it's marked **Not sent** with the server's words and a **Retry**.
+- **Their chat** switch shows their public chat too, in grey between your whispers, so you can follow just them.
+- **Y** opens your DMs on the newest unread conversation, ready to type. When someone whispers you, the bar above your hotbar says **Y to reply**.
+- Also: **✉ Message** on every player page, click a whisper in the Chat tab to open it, Alt or Ctrl + Up/Down to change conversation, Copy, and Delete (with a Sure?).
+- The coordinate guard works here too: a message that gives your location away is held until you press Enter again.
+- `/nn dm [name]` opens it. `/nn whispercmd <command>` changes the whisper command (`w` by default; `msg`, `tell`… for other servers).
 
-**Intel, tidier.** The long paragraph at the top is now one line (point at the title for the whole story). The filters are a raised sidebar with count badges, places and events first, then what the chat's about. List / Map is a two-way switch at the top right.
+**Lists split by group.** Friends, Nice, Look Into and Naughty now show players under their group's heading, in the group's colour, with how many and how many are online. The groups with the most people online come first, "No group" last.
+- **Click a heading to fold it away** (remembered). **Collapse all / Expand all** at the top.
+- **Group page ›** on each heading opens the group.
+- **By group** in the bar switches back to one grid.
