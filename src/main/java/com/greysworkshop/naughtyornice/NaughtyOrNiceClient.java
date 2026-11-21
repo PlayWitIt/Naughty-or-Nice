@@ -74,8 +74,9 @@ public class NaughtyOrNiceClient implements ClientModInitializer {
 		stopKey = KeyBindingHelper.registerKeyBinding(new KeyBinding("key.naughtyornice.stop", InputUtil.Type.KEYSYM, GLFW.GLFW_KEY_Z, category));
 		// Chunks in the world, back in 1.21.1 on X (K is the radar now).
 		chunksKey = KeyBindingHelper.registerKeyBinding(new KeyBinding("key.naughtyornice.chunks", InputUtil.Type.KEYSYM, GLFW.GLFW_KEY_X, category));
-		// Y: the game, Meteor and Baritone leave it free. Opens the DMs tab on the newest conversation, ready to type.
-		messagesKey = KeyBindingHelper.registerKeyBinding(new KeyBinding("key.naughtyornice.messages", InputUtil.Type.KEYSYM, GLFW.GLFW_KEY_Y, category));
+		// O: free in the game, Meteor, Baritone and the other PlayWit mods (Y is Hoard Eye's search). Opens the DMs tab
+		// on the newest conversation, ready to type.
+		messagesKey = KeyBindingHelper.registerKeyBinding(new KeyBinding("key.naughtyornice.messages", InputUtil.Type.KEYSYM, GLFW.GLFW_KEY_O, category));
 		// Logout outlines first: both draw lines, and the chunk squares' fill must come last or it's flushed too early.
 		WorldRenderEvents.BEFORE_DEBUG_RENDER.register(context -> Safe.run("drawing logout spots in the world", () -> LogoutSpots.renderWorld(context)));
 		WorldRenderEvents.BEFORE_DEBUG_RENDER.register(context -> Safe.run("drawing chunks in the world", () -> ChunkOverlay.render(context)));
@@ -285,9 +286,9 @@ public class NaughtyOrNiceClient implements ClientModInitializer {
 	}
 
 	/** Opens the store, on the page of the player you're looking at if there is one. */
-	/** The key that opens the DMs tab, as the game names it ("Y"). */
+	/** The key that opens the DMs tab, as the game names it ("O"). */
 	public String messagesKeyName() {
-		return messagesKey == null ? "Y" : messagesKey.getBoundKeyLocalizedText().getString();
+		return messagesKey == null ? "O" : messagesKey.getBoundKeyLocalizedText().getString();
 	}
 
 	public Screen openScreen(MinecraftClient client) {
@@ -382,6 +383,17 @@ public class NaughtyOrNiceClient implements ClientModInitializer {
 		ledger.switchTo(Ledger.worldKey(client));
 		if (!keysChecked) {
 			keysChecked = true;
+			if (!NNConfig.INSTANCE.dmsOffY) {
+				// 1.25.0 put DMs on Y, which is Hoard Eye's search: moved to O, once.
+				NNConfig.INSTANCE.dmsOffY = true;
+				NNConfig.save();
+				if (messagesKey.getBoundKeyTranslationKey().equals("key.keyboard.y")) {
+					messagesKey.setBoundKey(messagesKey.getDefaultKey());
+					KeyBinding.updateKeysByCode();
+					client.options.write();
+					Alerts.chat(Text.literal("DMs are on " + messagesKeyName() + " now (Y is Hoard Eye's search). Change it in Options → Controls → Key Binds.").formatted(Formatting.GRAY));
+				}
+			}
 			if (!NNConfig.INSTANCE.radarKeyMoved) {
 				// The radar used to be on J, which Trade Seeker (and map mods) use too: move it, once.
 				NNConfig.INSTANCE.radarKeyMoved = true;

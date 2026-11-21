@@ -40,6 +40,8 @@ public final class NNConfig {
 	public boolean dmReplyHint = true;
 	/** The DMs tab shows the other player's public chat too, between your whispers. */
 	public boolean dmShowPublic = false;
+	/** Set once a DMs key saved on Y (1.25.0, clashing with Hoard Eye) has been moved to O. */
+	public boolean dmsOffY = false;
 
 	// ---- Showing the lists ----
 	/** Green tick / red cross in front of names above players' heads. */
