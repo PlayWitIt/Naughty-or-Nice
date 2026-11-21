@@ -36,6 +36,10 @@ public final class NNConfig {
 	public boolean screenSmallSet = false;
 	/** The Chat tab shows chat from players on no list too (otherwise just listed or grouped players). */
 	public boolean chatShowEveryone = true;
+	/** When someone whispers you (no screen open), the action bar names the key that opens the DMs tab to reply. */
+	public boolean dmReplyHint = true;
+	/** The DMs tab shows the other player's public chat too, between your whispers. */
+	public boolean dmShowPublic = false;
 
 	// ---- Showing the lists ----
 	/** Green tick / red cross in front of names above players' heads. */
@@ -215,8 +219,10 @@ public final class NNConfig {
 	public java.util.List<Friends.Circle> circles = Friends.defaultCircles();
 
 	// ---- Sharing ----
-	/** The command used to send a share link to someone in game ("msg" sends /msg name link). */
-	public String whisperCommand = "msg";
+	/** The command for whispering someone: the DMs tab and share links ("w" sends /w name text; Constantiam uses /w). */
+	public String whisperCommand = "w";
+	/** Set once the old default "msg" has been moved to "w" (1.25.0). */
+	public boolean whisperCommandW = false;
 	/** Offer to open share links friends send you in chat. */
 	public boolean openSharedLinks = true;
 
@@ -295,7 +301,12 @@ public final class NNConfig {
 				if (loaded.circles == null || loaded.circles.isEmpty()) loaded.circles = Friends.defaultCircles();
 				if (loaded.skippedVersion == null) loaded.skippedVersion = "";
 				if (loaded.lastVersion == null) loaded.lastVersion = "";
-				if (loaded.whisperCommand == null || loaded.whisperCommand.isBlank()) loaded.whisperCommand = "msg";
+				if (loaded.whisperCommand == null || loaded.whisperCommand.isBlank()) loaded.whisperCommand = "w";
+				// "msg" was only ever the default (nothing set it); /w works on more servers, Constantiam included.
+				if (!loaded.whisperCommandW) {
+					if (loaded.whisperCommand.strip().replaceFirst("^/", "").equalsIgnoreCase("msg")) loaded.whisperCommand = "w";
+					loaded.whisperCommandW = true;
+				}
 				boolean backLeft = !loaded.coordsBackLeft;
 				if (backLeft) {
 					loaded.coordsRight = false;

@@ -41,6 +41,8 @@ public class NaughtyOrNiceClient implements ClientModInitializer {
 
 	public final Ledger ledger = new Ledger();
 	public final ChatLogger chatLogger = new ChatLogger(ledger);
+	/** Private messages, one conversation per player (the DMs tab). */
+	public final DirectMessages dms = new DirectMessages(ledger);
 	public final Diagnostics diagnostics = new Diagnostics();
 	public final Watcher watcher = new Watcher(ledger, chatLogger, diagnostics);
 
@@ -49,6 +51,7 @@ public class NaughtyOrNiceClient implements ClientModInitializer {
 	private KeyBinding chunksKey;
 	private KeyBinding baritoneKey;
 	private KeyBinding stopKey;
+	private KeyBinding messagesKey;
 	private int roamTimer;
 	private int trailTimer;
 	private int walkTimer;
@@ -71,6 +74,8 @@ public class NaughtyOrNiceClient implements ClientModInitializer {
 		stopKey = KeyBindingHelper.registerKeyBinding(new KeyBinding("key.naughtyornice.stop", InputUtil.Type.KEYSYM, GLFW.GLFW_KEY_Z, category));
 		// Chunks in the world, back in 1.21.1 on X (K is the radar now).
 		chunksKey = KeyBindingHelper.registerKeyBinding(new KeyBinding("key.naughtyornice.chunks", InputUtil.Type.KEYSYM, GLFW.GLFW_KEY_X, category));
+		// Y: the game, Meteor and Baritone leave it free. Opens the DMs tab on the newest conversation, ready to type.
+		messagesKey = KeyBindingHelper.registerKeyBinding(new KeyBinding("key.naughtyornice.messages", InputUtil.Type.KEYSYM, GLFW.GLFW_KEY_Y, category));
 		// Logout outlines first: both draw lines, and the chunk squares' fill must come last or it's flushed too early.
 		WorldRenderEvents.BEFORE_DEBUG_RENDER.register(context -> Safe.run("drawing logout spots in the world", () -> LogoutSpots.renderWorld(context)));
 		WorldRenderEvents.BEFORE_DEBUG_RENDER.register(context -> Safe.run("drawing chunks in the world", () -> ChunkOverlay.render(context)));
@@ -280,6 +285,11 @@ public class NaughtyOrNiceClient implements ClientModInitializer {
 	}
 
 	/** Opens the store, on the page of the player you're looking at if there is one. */
+	/** The key that opens the DMs tab, as the game names it ("Y"). */
+	public String messagesKeyName() {
+		return messagesKey == null ? "Y" : messagesKey.getBoundKeyLocalizedText().getString();
+	}
+
 	public Screen openScreen(MinecraftClient client) {
 		PlayerEntity target = lookedAt(client);
 		if (target != null) {
@@ -429,6 +439,9 @@ public class NaughtyOrNiceClient implements ClientModInitializer {
 			TrailFollow.stop(null);
 			BaritoneBridge.run("stop");
 			if (BaritoneBridge.present()) client.inGameHud.setOverlayMessage(Text.literal(was ? "Stopped" : "Nothing to stop").formatted(Formatting.YELLOW), false);
+		}
+		while (messagesKey.wasPressed()) {
+			if (client.currentScreen == null) client.setScreen(ShopScreen.messages(dms.latest()));
 		}
 		while (baritoneKey.wasPressed()) {
 			if (client.currentScreen == null) client.setScreen(new BaritoneScreen());

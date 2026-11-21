@@ -169,6 +169,25 @@ public final class Commands {
 							NaughtyOrNiceClient.INSTANCE.openLater(new ShopScreen(null, profile).withChatLog());
 							return 1;
 						})))
+				.then(literal("dm").executes(c -> {
+					NaughtyOrNiceClient.INSTANCE.openLater(ShopScreen.messages(NaughtyOrNiceClient.INSTANCE.dms.latest()));
+					return 1;
+				}).then(argument("player", StringArgumentType.word()).suggests(NAMES)
+						.executes(c -> {
+							NaughtyOrNiceClient.INSTANCE.openLater(ShopScreen.messages(StringArgumentType.getString(c, "player")));
+							return 1;
+						})))
+				.then(literal("whispercmd").executes(c -> {
+					c.getSource().sendFeedback(Alerts.prefix().append(Text.literal("DMs are sent with /" + NNConfig.INSTANCE.whisperCommand
+							+ " <name> <message>. Change it with /nn whispercmd <command> (e.g. w, msg, tell).")));
+					return 1;
+				}).then(argument("command", StringArgumentType.word()).executes(c -> {
+					String cmd = StringArgumentType.getString(c, "command").replaceFirst("^/", "");
+					NNConfig.INSTANCE.whisperCommand = cmd;
+					NNConfig.save();
+					c.getSource().sendFeedback(Alerts.prefix().append(Text.literal("DMs now send as /" + cmd + " <name> <message>.")));
+					return 1;
+				})))
 				.then(literal("groups").executes(c -> {
 					NaughtyOrNiceClient.INSTANCE.openLater(new ShopScreen(ShopScreen.Tab.GROUPS, null));
 					return 1;

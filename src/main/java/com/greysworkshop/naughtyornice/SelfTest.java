@@ -59,6 +59,8 @@ public final class SelfTest {
 			client.getTutorialManager().setStep(net.minecraft.client.tutorial.TutorialStep.NONE);
 			// NN_SELFTEST_ONLY=baritone: just the Baritone screen's buttons, in the test world (quick, for working on it).
 			baritoneOnly = "baritone".equals(System.getenv("NN_SELFTEST_ONLY"));
+			// NN_SELFTEST_ONLY=dms: just the DMs tab, in the test world.
+			dmsOnly = "dms".equals(System.getenv("NN_SELFTEST_ONLY"));
 			// NN_SELFTEST_ONLY=accounts: just the account screen, from the menus (quick, for working on its looks).
 			if ("accounts".equals(System.getenv("NN_SELFTEST_ONLY"))) {
 				log("Only the account test");
@@ -112,6 +114,10 @@ public final class SelfTest {
 			baritoneButtons(client);
 			return;
 		}
+		if (dmStep > 0) {
+			dmTest(client);
+			return;
+		}
 		tick++;
 		NaughtyOrNiceClient mod = NaughtyOrNiceClient.INSTANCE;
 		Ledger ledger = mod.ledger;
@@ -142,6 +148,10 @@ public final class SelfTest {
 				ledger.getOrCreate(id("Steve_Builder"), "Steve_Builder").secondsNear = 300;
 				if (baritoneOnly) {
 					tick = 79;
+					return;
+				}
+				if (dmsOnly) {
+					dmStep = 1;
 					return;
 				}
 				Profile toxic = ledger.getOrCreate(id("xX_Toxic_Xx"), "xX_Toxic_Xx");
@@ -896,6 +906,8 @@ public final class SelfTest {
 				log("Screen sizes: " + sizes);
 				check("Small, Medium and Large differ on every common window size", distinct);
 			}
+			// After the Chat tab: the DMs tab (the main steps wait meanwhile).
+			case 896 -> dmStep = 1;
 			// ---- Chat check ----
 			case 900 -> {
 				client.setScreen(null);
@@ -2516,6 +2528,205 @@ public final class SelfTest {
 	private static void tp(MinecraftClient client, String where) {
 		IntegratedServer server = client.getServer();
 		server.execute(() -> server.getCommandManager().parseAndExecute(server.getCommandSource(), "tp @a " + where + " -90 0"));
+	}
+
+	// ---- DMs tab: private messages, one player at a time ----
+
+	private static int dmStep;
+	private static boolean dmsOnly;
+	private static int dmWait;
+	private static long dmMark;
+	private static java.nio.file.Path dmOldFile;
+	private static boolean dmGuardWas, dmAskWas;
+
+	private static DirectMessages.Thread dmThread(String name) {
+		return NaughtyOrNiceClient.INSTANCE.dms.thread(name);
+	}
+
+	private static long dmCount(String name, boolean me, String text) {
+		DirectMessages.Thread t = dmThread(name);
+		return t == null ? 0 : t.messages.stream().filter(m -> m.me == me && m.text.equals(text)).count();
+	}
+
+	/** Each step one drawn frame apart; steps that wait for the server repeat until it answers (or time runs out). */
+	private static void dmTest(MinecraftClient client) {
+		NaughtyOrNiceClient mod = NaughtyOrNiceClient.INSTANCE;
+		DirectMessages dms = mod.dms;
+		String me = client.player.getGameProfile().name();
+		int s = dmStep++;
+		switch (s) {
+			case 1 -> {
+				log("DMs: private messages, one player at a time");
+				dmGuardWas = NNConfig.INSTANCE.guardMyCoords;
+				dmAskWas = NNConfig.INSTANCE.askBeforeSending;
+				NNConfig.INSTANCE.guardMyCoords = true;
+				NNConfig.INSTANCE.askBeforeSending = false;
+				for (String n : new String[] {"Helpful_Hana", "RandomRick", "Nobody_Here_123", "Old_Pal", me}) dms.delete(n);
+				client.setScreen(null);
+				mod.watcher.onGameMessage(client, Text.translatable("commands.message.display.incoming", Text.literal("Helpful_Hana"), Text.literal("hey, you around?")));
+				DirectMessages.Thread t = dmThread("Helpful_Hana");
+				check("a whisper to you starts a conversation, unread (" + (t == null ? "none" : t.messages.size() + ", " + t.unread()) + ")",
+						t != null && t.messages.size() == 1 && !t.messages.get(0).me && t.unread() == 1);
+				check("...and the bar above the hotbar says which key replies", hudOverlay(client).contains("Y to reply"));
+				mod.watcher.onGameMessage(client, Text.translatable("commands.message.display.outgoing", Text.literal("Helpful_Hana"), Text.literal("yeah, at spawn")));
+				check("your whisper to them (sent any way) goes in the same conversation, and counts as having read theirs",
+						t != null && t.messages.size() == 2 && t.messages.get(1).me && t.unread() == 0);
+				mod.watcher.onGameMessage(client, Text.translatable("commands.message.display.incoming", Text.literal("Helpful_Hana"), Text.literal("omw, bring the obby")));
+				check("a new one from them is unread again (" + dms.unread() + ")", t != null && t.unread() == 1 && dms.unread() >= 1);
+				check("the DMs key goes to the newest unread conversation (" + dms.latest() + ")", "Helpful_Hana".equals(dms.latest()));
+				client.setScreen(ShopScreen.messages(dms.latest()));
+			}
+			case 3 -> {
+				ShopScreen sc = screen(client);
+				check("the DMs tab opens on it, ready to type (" + sc.testTab() + ", " + sc.testDmWith() + ", focused " + sc.testDmFocused() + ")",
+						sc.testTab().equals("MESSAGES") && "Helpful_Hana".equals(sc.testDmWith()) && sc.testDmFocused());
+				check("looking at it marks it read (" + dmThread("Helpful_Hana").unread() + ")", dmThread("Helpful_Hana").unread() == 0);
+				check("the conversation shows a day line and the three messages (" + sc.testDmRows() + " rows)", sc.testDmRows() == 4);
+				check("every section tab still fits with DMs added", sc.testHeaderFits());
+				screenshot(client, "70_dms");
+				List<String> parts = DirectMessages.split("word ".repeat(90).strip(), 240);
+				check("a long message is split into whispers that each fit (" + parts.size() + " parts)", parts.size() == 2 && parts.stream().allMatch(x -> x.length() <= 240)
+						&& String.join(" ", parts).equals("word ".repeat(90).strip()));
+				client.setScreen(ShopScreen.messages(me));
+			}
+			case 5 -> {
+				serverHeard.clear();
+				screen(client).testDmText("hello me from the dms tab");
+				check("Enter in the message box sends it", screen(client).testKey(org.lwjgl.glfw.GLFW.GLFW_KEY_ENTER, 0));
+				DirectMessages.Thread t = dmThread(me);
+				check("...it shows at once as sending, and the box empties", t != null && t.messages.size() == 1 && t.messages.get(0).state == DirectMessages.SENDING
+						&& screen(client).testDmField().isEmpty());
+				dmWait = 0;
+			}
+			case 6 -> {
+				// Waits for the server: it whispers back to you, both ways.
+				DirectMessages.Thread t = dmThread(me);
+				boolean done = t != null && t.messages.stream().noneMatch(m -> m.state == DirectMessages.SENDING) && serverHeard.contains("hello me from the dms tab");
+				if (!done && ++dmWait < 60) {
+					dmStep--;
+					return;
+				}
+				check("the server got it as a whisper, and its echo confirms the line (once, not twice) (" + dmCount(me, true, "hello me from the dms tab") + ", heard " + serverHeard + ")",
+						done && dmCount(me, true, "hello me from the dms tab") == 1 && t.messages.get(0).state == 0);
+				screen(client).testDmText("meet me at 12000 -34000");
+				screen(client).testKey(org.lwjgl.glfw.GLFW.GLFW_KEY_ENTER, 0);
+				check("coordinates are held back: not sent, still in the box", screen(client).testDmField().equals("meet me at 12000 -34000")
+						&& dmCount(me, true, "meet me at 12000 -34000") == 0);
+				screenshot(client, "71_dms_held");
+				screen(client).testKey(org.lwjgl.glfw.GLFW.GLFW_KEY_ENTER, 0);
+				check("...and Enter again sends them", screen(client).testDmField().isEmpty() && dmCount(me, true, "meet me at 12000 -34000") == 1);
+				client.setScreen(ShopScreen.messages("Nobody_Here_123"));
+				dmWait = 0;
+			}
+			case 8 -> {
+				screen(client).testDmText("are you there?");
+				screen(client).testClick("dm-send");
+				dmWait = 0;
+			}
+			case 9 -> {
+				DirectMessages.Thread t = dmThread("Nobody_Here_123");
+				boolean failed = t != null && !t.messages.isEmpty() && t.messages.get(0).state == DirectMessages.FAILED;
+				if (!failed && ++dmWait < 60) {
+					dmStep--;
+					return;
+				}
+				check("to someone who isn't there: marked not sent, with the server's words (" + (t == null || t.messages.isEmpty() ? "none" : t.messages.get(0).state + " " + t.messages.get(0).error) + ")",
+						failed && t.messages.get(0).error != null);
+			}
+			case 10 -> {
+				check("...with a Retry", screen(client).testLabels().contains("dm-retry:"));
+				screenshot(client, "72_dms_not_sent");
+				mod.watcher.onGameMessage(client, Text.translatable("commands.message.display.incoming", Text.literal("RandomRick"), Text.literal("who are you talking to")));
+			}
+			case 12 -> {
+				ShopScreen sc = screen(client);
+				check("another player's whisper adds them to the list, unread", sc.testLabels().contains("dm:RandomRick") && dmThread("RandomRick").unread() == 1);
+				check("clicking them opens theirs", sc.testClick("dm:RandomRick") && "RandomRick".equals(sc.testDmWith()));
+			}
+			case 13 -> {
+				check("...and reads it", dmThread("RandomRick").unread() == 0);
+				ShopScreen sc = screen(client);
+				sc.testKey(org.lwjgl.glfw.GLFW.GLFW_KEY_DOWN, org.lwjgl.glfw.GLFW.GLFW_MOD_CONTROL);
+				check("Ctrl+Down goes to the next conversation (" + sc.testDmWith() + ")", sc.testDmWith() != null && !"RandomRick".equals(sc.testDmWith()));
+			}
+			case 14 -> {
+				ShopScreen sc = screen(client);
+				sc.testClick("dm:Helpful_Hana");
+			}
+			case 15 -> {
+				ShopScreen sc = screen(client);
+				check("Copy copies the whole conversation", sc.testClick("dm-copy") && client.keyboard.getClipboard().startsWith("Private messages with Helpful_Hana")
+						&& client.keyboard.getClipboard().contains("Helpful_Hana whispered to you: omw, bring the obby")
+						&& client.keyboard.getClipboard().contains("You whispered to Helpful_Hana: yeah, at spawn"));
+				check("Their chat shows their public lines too", sc.testClick("dm-public") && NNConfig.INSTANCE.dmShowPublic);
+			}
+			case 16 -> {
+				ShopScreen sc = screen(client);
+				check("...between the whispers (" + sc.testDmRows() + " rows)", sc.testDmRows() > 4);
+				screenshot(client, "73_dms_their_chat");
+				sc.testClick("dm-public");
+				// Kept between sessions.
+				dms.save(true);
+				DirectMessages again = new DirectMessages(mod.ledger);
+				again.load();
+				DirectMessages.Thread t = again.thread("Helpful_Hana");
+				check("saved and read back (" + (t == null ? "none" : t.messages.size()) + ")", t != null && t.messages.size() == 3 && t.messages.get(2).text.equals("omw, bring the obby")
+						&& again.thread("Nobody_Here_123") != null && again.thread("Nobody_Here_123").messages.get(0).state == DirectMessages.FAILED);
+				// Whispers from before the DMs tab: read in from the all-chat files.
+				dmOldFile = mod.chatLogger.folder().resolve("all-chat").resolve("2020-01-02.txt");
+				try {
+					java.nio.file.Files.createDirectories(dmOldFile.getParent());
+					java.nio.file.Files.writeString(dmOldFile, "[10:00:00] Old_Pal whispered to you: remember me?\n[10:01:00] You whispered to Old_Pal: of course\n<Someone> not a whisper\n");
+				} catch (java.io.IOException e) {
+					check("could write a test chat file", false);
+				}
+				dmMark = dmThread("Helpful_Hana").messages.size();
+				dms.testImport();
+				dmWait = 0;
+			}
+			case 17 -> {
+				if (dms.importing() && ++dmWait < 100) {
+					dmStep--;
+					return;
+				}
+				DirectMessages.Thread t = dmThread("Old_Pal");
+				check("old whispers in the chat logs are read in, already read (" + (t == null ? "none" : t.messages.size() + ", " + t.unread()) + ")",
+						t != null && t.messages.size() == 2 && t.messages.get(0).text.equals("remember me?") && t.messages.get(1).me && t.unread() == 0);
+				check("...without doubling ones already there (" + dmThread("Helpful_Hana").messages.size() + ")", dmThread("Helpful_Hana").messages.size() == dmMark);
+				try {
+					java.nio.file.Files.deleteIfExists(dmOldFile);
+				} catch (java.io.IOException ignored) {}
+				client.setScreen(new ShopScreen(null, mod.ledger.byName("Helpful_Hana")));
+			}
+			case 19 -> check("a player's page has ✉ Message", screen(client).testClick("dm-open:Helpful_Hana"));
+			case 20 -> {
+				ShopScreen sc = screen(client);
+				check("...which opens your conversation with them", sc.testTab().equals("MESSAGES") && "Helpful_Hana".equals(sc.testDmWith()) && sc.testSelected() == null);
+				sc.testClick("dm-delete");
+			}
+			case 21 -> {
+				screen(client).testClick("dm-delete-yes");
+				check("Delete (after Sure?) removes the conversation", dmThread("Helpful_Hana") == null);
+				for (String n : new String[] {"RandomRick", "Nobody_Here_123", "Old_Pal", me}) dms.delete(n);
+				NNConfig.INSTANCE.guardMyCoords = dmGuardWas;
+				NNConfig.INSTANCE.askBeforeSending = dmAskWas;
+				client.setScreen(null);
+				dmStep = 0;
+				if (dmsOnly) finish(client);
+			}
+			default -> {}
+		}
+	}
+
+	private static String hudOverlay(MinecraftClient client) {
+		try {
+			var f = net.minecraft.client.gui.hud.InGameHud.class.getDeclaredField("overlayMessage");
+			f.setAccessible(true);
+			Object t = f.get(client.inGameHud);
+			return t == null ? "" : ((Text) t).getString();
+		} catch (ReflectiveOperationException e) {
+			return "?";
+		}
 	}
 
 	/**

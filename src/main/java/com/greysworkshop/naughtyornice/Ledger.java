@@ -237,7 +237,10 @@ public final class Ledger {
 			activity = ServerActivity.load(activityFile());
 			chunkTrails.load(sideFile(".trails.json"), sideFile(".chunks.bin"));
 		}
-		if (NaughtyOrNiceClient.INSTANCE != null) NaughtyOrNiceClient.INSTANCE.chatLogger.loadFeed();
+		if (NaughtyOrNiceClient.INSTANCE != null) {
+			NaughtyOrNiceClient.INSTANCE.chatLogger.loadFeed();
+			NaughtyOrNiceClient.INSTANCE.dms.load();
+		}
 	}
 
 	public Profile get(UUID id) {
@@ -740,7 +743,10 @@ public final class Ledger {
 		links.save(linksFile(), force);
 		activity.save(activityFile(), force);
 		chunkTrails.save(sideFile(".trails.json"), sideFile(".chunks.bin"), force);
-		if (NaughtyOrNiceClient.INSTANCE != null) NaughtyOrNiceClient.INSTANCE.chatLogger.saveFeed(force);
+		if (NaughtyOrNiceClient.INSTANCE != null) {
+			NaughtyOrNiceClient.INSTANCE.chatLogger.saveFeed(force);
+			NaughtyOrNiceClient.INSTANCE.dms.save(force);
+		}
 		if (!dirty && !force) return;
 		List<Profile> keep = new ArrayList<>();
 		for (Profile profile : profiles.values()) {

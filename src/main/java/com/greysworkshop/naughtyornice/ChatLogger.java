@@ -85,6 +85,7 @@ public final class ChatLogger {
 		line.alert = alert;
 		remember(line, now);
 		toFeed(line);
+		if (whisper && NaughtyOrNiceClient.INSTANCE != null) NaughtyOrNiceClient.INSTANCE.dms.heard(sender, me, text, now);
 
 		// Everyone's lines go into every open conversation; a private message only into the one it involves.
 		for (Map.Entry<UUID, Profile.Conversation> entry : open.entrySet()) {

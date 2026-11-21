@@ -341,6 +341,8 @@ public final class Watcher {
 		String raw = message.getString();
 		// Messages from this mod and its companions, shown only to you.
 		if (raw.startsWith("[Naughty/Nice] ") || raw.contains("[Base Insurance] ") || raw.contains("[Hoard Eye] ")) return;
+		// "No player was found" just after sending from the DMs tab: that line wasn't sent (not someone's chat saying so).
+		if (!ANGLED.matcher(raw).matches() && !SEPARATED.matcher(raw).matches()) NaughtyOrNiceClient.INSTANCE.dms.serverSaid(message);
 		// A server reply to our join-date command (one player at a time); pins the date to that player.
 		if (JoinDates.onMessage(client, ledger, raw)) return;
 		if (message.getContent() instanceof TranslatableTextContent t) {
@@ -895,6 +897,7 @@ public final class Watcher {
 		ledger.activity.addMyTime(dt);
 		if (NNConfig.INSTANCE.eventLog) EventHooks.positions(client);
 		chatLogger.tick(now);
+		NaughtyOrNiceClient.INSTANCE.dms.tick(now);
 		NNConfig config = NNConfig.INSTANCE;
 		String dimension = world.getRegistryKey().getValue().toString();
 		if (secondsOn == 0) ledger.activity.myJoins++;

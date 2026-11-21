@@ -115,6 +115,11 @@ public final class CoordGuard {
 		return why;
 	}
 
+	/** Whether {@code whole} (a message, or a command with its "/") was just held back. */
+	public static boolean holding(String whole) {
+		return whole.equals(held) && System.currentTimeMillis() - heldAt < 2000;
+	}
+
 	/** You pressed Send anyway: sends the held message, once. */
 	public static boolean sendHeld() {
 		MinecraftClient client = MinecraftClient.getInstance();

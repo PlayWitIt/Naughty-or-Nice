@@ -5,6 +5,7 @@
 	"key.naughtyornice.chunks": "Chunks in the world (show or hide)",
 	"key.naughtyornice.baritone": "Baritone panel",
 	"key.naughtyornice.stop": "Stop Baritone (trip, roam, everything)",
+	"key.naughtyornice.messages": "DMs: private messages, one player at a time",
 	"key.playwit.stream_safe": "Stream-safe mode (hide coordinates)",
 	"key.category.playwit.mods": "PlayWit mods"
 }

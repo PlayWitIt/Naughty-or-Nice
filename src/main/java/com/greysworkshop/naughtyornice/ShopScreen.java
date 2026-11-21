@@ -42,7 +42,7 @@ import java.util.function.Consumer;
 public class ShopScreen extends Screen {
 	public enum Tab {
 		ALL("All"), NEARBY("Nearby"), ONLINE("Online"), OFFLINE("Offline"), FRIENDS("Friends"), NICE("Nice list"), LOOK("Look Into"), NAUGHTY("Naughty list"),
-		GROUPS("Groups"), ACTIVITY("Activity"), SERVER("Server"), INTEL("Intel"), CHAT("Chat"), BARITONE("Baritone"), SETTINGS("Settings");
+		GROUPS("Groups"), ACTIVITY("Activity"), SERVER("Server"), INTEL("Intel"), CHAT("Chat"), MESSAGES("DMs"), BARITONE("Baritone"), SETTINGS("Settings");
 
 		final String label;
 
@@ -619,6 +619,29 @@ public class ShopScreen extends Screen {
 		chatField.setText(typedChat);
 		addDrawableChild(chatField);
 
+		String typedDm = dmField == null ? "" : dmField.getText();
+		dmField = new Box(textRenderer, 0, -100, 100, 10, Text.literal("Message"));
+		dmField.setDrawsBackground(false);
+		dmField.setEditableColor(TEXT);
+		dmField.setTextShadow(false);
+		// Long messages are split into whispers that each fit.
+		dmField.setMaxLength(1000);
+		dmField.setText(typedDm);
+		addDrawableChild(dmField);
+		String typedNew = dmNewField == null ? "" : dmNewField.getText();
+		dmNewField = new Box(textRenderer, 0, -100, 100, 10, Text.literal("New message"));
+		dmNewField.setDrawsBackground(false);
+		dmNewField.setEditableColor(TEXT);
+		dmNewField.setTextShadow(false);
+		dmNewField.setMaxLength(16);
+		dmNewField.setPlaceholder(Text.literal("+ New: type a name…").withColor(MUTED));
+		dmNewField.setText(typedNew);
+		addDrawableChild(dmNewField);
+		if (dmFocus && tab == Tab.MESSAGES) {
+			dmFocus = false;
+			setFocused(dmWith != null && client.getNetworkHandler() != null ? dmField : dmNewField);
+		}
+
 		alertField = new Box(textRenderer, 0, -100, 100, 10, Text.literal("Alert words"));
 		alertField.setDrawsBackground(false);
 		alertField.setEditableColor(TEXT);
@@ -970,6 +993,10 @@ public class ShopScreen extends Screen {
 		openGroup = null;
 		confirmDeleteGroup = false;
 		if (t == Tab.CHAT) chatScroll = 0;
+		if (t == Tab.MESSAGES) {
+			dmScroll = 0;
+			dmConfirmDelete = false;
+		}
 		selected = null;
 		scroll = 0;
 		cachedResults = null;
@@ -1267,6 +1294,7 @@ public class ShopScreen extends Screen {
 		else if (tab == Tab.INTEL && selected == null) renderIntel(context, mouseX, mouseY);
 		else if (selected != null) renderDetail(context, mouseX, mouseY);
 		else if (tab == Tab.CHAT) renderChat(context, mouseX, mouseY);
+		else if (tab == Tab.MESSAGES) renderMessages(context, mouseX, mouseY);
 		else if (tab == Tab.GROUPS && openGroup == null) renderGroups(context, mouseX, mouseY);
 		else renderList(context, mouseX, mouseY);
 		renderHeader(context, mouseX, mouseY);
@@ -1310,14 +1338,15 @@ public class ShopScreen extends Screen {
 	/** The sections along the top, in order (1 to 8 on the keyboard). No Baritone without a player to walk. */
 	private Tab[] sections() {
 		return offline || client.player == null
-				? new Tab[] {Tab.ALL, Tab.GROUPS, Tab.CHAT, Tab.INTEL, Tab.ACTIVITY, Tab.SERVER, Tab.SETTINGS}
-				: new Tab[] {Tab.ALL, Tab.GROUPS, Tab.CHAT, Tab.INTEL, Tab.ACTIVITY, Tab.SERVER, Tab.BARITONE, Tab.SETTINGS};
+				? new Tab[] {Tab.ALL, Tab.GROUPS, Tab.CHAT, Tab.MESSAGES, Tab.INTEL, Tab.ACTIVITY, Tab.SERVER, Tab.SETTINGS}
+				: new Tab[] {Tab.ALL, Tab.GROUPS, Tab.CHAT, Tab.MESSAGES, Tab.INTEL, Tab.ACTIVITY, Tab.SERVER, Tab.BARITONE, Tab.SETTINGS};
 	}
 
 	private static ItemStack sectionIcon(Tab t) {
 		return new ItemStack(switch (t) {
 			case GROUPS -> Items.WHITE_BANNER;
 			case CHAT -> Items.WRITABLE_BOOK;
+			case MESSAGES -> Items.PAPER;
 			case INTEL -> Items.SPYGLASS;
 			case ACTIVITY -> Items.CLOCK;
 			case SERVER -> Items.GRASS_BLOCK;
@@ -1331,6 +1360,7 @@ public class ShopScreen extends Screen {
 		return switch (t) {
 			case GROUPS -> "Who plays together: crews, teams, alts";
 			case CHAT -> "The chat, coloured by who's on your lists; talk from here";
+			case MESSAGES -> "Private messages, one player at a time, kept between sessions (key Y)";
 			case INTEL -> "Coordinates given away, stashes, world events, chat by topic";
 			case ACTIVITY -> "Who was on when, and who you met";
 			case SERVER -> "The server's numbers: top players, busy hours, joins";
@@ -1360,6 +1390,10 @@ public class ShopScreen extends Screen {
 		detailField.setVisible(selected != null && tab != Tab.SETTINGS && section == Section.DETAILS
 				&& detailFieldTop >= BODY && detailFieldTop + 16 <= height);
 		chatField.setVisible(selected == null && tab == Tab.CHAT);
+		boolean dms = selected == null && tab == Tab.MESSAGES;
+		dmField.setVisible(dms && dmWith != null);
+		dmNewField.setVisible(dms && (width >= DM_WIDE || dmWith == null));
+		mod.dms.viewing(dms ? dmWith : null);
 		alertField.setVisible(tab == Tab.SETTINGS && alertFieldTop >= BODY && alertFieldTop + 16 <= height);
 		// The link is a key to post in your channel: not shown on a stream.
 		phoneField.setVisible(tab == Tab.SETTINGS && phoneFieldTop >= BODY && phoneFieldTop + 16 <= height && !ModsPanel.streamSafe());
@@ -1486,7 +1520,7 @@ public class ShopScreen extends Screen {
 		Tab[] sections = sections();
 		// Tighter when the window is narrow, so every section stays on screen; pictures only when there's room for them.
 		int roomy = 0;
-		for (Tab t : sections) roomy += textRenderer.getWidth(t == Tab.ALL ? "Players" : t.label + (t == Tab.CHAT ? " •" : "")) + 14;
+		for (Tab t : sections) roomy += textRenderer.getWidth(t == Tab.ALL ? "Players" : t.label + (t == Tab.CHAT || t == Tab.MESSAGES ? " •" : "")) + 14;
 		tabPad = roomy + 6 > width - 6 ? 6 : 12;
 		// Room the All / Near / Online / Offline switch takes on the right (measured as it's drawn below).
 		int viewsRoom = 0;
@@ -1501,7 +1535,8 @@ public class ShopScreen extends Screen {
 			Tab t = sections[i];
 			String label = t == Tab.ALL ? "Players" : t.label;
 			boolean active = t == Tab.ALL ? playersTab(tab) : t == tab;
-			boolean unread = t == Tab.CHAT && !active && mod.chatLogger.feedVersion() != chatSeen && !mod.chatLogger.feed().isEmpty();
+			boolean unread = t == Tab.CHAT ? !active && mod.chatLogger.feedVersion() != chatSeen && !mod.chatLogger.feed().isEmpty()
+					: t == Tab.MESSAGES && !active && mod.dms.unread() > 0;
 			int w = textRenderer.getWidth(label) + tabPad + (unread ? 6 : 0) + (tabIcons ? 14 : 0);
 			if (active) {
 				activeX = tx;
@@ -2527,6 +2562,8 @@ public class ShopScreen extends Screen {
 		boolean backHover = over(mouseX, mouseY, left, y, textRenderer.getWidth("‹ Back to results"), 10);
 		context.drawText(textRenderer, Text.literal("‹ Back to results").styled(s -> s.withUnderline(backHover)), left, y, backHover ? HOVER_LINK : LINK, false);
 		hit(left, y - 1, textRenderer.getWidth("‹ Back to results"), 11, "back", this::back);
+		String dmLabel = "✉ Message " + p.name;
+		link(context, mouseX, mouseY, right - textRenderer.getWidth(dmLabel), y, dmLabel, "dm-open:" + p.name, () -> openDm(p.name));
 		y += 14;
 
 		// Big face.
@@ -4516,8 +4553,12 @@ public class ShopScreen extends Screen {
 				setVerdict(p, target);
 			}));
 		}
-		// Anywhere else on the line opens their page.
+		// Anywhere else on the line opens their page; a whisper opens your conversation with them.
 		hits.add(new Hit(x, Math.max(y, viewTop), copyX - 2, Math.min(y + row.h, viewBottom), "chat-line:" + name, () -> {
+			if (line.whisper) {
+				openDm(line.sender);
+				return;
+			}
 			Profile p = who != null ? who : mod.ledger.byName(name);
 			if (p != null) open(p);
 		}));
@@ -4654,6 +4695,528 @@ public class ShopScreen extends Screen {
 		chatField.setCursorToEnd(false);
 	}
 
+	// ---- DMs: private messages, one player at a time ----
+
+	/** Wide enough to show the conversations and the open one side by side. */
+	private static final int DM_WIDE = 380;
+	private TextFieldWidget dmField;
+	private TextFieldWidget dmNewField;
+	/** The open conversation (kept while the game runs, so the tab opens where you left it). */
+	private static String dmWith;
+	/** Put the cursor in the message box when the screen opens (the DMs key). */
+	private boolean dmFocus;
+	private double dmScroll;
+	private int dmMaxScroll;
+	private double dmListScroll;
+	private int dmListMax;
+	private int dmListRight;
+	private boolean dmConfirmDelete;
+	private record DmRow(int kind, long time, DirectMessages.Message msg, String text, List<net.minecraft.text.OrderedText> wrapped, int w, int h) {}
+	private static final int DM_MSG = 0, DM_DAY = 1, DM_PUBLIC = 2;
+	private List<DmRow> dmRows = List.of();
+	private String dmRowsKey;
+
+	/** The DMs tab, open on {@code with}'s conversation (or the list when null), ready to type. */
+	public static ShopScreen messages(String with) {
+		ShopScreen screen = new ShopScreen(Tab.MESSAGES, null);
+		if (with != null) dmWith = NaughtyOrNiceClient.INSTANCE.dms.start(with).name;
+		screen.dmFocus = true;
+		return screen;
+	}
+
+	private void openDm(String name) {
+		if (name == null || name.isBlank()) return;
+		showTab(Tab.MESSAGES);
+		dmWith = mod.dms.start(name.strip()).name;
+		dmScroll = 0;
+		dmConfirmDelete = false;
+		dmNewField.setText("");
+		dmNewField.setFocused(false);
+		if (client.getNetworkHandler() != null) setFocused(dmField);
+	}
+
+	private UUID dmId(String name) {
+		Profile p = mod.ledger.byName(name);
+		return p != null ? p.id : NaughtyOrNiceClient.offlineId(name);
+	}
+
+	private boolean dmOnline(String name) {
+		return client.getNetworkHandler() != null && client.getNetworkHandler().getPlayerListEntry(name) != null;
+	}
+
+	/** Conversations to list: everyone you've messaged with, and the open one even if it's still empty. */
+	private List<DirectMessages.Thread> dmThreads() {
+		List<DirectMessages.Thread> list = new ArrayList<>();
+		for (DirectMessages.Thread t : mod.dms.threads()) {
+			if (!t.messages.isEmpty() || t.name.equalsIgnoreCase(dmWith)) list.add(t);
+		}
+		if (!query.isEmpty()) {
+			String q = query.toLowerCase(Locale.ROOT);
+			list.removeIf(t -> !t.name.toLowerCase(Locale.ROOT).contains(q) && t.messages.stream().noneMatch(m -> m.text.toLowerCase(Locale.ROOT).contains(q)));
+		}
+		return list;
+	}
+
+	private void renderMessages(DrawContext context, int mouseX, int mouseY) {
+		boolean wide = width >= DM_WIDE;
+		int listW = wide ? Math.max(118, Math.min(180, width * 3 / 10)) : width;
+		if (dmWith != null && mod.dms.thread(dmWith) == null) dmWith = null;
+		boolean showList = wide || dmWith == null;
+		dmListRight = showList ? listW : 0;
+		if (showList) renderDmList(context, mouseX, mouseY, 0, BODY, listW, height);
+		if (dmWith != null) {
+			renderDmThread(context, mouseX, mouseY, wide ? listW : 0, BODY, width, height);
+		} else if (wide) {
+			int x = listW + 20, y = BODY + 30, w = width - listW - 40;
+			context.drawText(textRenderer, Text.literal("Private messages").styled(s -> s.withBold(true)), x, y, TEXT, false);
+			y += 14;
+			String help = "Pick someone on the left, or type a name in + New. Then just type and press Enter: it's whispered to them for you, "
+					+ "no /msg needed. Every whisper you get or send lands here, one conversation per player, kept between sessions. "
+					+ "Press " + NaughtyOrNiceClient.INSTANCE.messagesKeyName() + " in game to jump straight to the newest one.";
+			for (var line : textRenderer.wrapLines(Text.literal(help), w)) {
+				context.drawText(textRenderer, line, x, y, MUTED, false);
+				y += 10;
+			}
+		}
+		contentHeight = 0;
+	}
+
+	private void renderDmList(DrawContext context, int mouseX, int mouseY, int x0, int top, int w, int bottom) {
+		context.fill(x0, top, x0 + w, bottom, CARD);
+		if (w < width) context.fill(x0 + w - 1, top, x0 + w, bottom, BORDER);
+		// + New: a name box, with suggestions as you type.
+		int fx = x0 + 6, fy = top + 6, fw = w - 12;
+		roundedBorder(context, fx, fy, fw, 16, FIELD, dmNewField.isFocused() ? 0xFFE77600 : INPUT_BORDER);
+		dmNewField.setX(fx + 4);
+		dmNewField.setY(fy + 4);
+		dmNewField.setWidth(fw - 8);
+		hits.add(new Hit(fx, fy, fx + fw, fy + 16, "dm-new", () -> setFocused(dmNewField)));
+
+		int listTop = fy + 22;
+		List<DirectMessages.Thread> threads = dmThreads();
+		int rowH = 28;
+		dmListMax = Math.max(0, threads.size() * rowH - (bottom - listTop));
+		dmListScroll = Math.max(0, Math.min(dmListMax, dmListScroll));
+		context.enableScissor(x0, listTop, x0 + w, bottom);
+		if (threads.isEmpty()) {
+			String empty = !query.isEmpty() ? "No conversations match \"" + query + "\"."
+					: mod.dms.importing() ? "Reading your old whispers…"
+					: "No private messages yet. Whispers you get or send show up here.";
+			int ty = listTop + 6;
+			for (var line : textRenderer.wrapLines(Text.literal(empty), w - 16)) {
+				context.drawText(textRenderer, line, x0 + 8, ty, MUTED, false);
+				ty += 10;
+			}
+		}
+		int y = listTop - (int) dmListScroll;
+		for (DirectMessages.Thread t : threads) {
+			if (y + rowH >= listTop && y < bottom) dmListRow(context, mouseX, mouseY, t, x0, y, w, rowH, listTop, bottom);
+			y += rowH;
+		}
+		context.disableScissor();
+
+		// Suggestions under the name box, over the list.
+		if (dmNewField.isFocused() && !dmNewField.getText().isBlank()) {
+			List<String> names = dmSuggestions();
+			int sy = fy + 17;
+			if (!names.isEmpty()) {
+				roundedBorder(context, fx, sy, fw, names.size() * 12 + 4, CARD, HOVER_BORDER);
+				for (int i = 0; i < names.size(); i++) {
+					String n = names.get(i);
+					int ry = sy + 2 + i * 12;
+					boolean hover = over(mouseX, mouseY, fx, ry, fw, 12);
+					if (hover || i == 0) context.fill(fx + 1, ry, fx + fw - 1, ry + 12, hover ? HOVER_BG : SOFT);
+					if (dmOnline(n)) context.fill(fx + 5, ry + 4, fx + 9, ry + 8, 0xFF2EB82E);
+					textTrim(context, n, fx + 12, ry + 2, fw - 16, hover ? HOVER_LINK : TEXT);
+					hits.add(0, new Hit(fx, ry, fx + fw, ry + 12, "dm-suggest:" + n, () -> openDm(n)));
+				}
+			}
+		}
+	}
+
+	/** Names for the + New box: online players first, then everyone known, then the name as typed. */
+	private List<String> dmSuggestions() {
+		String typed = dmNewField.getText().strip();
+		String q = typed.toLowerCase(Locale.ROOT);
+		List<String> found = new ArrayList<>();
+		if (client.getNetworkHandler() != null) {
+			for (PlayerListEntry e : client.getNetworkHandler().getPlayerList()) {
+				String n = e.getProfile().name();
+				if (n.toLowerCase(Locale.ROOT).startsWith(q) && !e.getProfile().id().equals(me())) found.add(n);
+			}
+		}
+		found.sort(String.CASE_INSENSITIVE_ORDER);
+		for (DirectMessages.Thread t : mod.dms.threads()) {
+			if (t.name.toLowerCase(Locale.ROOT).startsWith(q) && found.stream().noneMatch(t.name::equalsIgnoreCase)) found.add(t.name);
+		}
+		for (Profile p : mod.ledger.all()) {
+			if (found.size() >= 6) break;
+			if (p.name.toLowerCase(Locale.ROOT).startsWith(q) && found.stream().noneMatch(p.name::equalsIgnoreCase)) found.add(p.name);
+		}
+		if (typed.matches("[A-Za-z0-9_]{1,16}") && found.stream().noneMatch(typed::equalsIgnoreCase)) found.add(typed);
+		return found.size() > 6 ? found.subList(0, 6) : found;
+	}
+
+	private void dmListRow(DrawContext context, int mouseX, int mouseY, DirectMessages.Thread t, int x, int y, int w, int h, int viewTop, int viewBottom) {
+		boolean open = t.name.equalsIgnoreCase(dmWith);
+		boolean hover = over(mouseX, mouseY, x, y, w - 1, h) && mouseY >= viewTop && mouseY < viewBottom;
+		if (open) context.fill(x, y, x + w - 1, y + h, tint(LINK, CARD, 0.14f));
+		else if (hover) context.fill(x, y, x + w - 1, y + h, HOVER_BG);
+		if (open) context.fill(x, y + 2, x + 2, y + h - 2, ORANGE);
+		face(context, dmId(t.name), x + 7, y + 6, 16);
+		if (dmOnline(t.name)) {
+			context.fill(x + 19, y + 18, x + 25, y + 24, CARD);
+			context.fill(x + 20, y + 19, x + 24, y + 23, 0xFF2EB82E);
+		}
+		int unread = t.unread();
+		Profile p = mod.ledger.byName(t.name);
+		int nameColor = p == null || p.verdict == Profile.Verdict.NONE ? TEXT : verdictColor(p.verdict);
+		int tx = x + 29, right = x + w - 6;
+		String when = t.last() == 0 ? "" : shortAgo(t.last());
+		int whenW = textRenderer.getWidth(when);
+		String name = fit(t.name, right - tx - whenW - 4);
+		context.drawText(textRenderer, Text.literal(name).styled(s -> s.withBold(unread > 0)), tx, y + 5, nameColor, false);
+		text(context, when, right - whenW, y + 5, unread > 0 ? ORANGE : MUTED);
+		DirectMessages.Message last = t.messages.isEmpty() ? null : t.messages.get(t.messages.size() - 1);
+		String preview = last == null ? "No messages yet" : last.state == DirectMessages.FAILED ? "✖ Not sent: " + last.text
+				: (last.me ? "You: " : "") + last.text;
+		int badgeW = unread > 0 ? textRenderer.getWidth(String.valueOf(unread)) + 8 : 0;
+		textTrim(context, preview, tx, y + 16, right - tx - badgeW - (badgeW > 0 ? 3 : 0), last != null && last.state == DirectMessages.FAILED ? NAUGHTY : unread > 0 ? TEXT : MUTED);
+		if (unread > 0) {
+			rounded(context, right - badgeW, y + 15, badgeW, 10, ORANGE);
+			text(context, String.valueOf(unread), right - badgeW + 4, y + 16, BUTTON_TEXT);
+		}
+		hits.add(new Hit(x, Math.max(y, viewTop), x + w - 1, Math.min(y + h, viewBottom), "dm:" + t.name, () -> openDm(t.name)));
+	}
+
+	private static String shortAgo(long time) {
+		long s = (System.currentTimeMillis() - time) / 1000;
+		if (s < 60) return "now";
+		if (s < 3600) return s / 60 + "m";
+		if (s < 86400) return s / 3600 + "h";
+		if (s < 7 * 86400) return s / 86400 + "d";
+		return DAY.format(Instant.ofEpochMilli(time).atZone(ZoneId.systemDefault()).toLocalDate());
+	}
+
+	/** Their public lines in the Chat tab's feed, to show between the whispers when asked. */
+	private List<Profile.Line> dmPublic(String name) {
+		List<Profile.Line> out = new ArrayList<>();
+		if (!NNConfig.INSTANCE.dmShowPublic) return out;
+		for (Profile.Line line : mod.chatLogger.feed()) {
+			if (!line.whisper && !line.system && !line.me && line.sender.equalsIgnoreCase(name)) out.add(line);
+		}
+		return out;
+	}
+
+	/** The rows of the open conversation, redone only when it, the width or the theme change. */
+	private List<DmRow> dmRows(DirectMessages.Thread t, int areaW) {
+		String key = t.name + "/" + mod.dms.version() + "/" + areaW + "/" + NNConfig.INSTANCE.darkMode + "/" + NNConfig.INSTANCE.dmShowPublic
+				+ (NNConfig.INSTANCE.dmShowPublic ? "/" + mod.chatLogger.feedVersion() : "");
+		if (key.equals(dmRowsKey)) return dmRows;
+		int before = 0;
+		for (DmRow r : dmRows) before += r.h;
+		boolean sameThread = dmRowsKey != null && dmRowsKey.startsWith(t.name + "/");
+		// Whispers and (when shown) their public chat, by time.
+		List<Object[]> items = new ArrayList<>();
+		for (DirectMessages.Message m : t.messages) items.add(new Object[] {m.time, m});
+		for (Profile.Line l : dmPublic(t.name)) items.add(new Object[] {l.time, l});
+		items.sort(Comparator.comparingLong(o -> (Long) o[0]));
+		int bubbleMax = Math.max(60, areaW * 72 / 100);
+		List<DmRow> rows = new ArrayList<>();
+		java.time.LocalDate lastDay = null;
+		long lastTime = 0;
+		Boolean lastMe = null;
+		for (Object[] item : items) {
+			long time = (Long) item[0];
+			java.time.LocalDate d = Instant.ofEpochMilli(time).atZone(ZoneId.systemDefault()).toLocalDate();
+			if (!d.equals(lastDay)) {
+				rows.add(new DmRow(DM_DAY, time, null, day(time), List.of(), 0, 18));
+				lastDay = d;
+				lastMe = null;
+			}
+			if (item[1] instanceof DirectMessages.Message m) {
+				List<net.minecraft.text.OrderedText> wrapped = textRenderer.wrapLines(Text.literal(m.text), bubbleMax - 12);
+				int tw = 0;
+				for (var o : wrapped) tw = Math.max(tw, textRenderer.getWidth(o));
+				boolean grouped = lastMe != null && lastMe == m.me && time - lastTime < 120_000;
+				int extra = m.state != 0 ? 10 : 0;
+				int h = Math.max(1, wrapped.size()) * 10 + 6 + extra + (grouped ? 2 : 6);
+				rows.add(new DmRow(DM_MSG, time, m, m.text, wrapped, tw + 12, h));
+				lastMe = m.me;
+			} else if (item[1] instanceof Profile.Line l) {
+				List<net.minecraft.text.OrderedText> wrapped = textRenderer.wrapLines(Text.literal("in chat: " + l.text).styled(s -> s.withItalic(true)), areaW - 60);
+				rows.add(new DmRow(DM_PUBLIC, time, null, l.text, wrapped, areaW - 60, Math.max(1, wrapped.size()) * 10 + 4));
+				lastMe = null;
+			}
+			lastTime = time;
+		}
+		int after = 0;
+		for (DmRow r : rows) after += r.h;
+		// Scrolled up reading: keep the same lines in view as new ones come in below.
+		if (sameThread && dmScroll > 0 && after > before) dmScroll += after - before;
+		dmRows = rows;
+		dmRowsKey = key;
+		return rows;
+	}
+
+	private void renderDmThread(DrawContext context, int mouseX, int mouseY, int x0, int top, int x1, int bottom) {
+		DirectMessages.Thread t = mod.dms.thread(dmWith);
+		if (t == null) return;
+		boolean wide = width >= DM_WIDE;
+		boolean connected = client.getNetworkHandler() != null;
+		boolean online = dmOnline(t.name);
+		Profile p = mod.ledger.byName(t.name);
+
+		// Header: back (narrow), face, name and whereabouts; on the right what you can do.
+		int hh = 28;
+		context.fill(x0, top, x1, top + hh, CARD);
+		context.fill(x0, top + hh, x1, top + hh + 1, BORDER);
+		int hx = x0 + 8;
+		if (!wide) {
+			hx = link(context, mouseX, mouseY, hx, top + 10, "‹", "dm-back", () -> dmWith = null) + 8;
+		}
+		face(context, dmId(t.name), hx, top + 6, 16);
+		int nx = hx + 22;
+		int ax = x1 - 8;
+		// Right side, from the right: Delete (Sure?), Copy, Page, the public-chat switch.
+		if (dmConfirmDelete) {
+			ax = linkLeft(context, mouseX, mouseY, ax, top + 5, "No", "dm-delete-no", () -> dmConfirmDelete = false, LINK);
+			ax = linkLeft(context, mouseX, mouseY, ax - 8, top + 5, "Yes, delete", "dm-delete-yes", () -> {
+				mod.dms.delete(t.name);
+				flash("Deleted your messages with " + t.name, NAUGHTY, null);
+				dmWith = null;
+				dmConfirmDelete = false;
+			}, NAUGHTY);
+			ax = ax - 6 - textRenderer.getWidth("Sure?");
+			text(context, "Sure?", ax, top + 5, MUTED);
+		} else {
+			ax = linkLeft(context, mouseX, mouseY, ax, top + 5, "Delete", "dm-delete", () -> dmConfirmDelete = true, MUTED);
+			ax = linkLeft(context, mouseX, mouseY, ax - 10, top + 5, "Copy", "dm-copy", () -> {
+				client.keyboard.setClipboard(DirectMessages.format(Sharing.placeName(mod.ledger.key()), t));
+				flash("Copied " + t.messages.size() + " messages with " + t.name, NICE, null);
+			}, LINK);
+			if (p != null) ax = linkLeft(context, mouseX, mouseY, ax - 10, top + 5, "Page", "dm-page", () -> open(p), LINK);
+		}
+		boolean pub = NNConfig.INSTANCE.dmShowPublic;
+		String chip = (pub ? "✔ " : "") + "Their chat";
+		int cw = textRenderer.getWidth(chip) + 10;
+		int cx = x1 - 8 - cw;
+		boolean chipHover = over(mouseX, mouseY, cx, top + 15, cw, 11);
+		rounded(context, cx, top + 15, cw, 11, pub ? tint(LINK, CARD, 0.3f) : chipHover ? SOFT_HOVER : SOFT);
+		text(context, chip, cx + 5, top + 17, pub ? TEXT : MUTED);
+		hits.add(new Hit(cx, top + 15, cx + cw, top + 26, "dm-public", () -> {
+			NNConfig.INSTANCE.dmShowPublic = !NNConfig.INSTANCE.dmShowPublic;
+			NNConfig.save();
+		}));
+		hint(mouseX, mouseY, cx, top + 15, cw, 11, pub ? "Showing their public chat too" : "Show their public chat too",
+				"Their lines in public chat, in grey between your whispers, so you can follow just them");
+		int nameColor = p == null || p.verdict == Profile.Verdict.NONE ? TEXT : verdictColor(p.verdict);
+		int nameRoom = Math.max(20, Math.min(ax, cx) - nx - 8);
+		context.drawText(textRenderer, Text.literal(fit(t.name, nameRoom)).styled(s -> s.withBold(true)), nx, top + 5, nameColor, false);
+		String status = online ? "● Online" : p != null ? whereabouts(p) : connected ? "○ Not online" : "";
+		textTrim(context, status, nx, top + 16, cx - nx - 6, online ? 0xFF2EB82E : MUTED);
+
+		// The conversation, newest at the bottom.
+		int inputTop = bottom - 22;
+		int viewTop = top + hh + 3, viewBottom = inputTop - 4;
+		int areaL = x0 + 8, areaR = x1 - 8;
+		List<DmRow> rows = dmRows(t, areaR - areaL);
+		int totalH = 0;
+		for (DmRow r : rows) totalH += r.h;
+		dmMaxScroll = Math.max(0, totalH - (viewBottom - viewTop));
+		dmScroll = Math.max(0, Math.min(dmMaxScroll, dmScroll));
+		context.enableScissor(x0, viewTop, x1, viewBottom);
+		if (rows.isEmpty()) {
+			String cmd = NNConfig.INSTANCE.whisperCommand.strip().replaceFirst("^/", "");
+			String empty = "No messages with " + t.name + " yet. Type below and press Enter: it goes as /" + cmd + " " + t.name + " for you.";
+			int ty = viewTop + 10;
+			for (var line : textRenderer.wrapLines(Text.literal(empty), areaR - areaL - 20)) {
+				int lw = textRenderer.getWidth(line);
+				context.drawText(textRenderer, line, areaL + (areaR - areaL - lw) / 2, ty, MUTED, false);
+				ty += 10;
+			}
+		}
+		int y = viewBottom + (int) dmScroll;
+		for (int i = rows.size() - 1; i >= 0 && y > viewTop; i--) {
+			DmRow r = rows.get(i);
+			y -= r.h;
+			if (y > viewBottom) continue;
+			dmRow(context, mouseX, mouseY, t, r, areaL, areaR, y, viewTop, viewBottom);
+		}
+		context.disableScissor();
+		if (dmScroll > 0) {
+			String jump = "▼ Newest";
+			int jw = textRenderer.getWidth(jump) + 14;
+			pill(context, mouseX, mouseY, areaL + (areaR - areaL - jw) / 2, viewBottom - 18, jw, 14, jump, LINK, LINK, CARD, "dm-newest", () -> dmScroll = 0);
+		}
+		if (dmMaxScroll > 0) {
+			int view = viewBottom - viewTop;
+			int bar = Math.max(16, (int) (view * (double) view / (view + dmMaxScroll)));
+			int barTop = viewTop + (int) ((view - bar) * (1 - dmScroll / dmMaxScroll));
+			context.fill(x1 - 3, barTop, x1 - 1, barTop + bar, INPUT_BORDER);
+		}
+
+		// The box to type in: Enter whispers it to them.
+		String send = "Send";
+		int sendW = textRenderer.getWidth(send) + 20;
+		int fieldW = areaR - areaL - sendW - 6;
+		roundedBorder(context, areaL, inputTop, fieldW, 16, FIELD, dmField.isFocused() ? 0xFFE77600 : INPUT_BORDER);
+		dmField.setX(areaL + 4);
+		dmField.setY(inputTop + 4);
+		dmField.setWidth(fieldW - 8);
+		dmField.setEditable(connected);
+		dmField.setPlaceholder(Text.literal(!connected ? "Join the server to send messages"
+				: online || p == null && client.getNetworkHandler().getPlayerList().isEmpty() ? "Message " + t.name + "… (Enter sends)"
+				: "Message " + t.name + "… (not online: it may not get there)").withColor(MUTED));
+		hits.add(new Hit(areaL, inputTop, areaL + fieldW, inputTop + 16, "dm-box", () -> setFocused(dmField)));
+		pill(context, mouseX, mouseY, areaR - sendW, inputTop, sendW, 16, send, connected ? YELLOW : SOFT, connected ? YELLOW_EDGE : BORDER,
+				connected ? BUTTON_TEXT : MUTED, "dm-send", this::sendDm);
+	}
+
+	/** A link drawn so it ends at {@code right}; returns where it starts. */
+	private int linkLeft(DrawContext context, int mouseX, int mouseY, int right, int y, String label, String hitLabel, Runnable run, int color) {
+		int w = textRenderer.getWidth(label);
+		int x = right - w;
+		boolean hover = over(mouseX, mouseY, x, y - 1, w, 11);
+		context.drawText(textRenderer, Text.literal(label).styled(s -> s.withUnderline(hover)), x, y, hover ? HOVER_LINK : color, false);
+		hits.add(new Hit(x, y - 1, right, y + 10, hitLabel, run));
+		return x;
+	}
+
+	private void dmRow(DrawContext context, int mouseX, int mouseY, DirectMessages.Thread t, DmRow r, int left, int right, int y, int viewTop, int viewBottom) {
+		if (r.kind == DM_DAY) {
+			String label = r.text;
+			int lw = textRenderer.getWidth(label);
+			int mid = (left + right) / 2;
+			context.fill(left + 4, y + 9, mid - lw / 2 - 6, y + 10, BORDER);
+			context.fill(mid + lw / 2 + 6, y + 9, right - 4, y + 10, BORDER);
+			text(context, label, mid - lw / 2, y + 5, MUTED);
+			return;
+		}
+		if (r.kind == DM_PUBLIC) {
+			text(context, clock(r.time), left + 2, y + 1, MUTED);
+			int ty = y + 1;
+			for (var line : r.wrapped) {
+				context.drawText(textRenderer, line, left + 36, ty, MUTED, false);
+				ty += 10;
+			}
+			return;
+		}
+		DirectMessages.Message m = r.msg;
+		int lines = Math.max(1, r.wrapped.size());
+		int bh = lines * 10 + 6;
+		int gap = r.h - bh - (m.state != 0 ? 10 : 0);
+		int by = y + gap;
+		int bx = m.me ? right - r.w : left;
+		int fill = m.me ? tint(LINK, CARD, m.state == DirectMessages.SENDING ? 0.14f : 0.26f) : SOFT;
+		int edge = m.state == DirectMessages.FAILED ? NAUGHTY : m.me ? tint(LINK, CARD, 0.45f) : BORDER;
+		roundedBorder(context, bx, by, r.w, bh, fill, edge);
+		int ty = by + 4;
+		for (var line : r.wrapped) {
+			context.drawText(textRenderer, line, bx + 6, ty, m.state == DirectMessages.SENDING ? MUTED : TEXT, false);
+			ty += 10;
+		}
+		// The time beside the bubble, on the outside.
+		String time = clock(m.time);
+		int tw = textRenderer.getWidth(time);
+		boolean hover = over(mouseX, mouseY, bx, by, r.w, bh) && mouseY >= viewTop && mouseY < viewBottom;
+		int timeX = m.me ? bx - tw - 4 : bx + r.w + 4;
+		if (timeX >= left && timeX + tw <= right) text(context, time, timeX, by + bh - 9, hover ? TEXT : MUTED);
+		if (m.state == DirectMessages.SENDING) {
+			String s = "sending…";
+			text(context, s, right - textRenderer.getWidth(s), by + bh + 1, MUTED);
+		} else if (m.state == DirectMessages.FAILED) {
+			String retry = "Retry";
+			int rx = linkLeft(context, mouseX, mouseY, right, by + bh + 1, retry, "dm-retry:" + m.time, () -> {
+				mod.dms.unsend(t.name, m);
+				sendDmText(t.name, m.text);
+			}, LINK);
+			textTrim(context, "✖ Not sent: " + (m.error == null ? "the server said no" : m.error), left + 40, by + bh + 1, rx - left - 46, NAUGHTY);
+		}
+		// Click a bubble to copy what it says.
+		if (hover) hits.add(new Hit(bx, Math.max(by, viewTop), bx + r.w, Math.min(by + bh, viewBottom), "dm-line:" + m.time, () -> {
+			client.keyboard.setClipboard(m.text);
+			flash("Copied: " + (m.text.length() > 40 ? m.text.substring(0, 40) + "…" : m.text), NICE, null);
+		}));
+	}
+
+	/** Sends what's in the message box to the open conversation. */
+	private void sendDm() {
+		String text = dmField.getText().strip();
+		if (text.isEmpty() || dmWith == null || client.getNetworkHandler() == null) {
+			setFocused(dmField);
+			return;
+		}
+		String rest = sendDmText(dmWith, text);
+		dmField.setText(rest);
+		dmScroll = 0;
+		setFocused(dmField);
+	}
+
+	/**
+	 * Whispers {@code text} to {@code to} (split into as many whispers as it takes). Returns what's left unsent: the
+	 * send guard held it back (it gives your location away), and Enter again sends it.
+	 */
+	private String sendDmText(String to, String text) {
+		if (client.getNetworkHandler() == null) return text;
+		String cmd = NNConfig.INSTANCE.whisperCommand.strip().replaceFirst("^/", "");
+		if (cmd.isEmpty()) cmd = "w";
+		String prefix = cmd + " " + to + " ";
+		List<String> parts = DirectMessages.split(text, 256 - prefix.length());
+		for (int i = 0; i < parts.size(); i++) {
+			String part = parts.get(i);
+			DirectMessages.Message m = mod.dms.sending(to, part, System.currentTimeMillis());
+			client.getNetworkHandler().sendChatCommand(prefix + part);
+			if (CoordGuard.holding("/" + prefix + part)) {
+				mod.dms.unsend(to, m);
+				List<String> why = CoordGuard.reasons(part);
+				flash(why.isEmpty() ? "Press Enter again to send it" : "Held: it gives away " + String.join(" and ", why) + ". Enter again sends it anyway", LOOK, null);
+				return String.join(" ", parts.subList(i, parts.size()));
+			}
+		}
+		return "";
+	}
+
+	/** Keys on the DMs tab: Enter sends (or opens the name typed in + New), Page Up/Down scroll, Alt or Ctrl + Up/Down change conversation. */
+	private boolean dmKey(KeyInput input, boolean enter) {
+		int key = input.key();
+		if (dmNewField.isFocused()) {
+			if (enter) {
+				List<String> names = dmSuggestions();
+				if (!names.isEmpty()) openDm(names.get(0));
+				return true;
+			}
+			if (key == GLFW.GLFW_KEY_ESCAPE) {
+				dmNewField.setText("");
+				dmNewField.setFocused(false);
+				setFocused(null);
+				return true;
+			}
+			return false;
+		}
+		boolean switchKey = (key == GLFW.GLFW_KEY_UP || key == GLFW.GLFW_KEY_DOWN) && (input.hasCtrlOrCmd() || input.hasAlt());
+		if (switchKey) {
+			List<DirectMessages.Thread> threads = dmThreads();
+			if (threads.isEmpty()) return true;
+			int at = -1;
+			for (int i = 0; i < threads.size(); i++) if (threads.get(i).name.equalsIgnoreCase(dmWith)) at = i;
+			int next = Math.max(0, Math.min(threads.size() - 1, at + (key == GLFW.GLFW_KEY_UP ? -1 : 1)));
+			openDm(threads.get(next).name);
+			return true;
+		}
+		if (dmField.isFocused()) {
+			if (enter) {
+				sendDm();
+				return true;
+			}
+			if (key == GLFW.GLFW_KEY_PAGE_UP || key == GLFW.GLFW_KEY_PAGE_DOWN) {
+				dmScroll = Math.max(0, Math.min(dmMaxScroll, dmScroll + (key == GLFW.GLFW_KEY_PAGE_UP ? 1 : -1) * (height - BODY - 70)));
+				return true;
+			}
+		}
+		return false;
+	}
+
 	// ---- Settings ----
 
 	private record Option(String label, String help, BooleanSupplier get, Consumer<Boolean> set) {}
@@ -4669,6 +5232,8 @@ public class ShopScreen extends Screen {
 			{"/nn group <name> <group>", "Put someone in a group"},
 			{"/nn friends | groups | chat | intel", "Open that tab"},
 			{"/nn chat <name>", "A player's chat log"},
+			{"/nn dm [name]", "Private messages with someone (or Y)"},
+			{"/nn whispercmd <command>", "The whisper command DMs use (w by default)"},
 			{"/nn share | import", "Share your lists, or open a friend's"},
 			{"/nn open <link>", "Open a share link"},
 			{"/nn check", "The chat check (lines the mod couldn't read)"},
@@ -4738,6 +5303,8 @@ public class ShopScreen extends Screen {
 		options.add(new Option("Log chat of listed players", "Everything said around anyone on your lists is saved as conversations on their page.", () -> c.chatLog, v -> c.chatLog = v));
 		options.add(new Option("Chat tab shows everyone", "Off: the Chat tab's All shows only players on a list or in a group (and you).",
 				() -> c.chatShowEveryone, v -> c.chatShowEveryone = v));
+		options.add(new Option("Whisper reply hint", "When someone whispers you, the bar above your hotbar says which key opens your DMs to reply.",
+				() -> c.dmReplyHint, v -> c.dmReplyHint = v));
 		options.add(new Option("Save chat logs as text files", "Each finished conversation is also added to a .txt file per player.", () -> c.chatFiles, v -> c.chatFiles = v));
 		options.add(new Option("Save all chat as text files", "Everything said on the server goes into a file a day (chatlogs/<server>/all-chat), so nothing is lost.",
 				() -> c.chatAllFiles, v -> c.chatAllFiles = v));
@@ -4908,7 +5475,7 @@ public class ShopScreen extends Screen {
 					"Trip bar", "Coordinates on the right", "Small coordinates" -> SettingsPage.SCREEN;
 			case "Warn when a naughty player is near", "Warn when a naughty player joins", "Note when a Look Into player is near or joins", "Warning sound",
 					"Alert on threats against you", "Ping on any coordinates", "Alert when your bases are named", "Alert on coordinates near your bases" -> SettingsPage.ALERTS;
-			case "Read the chat", "Guard my coordinates", "Ask before sending any message", "Log chat of listed players", "Chat tab shows everyone",
+			case "Read the chat", "Guard my coordinates", "Ask before sending any message", "Log chat of listed players", "Chat tab shows everyone", "Whisper reply hint",
 					"Save chat logs as text files", "Save all chat as text files", "Summary when you join" -> SettingsPage.CHAT;
 			case "Killers go on the Naughty list", "Note sightings", "Track who plays together", "Track hours online", "Evidence screenshots", "Record disconnects",
 					"Nice list counts as Base Insurance friends" -> SettingsPage.WATCHING;
@@ -7050,6 +7617,11 @@ public class ShopScreen extends Screen {
 			chatScroll = Math.max(0, Math.min(chatMaxScroll, chatScroll + verticalAmount * 24));
 			return true;
 		}
+		if (selected == null && tab == Tab.MESSAGES) {
+			if (scaled(mouseX) < dmListRight) dmListScroll = Math.max(0, Math.min(dmListMax, dmListScroll - verticalAmount * 24));
+			else dmScroll = Math.max(0, Math.min(dmMaxScroll, dmScroll + verticalAmount * 24));
+			return true;
+		}
 		if (overMap(scaled(mouseX), scaled(mouseY))) {
 			zoomMap(scaled(mouseX), scaled(mouseY), verticalAmount);
 			return true;
@@ -7076,6 +7648,7 @@ public class ShopScreen extends Screen {
 			return true;
 		}
 		boolean enter = input.key() == GLFW.GLFW_KEY_ENTER || input.key() == GLFW.GLFW_KEY_KP_ENTER;
+		if (tab == Tab.MESSAGES && selected == null && dmKey(input, enter)) return true;
 		if (chatField.isFocused()) {
 			if (enter) {
 				sendChat();
@@ -7111,6 +7684,11 @@ public class ShopScreen extends Screen {
 			setFocused(null);
 			return true;
 		}
+		// Narrow window: Esc goes from a conversation back to the list of them.
+		if (input.key() == GLFW.GLFW_KEY_ESCAPE && selected == null && tab == Tab.MESSAGES && width < DM_WIDE && dmWith != null) {
+			dmWith = null;
+			return true;
+		}
 		if (input.key() == GLFW.GLFW_KEY_ESCAPE && (selected != null || tab == Tab.SETTINGS || (tab == Tab.GROUPS && openGroup != null))) {
 			if (tab == Tab.SETTINGS) showTab(lastTab != null ? lastTab : Tab.ALL);
 			else if (selected != null) back();
@@ -7142,7 +7720,7 @@ public class ShopScreen extends Screen {
 			return true;
 		}
 		boolean typing = getFocused() instanceof TextFieldWidget typed && typed.isFocused();
-		if (!typing && !modal() && tab != Tab.CHAT) {
+		if (!typing && !modal() && tab != Tab.CHAT && tab != Tab.MESSAGES) {
 			// "/" searches; 1 to 8 open the sections (as on the Baritone screen).
 			if (key == GLFW.GLFW_KEY_SLASH) {
 				setFocused(search);
@@ -7193,6 +7771,12 @@ public class ShopScreen extends Screen {
 			if (getFocused() != groupField && getFocused() != membersField) setFocused(groupPanelGroup != null ? membersField : groupField);
 			return getFocused().charTyped(input);
 		}
+		// On the DMs tab, typing goes to the message box (or the new-message name box when no one's open).
+		if (getFocused() == null && selected == null && tab == Tab.MESSAGES && input.isValidChar()) {
+			TextFieldWidget f = dmWith != null && client.getNetworkHandler() != null ? dmField : dmNewField;
+			setFocused(f);
+			return f.charTyped(input);
+		}
 		// On the Chat tab, typing goes to the chat box.
 		if (getFocused() == null && selected == null && tab == Tab.CHAT && input.isValidChar() && client.getNetworkHandler() != null) {
 			setFocused(chatField);
@@ -7212,6 +7796,7 @@ public class ShopScreen extends Screen {
 
 	@Override
 	public void removed() {
+		mod.dms.viewing(null);
 		mod.ledger.save(false);
 	}
 
@@ -8231,7 +8816,7 @@ public class ShopScreen extends Screen {
 	}
 
 	public boolean testHeaderFits() {
-		for (String t : new String[] {"ALL", "GROUPS", "CHAT", "INTEL", "ACTIVITY", "SERVER", "BARITONE", "SETTINGS"}) {
+		for (String t : new String[] {"ALL", "GROUPS", "CHAT", "MESSAGES", "INTEL", "ACTIVITY", "SERVER", "BARITONE", "SETTINGS"}) {
 			Hit hit = hits.stream().filter(h -> h.label.equals("tab:" + t)).findFirst().orElse(null);
 			if (hit == null || hit.x1 > width) return false;
 		}
@@ -8333,6 +8918,31 @@ public class ShopScreen extends Screen {
 
 	public void testChatText(String text) {
 		chatField.setText(text);
+	}
+
+	public void testDmText(String text) {
+		dmField.setText(text);
+	}
+
+	public String testDmField() {
+		return dmField.getText();
+	}
+
+	public String testDmWith() {
+		return dmWith;
+	}
+
+	public int testDmRows() {
+		return dmRows.size();
+	}
+
+	public boolean testDmFocused() {
+		return dmField.isFocused();
+	}
+
+	/** Presses a key on the screen, as typed; used by the self-test. */
+	public boolean testKey(int key, int modifiers) {
+		return keyPressed(new KeyInput(key, 0, modifiers));
 	}
 
 	public String testOpenGroup() {
