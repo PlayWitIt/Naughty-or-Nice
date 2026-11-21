@@ -168,8 +168,8 @@ time, whispers already in your chat logs are read in.
 - A line shows as *sending…* until the server echoes it; if the server says they aren't there it's marked **Not sent**
   with a **Retry**.
 - **Their chat** shows their public chat too, between your whispers.
-- **O** (in game) opens the newest unread conversation, ready to type; when someone whispers you the action bar says
-  *O to reply*. Also: ✉ Message on player pages, click a whisper in the Chat tab, Alt/Ctrl + Up/Down to change
+- **Numpad 7** (in game) opens the newest unread conversation, ready to type; when someone whispers you the action bar says
+  *Keypad 7 to reply*. Also: ✉ Message on player pages, click a whisper in the Chat tab, Alt/Ctrl + Up/Down to change
   conversation, Copy, Delete. `/nn dm [name]`.
 
 ## Chat tab

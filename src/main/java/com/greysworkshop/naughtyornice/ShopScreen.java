@@ -1360,7 +1360,7 @@ public class ShopScreen extends Screen {
 		return switch (t) {
 			case GROUPS -> "Who plays together: crews, teams, alts";
 			case CHAT -> "The chat, coloured by who's on your lists; talk from here";
-			case MESSAGES -> "Private messages, one player at a time, kept between sessions (key O in game)";
+			case MESSAGES -> "Private messages, one player at a time, kept between sessions (Numpad 7 in game)";
 			case INTEL -> "Coordinates given away, stashes, world events, chat by topic";
 			case ACTIVITY -> "Who was on when, and who you met";
 			case SERVER -> "The server's numbers: top players, busy hours, joins";
@@ -5387,7 +5387,7 @@ public class ShopScreen extends Screen {
 			{"/nn group <name> <group>", "Put someone in a group"},
 			{"/nn friends | groups | chat | intel", "Open that tab"},
 			{"/nn chat <name>", "A player's chat log"},
-			{"/nn dm [name]", "Private messages with someone (or O)"},
+			{"/nn dm [name]", "Private messages with someone (or Numpad 7)"},
 			{"/nn whispercmd <command>", "The whisper command DMs use (w by default)"},
 			{"/nn share | import", "Share your lists, or open a friend's"},
 			{"/nn open <link>", "Open a share link"},

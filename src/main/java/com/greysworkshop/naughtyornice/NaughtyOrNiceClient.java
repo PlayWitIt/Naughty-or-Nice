@@ -74,9 +74,9 @@ public class NaughtyOrNiceClient implements ClientModInitializer {
 		stopKey = KeyBindingHelper.registerKeyBinding(new KeyBinding("key.naughtyornice.stop", InputUtil.Type.KEYSYM, GLFW.GLFW_KEY_Z, category));
 		// Chunks in the world, back in 1.21.1 on X (K is the radar now).
 		chunksKey = KeyBindingHelper.registerKeyBinding(new KeyBinding("key.naughtyornice.chunks", InputUtil.Type.KEYSYM, GLFW.GLFW_KEY_X, category));
-		// O: free in the game, Meteor, Baritone and the other PlayWit mods (Y is Hoard Eye's search). Opens the DMs tab
-		// on the newest conversation, ready to type.
-		messagesKey = KeyBindingHelper.registerKeyBinding(new KeyBinding("key.naughtyornice.messages", InputUtil.Type.KEYSYM, GLFW.GLFW_KEY_O, category));
+		// Numpad 7: the letters are all taken in the user's game (Y is Hoard Eye's search); Groundskeeper has Numpad 1-3
+		// and Harvest Hand 4-6. Opens the DMs tab on the newest conversation, ready to type.
+		messagesKey = KeyBindingHelper.registerKeyBinding(new KeyBinding("key.naughtyornice.messages", InputUtil.Type.KEYSYM, GLFW.GLFW_KEY_KP_7, category));
 		// Logout outlines first: both draw lines, and the chunk squares' fill must come last or it's flushed too early.
 		WorldRenderEvents.BEFORE_DEBUG_RENDER.register(context -> Safe.run("drawing logout spots in the world", () -> LogoutSpots.renderWorld(context)));
 		WorldRenderEvents.BEFORE_DEBUG_RENDER.register(context -> Safe.run("drawing chunks in the world", () -> ChunkOverlay.render(context)));
@@ -286,9 +286,9 @@ public class NaughtyOrNiceClient implements ClientModInitializer {
 	}
 
 	/** Opens the store, on the page of the player you're looking at if there is one. */
-	/** The key that opens the DMs tab, as the game names it ("O"). */
+	/** The key that opens the DMs tab, as the game names it ("Keypad 7"). */
 	public String messagesKeyName() {
-		return messagesKey == null ? "O" : messagesKey.getBoundKeyLocalizedText().getString();
+		return messagesKey == null ? "Keypad 7" : messagesKey.getBoundKeyLocalizedText().getString();
 	}
 
 	public Screen openScreen(MinecraftClient client) {
@@ -384,10 +384,11 @@ public class NaughtyOrNiceClient implements ClientModInitializer {
 		if (!keysChecked) {
 			keysChecked = true;
 			if (!NNConfig.INSTANCE.dmsOffY) {
-				// 1.25.0 put DMs on Y, which is Hoard Eye's search: moved to O, once.
+				// 1.25.0 put DMs on Y, which is Hoard Eye's search: moved to Numpad 7, once.
 				NNConfig.INSTANCE.dmsOffY = true;
 				NNConfig.save();
-				if (messagesKey.getBoundKeyTranslationKey().equals("key.keyboard.y")) {
+				String was = messagesKey.getBoundKeyTranslationKey();
+				if (was.equals("key.keyboard.y") || was.equals("key.keyboard.o")) {
 					messagesKey.setBoundKey(messagesKey.getDefaultKey());
 					KeyBinding.updateKeysByCode();
 					client.options.write();
