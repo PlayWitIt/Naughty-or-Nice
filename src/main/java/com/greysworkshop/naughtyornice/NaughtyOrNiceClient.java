@@ -286,9 +286,12 @@ public class NaughtyOrNiceClient implements ClientModInitializer {
 	}
 
 	/** Opens the store, on the page of the player you're looking at if there is one. */
-	/** The key that opens the DMs tab, as the game names it ("Keypad 7"). */
+	/** The key that opens the DMs tab, as you'd say it ("Numpad 7"). */
 	public String messagesKeyName() {
-		return messagesKey == null ? "Keypad 7" : messagesKey.getBoundKeyLocalizedText().getString();
+		if (messagesKey == null) return "Numpad 7";
+		String name = messagesKey.getBoundKeyLocalizedText().getString();
+		// The game calls Numpad 7 just "7", the same as the 7 above the letters.
+		return messagesKey.getBoundKeyTranslationKey().startsWith("key.keyboard.keypad.") && !name.toLowerCase(java.util.Locale.ROOT).contains("pad") ? "Numpad " + name : name;
 	}
 
 	public Screen openScreen(MinecraftClient client) {
@@ -383,9 +386,9 @@ public class NaughtyOrNiceClient implements ClientModInitializer {
 		ledger.switchTo(Ledger.worldKey(client));
 		if (!keysChecked) {
 			keysChecked = true;
-			if (!NNConfig.INSTANCE.dmsOffY) {
+			if (!NNConfig.INSTANCE.dmsOnNumpad) {
 				// 1.25.0 put DMs on Y, which is Hoard Eye's search: moved to Numpad 7, once.
-				NNConfig.INSTANCE.dmsOffY = true;
+				NNConfig.INSTANCE.dmsOnNumpad = true;
 				NNConfig.save();
 				String was = messagesKey.getBoundKeyTranslationKey();
 				if (was.equals("key.keyboard.y") || was.equals("key.keyboard.o")) {

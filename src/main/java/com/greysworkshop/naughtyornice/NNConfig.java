@@ -41,7 +41,7 @@ public final class NNConfig {
 	/** The DMs tab shows the other player's public chat too, between your whispers. */
 	public boolean dmShowPublic = false;
 	/** Set once a DMs key saved on Y (1.25.0, clashing with Hoard Eye) has been moved to Numpad 7. */
-	public boolean dmsOffY = false;
+	public boolean dmsOnNumpad = false;
 
 	// ---- Showing the lists ----
 	/** Green tick / red cross in front of names above players' heads. */

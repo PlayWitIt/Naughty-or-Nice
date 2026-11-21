@@ -2567,7 +2567,8 @@ public final class SelfTest {
 				DirectMessages.Thread t = dmThread("Helpful_Hana");
 				check("a whisper to you starts a conversation, unread (" + (t == null ? "none" : t.messages.size() + ", " + t.unread()) + ")",
 						t != null && t.messages.size() == 1 && !t.messages.get(0).me && t.unread() == 1);
-				check("...and the bar above the hotbar says which key replies", hudOverlay(client).contains(mod.messagesKeyName() + " to reply") && mod.messagesKeyName().contains("7"));
+				check("...and the bar above the hotbar says which key replies", hudOverlay(client).contains(mod.messagesKeyName() + " to reply") && mod.messagesKeyName().equals("Numpad 7"));
+				log("DMs key: " + mod.messagesKeyName() + "; bar: " + hudOverlay(client));
 				mod.watcher.onGameMessage(client, Text.translatable("commands.message.display.outgoing", Text.literal("Helpful_Hana"), Text.literal("yeah, at spawn")));
 				check("your whisper to them (sent any way) goes in the same conversation, and counts as having read theirs",
 						t != null && t.messages.size() == 2 && t.messages.get(1).me && t.unread() == 0);

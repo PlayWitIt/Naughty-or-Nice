@@ -169,7 +169,7 @@ time, whispers already in your chat logs are read in.
   with a **Retry**.
 - **Their chat** shows their public chat too, between your whispers.
 - **Numpad 7** (in game) opens the newest unread conversation, ready to type; when someone whispers you the action bar says
-  *Keypad 7 to reply*. Also: ✉ Message on player pages, click a whisper in the Chat tab, Alt/Ctrl + Up/Down to change
+  *Numpad 7 to reply*. Also: ✉ Message on player pages, click a whisper in the Chat tab, Alt/Ctrl + Up/Down to change
   conversation, Copy, Delete. `/nn dm [name]`.
 
 ## Chat tab
